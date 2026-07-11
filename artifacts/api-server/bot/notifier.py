@@ -284,14 +284,14 @@ async def notify_user_api_failed_after_payment(bot, chat_id: str, order: Order):
     """
     User: payment received but API failed.
     IMPORTANT: NEVER say 'chưa thanh toán'.
+    QR + old messages are already deleted by _send_payment_confirmed_interim before this is called.
     """
     try:
         text = (
-            f"✅ Hệ thống đã nhận thanh toán của bạn.\n\n"
-            f"⚠️ Nguồn hàng đang gặp sự cố kỹ thuật.\n"
-            f"Đơn <code>{order.order_code}</code> đang được admin xử lý thủ công.\n\n"
-            "Admin sẽ giao hàng cho bạn sớm nhất có thể. "
-            "Nếu cần hỗ trợ, hãy liên hệ chúng tôi."
+            f"✅ Đã nhận thanh toán.\n\n"
+            f"⚠️ Nguồn hàng đang gặp lỗi.\n"
+            f"Đơn <code>{order.order_code}</code> đã được chuyển sang xử lý thủ công.\n\n"
+            "Admin sẽ gửi hàng sớm nhất."
         )
         await bot.send_message(chat_id=int(chat_id), text=text, parse_mode="HTML")
     except Exception as e:

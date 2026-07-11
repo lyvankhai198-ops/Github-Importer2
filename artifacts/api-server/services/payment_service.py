@@ -357,6 +357,9 @@ async def process_paid_order(order_id: int):
         order.status = OrderStatus.processing_api
         db.commit()
 
+        # Delete QR + old messages, send "acquiring items" interim before any API call
+        await _send_payment_confirmed_interim(order, db)
+
         product = db.query(Product).filter(Product.id == order.product_id).first()
 
         # Manual delivery product → admin handles it
@@ -475,18 +478,7 @@ async def _deliver_to_user(order: Order, db: Session):
         admin_id = cfg.admin_telegram_id if cfg else ""
         bot = bot_manager._application.bot
 
-        # Delete the QR payment message so the chat is clean
-        if order.payment_message_id:
-            try:
-                await bot.delete_message(
-                    chat_id=int(order.telegram_user_id),
-                    message_id=order.payment_message_id,
-                )
-                order.payment_message_id = None
-                db.commit()
-            except Exception as e:
-                logger.debug(f"[payment] could not delete QR msg: {e}")
-
+        # QR + old messages already deleted by _send_payment_confirmed_interim before API call
         sv = order.status.value if hasattr(order.status, "value") else str(order.status)
 
         if sv == "completed":
@@ -537,6 +529,54 @@ async def _notify_admin_manual_needed(order: Order, db: Session):
             await notify_admin_new_payment_pending(bot, order, admin_id)
     except Exception as e:
         logger.error(f"[payment] _notify_admin_manual_needed error: {e}")
+
+
+# ── Safe message deletion ──────────────────────────────────────────────────────
+
+async def safe_delete_message(bot, chat_id, message_id):
+    """Silently delete a Telegram message — ignore not-found / no-permission errors."""
+    if not message_id or not chat_id:
+        return
+    try:
+        await bot.delete_message(chat_id=int(chat_id), message_id=int(message_id))
+    except Exception as e:
+        err = str(e).lower()
+        if any(x in err for x in ("not found", "message_id_invalid", "can't be deleted",
+                                  "message to delete", "badrequest")):
+            return
+        logger.debug(f"[safe_delete] chat={chat_id} msg={message_id}: {e}")
+
+
+async def _delete_all_payment_messages(bot, order: Order, db: Session):
+    """Delete product + quantity prompt + QR messages in order; clear IDs on the order."""
+    chat_id = order.payment_chat_id or order.telegram_user_id
+    await safe_delete_message(bot, chat_id, order.product_message_id)
+    await safe_delete_message(bot, chat_id, order.quantity_prompt_message_id)
+    await safe_delete_message(bot, chat_id, order.payment_message_id)
+    order.product_message_id = None
+    order.quantity_prompt_message_id = None
+    order.payment_message_id = None
+    db.commit()
+
+
+async def _send_payment_confirmed_interim(order: Order, db: Session):
+    """
+    After confirming payment: delete all stored messages and send the 'acquiring items'
+    interim message.  Must be called *before* the API buy call so all paths see a clean chat.
+    """
+    try:
+        from services.bot_service import bot_manager
+        if not bot_manager.is_running():
+            return
+        bot = bot_manager._application.bot
+        await _delete_all_payment_messages(bot, order, db)
+        chat_id = order.payment_chat_id or order.telegram_user_id
+        await bot.send_message(
+            chat_id=int(chat_id),
+            text="✅ Đã nhận thanh toán.\nĐang lấy hàng tự động từ nguồn...",
+        )
+    except Exception as e:
+        logger.error(f"[payment] _send_payment_confirmed_interim error: {e}")
 
 
 # ── Expiry loop ────────────────────────────────────────────────────────────────

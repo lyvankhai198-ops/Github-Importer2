@@ -239,7 +239,11 @@ class Order(Base):
     paid_at = Column(DateTime, nullable=True)
     payment_transaction_id = Column(String(255), nullable=True)
     payment_raw_data = Column(Text, nullable=True)
-    payment_message_id = Column(Integer, nullable=True)  # Telegram message_id of QR photo
+    payment_message_id = Column(Integer, nullable=True)       # Telegram message_id of QR/payment msg
+    payment_chat_id = Column(Integer, nullable=True)          # Telegram chat_id (user's chat)
+    payment_message_type = Column(String(20), nullable=True)  # "photo" | "text"
+    product_message_id = Column(Integer, nullable=True)       # Product detail message sent by bot
+    quantity_prompt_message_id = Column(Integer, nullable=True)  # "Nhập số lượng" prompt by bot
     # ─────────────────────────────────────────────────────────────────────────
     created_at = Column(DateTime, default=now)
     updated_at = Column(DateTime, default=now, onupdate=now)

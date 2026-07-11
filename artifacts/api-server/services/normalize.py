@@ -140,15 +140,13 @@ def format_delivery_message(order, items: list, product_name: str) -> tuple:
     - ≤10 tài khoản: gửi text với <code> blocks.
     - >10 tài khoản: tạo nội dung file TXT.
     """
-    external_code = order.external_order_code or order.external_order_id or "—"
     header = (
-        f"✅ <b>ĐƠN HÀNG THÀNH CÔNG</b>\n\n"
+        f"✅ <b>MUA HÀNG THÀNH CÔNG</b>\n\n"
         f"Mã đơn: <code>{order.order_code}</code>\n"
-        f"Mã đơn nguồn: <code>{external_code}</code>\n"
         f"Sản phẩm: {html.escape(product_name)}\n"
         f"Số lượng: {order.quantity}\n"
         f"Tổng tiền: {order.total_price:,.0f}đ\n\n"
-        f"📦 <b>TÀI KHOẢN CỦA BẠN:</b>\n"
+        f"📦 <b>TÀI KHOẢN CỦA BẠN</b>\n"
     )
 
     lines = []

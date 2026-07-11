@@ -53,8 +53,12 @@ def _run_migrations():
         "ALTER TABLE orders ADD COLUMN payment_raw_data TEXT",
         # Index for fast payment_code lookup
         "CREATE INDEX IF NOT EXISTS ix_orders_payment_code ON orders (payment_code)",
-        # QR message tracking
+        # QR / payment message tracking
         "ALTER TABLE orders ADD COLUMN payment_message_id INTEGER",
+        "ALTER TABLE orders ADD COLUMN payment_chat_id INTEGER",
+        "ALTER TABLE orders ADD COLUMN payment_message_type VARCHAR(20)",
+        "ALTER TABLE orders ADD COLUMN product_message_id INTEGER",
+        "ALTER TABLE orders ADD COLUMN quantity_prompt_message_id INTEGER",
     ]
     with engine.connect() as conn:
         for sql in migrations:

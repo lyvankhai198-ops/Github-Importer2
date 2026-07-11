@@ -48,12 +48,15 @@ def confirm_order_keyboard(product_id: int, quantity: int) -> InlineKeyboardMark
     ])
 
 
-def payment_keyboard(order_id: int, support_username: str = "") -> InlineKeyboardMarkup:
+def payment_keyboard(order_id: int, support_username: str = "",
+                     show_regen_qr: bool = False) -> InlineKeyboardMarkup:
     """Bàn phím hiện cùng QR thanh toán."""
     rows = [
         [InlineKeyboardButton("🔄 Kiểm tra thanh toán", callback_data=f"check_payment:{order_id}")],
-        [InlineKeyboardButton("❌ Hủy đơn", callback_data=f"cancel_pending:{order_id}")],
     ]
+    if show_regen_qr:
+        rows.append([InlineKeyboardButton("🖼 Tạo lại QR", callback_data=f"regen_qr:{order_id}")])
+    rows.append([InlineKeyboardButton("❌ Hủy đơn", callback_data=f"cancel_pending:{order_id}")])
     support_row = []
     if support_username:
         support_row.append(

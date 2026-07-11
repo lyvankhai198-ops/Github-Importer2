@@ -12,6 +12,9 @@ from bot.keyboards import (
 from services.product_service import get_active_products_for_bot, get_product_detail
 from services.order_service import create_order, get_or_create_user, get_order_by_id, get_delivery_items
 from services.normalize import format_delivery_message, format_partial_delivery_message
+from services.payment_service import (
+    create_pending_payment_order, generate_vietqr_url, is_sepay_enabled, get_sepay_config,
+)
 from models import Order, TelegramBotConfig, OrderStatus, PaymentStatus
 from database import SessionLocal
 
@@ -141,6 +144,149 @@ async def admin_panel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     await update.message.reply_text("🌐 Truy cập trang quản trị tại địa chỉ máy chủ của bạn.")
 
 
+# ── Shared order creation helper ──────────────────────────────────────────────
+
+async def _do_create_order(context, db, tg_user, product_id: int, quantity: int, processing_msg):
+    """
+    Create a pending_payment SePay order, send VietQR to the user.
+    Called from both the confirm_order: callback and message_handler (waiting_quantity).
+    """
+    from models import SepayConfig
+    cfg = db.query(TelegramBotConfig).first()
+    support = cfg.support_username if cfg else ""
+    admin_id = cfg.admin_telegram_id if cfg else ""
+    shop_name = getattr(cfg, "shop_name", "") or "" if cfg else ""
+
+    sepay = db.query(SepayConfig).first()
+
+    if not sepay or not sepay.is_enabled:
+        try:
+            await processing_msg.edit_text("❌ Hệ thống thanh toán chưa được cấu hình.")
+        except Exception:
+            pass
+        return
+
+    if not sepay.account_number or not sepay.bank_bin or not sepay.account_name:
+        if admin_id:
+            try:
+                await context.bot.send_message(
+                    chat_id=int(admin_id),
+                    text="⚠️ Thiếu cấu hình ngân hàng để tạo QR (account_number / bank_bin / account_name).",
+                )
+            except Exception:
+                pass
+        try:
+            await processing_msg.edit_text(
+                "❌ Hệ thống thanh toán chưa được cấu hình đầy đủ. Vui lòng liên hệ hỗ trợ."
+            )
+        except Exception:
+            pass
+        return
+
+    # Create order
+    order = create_pending_payment_order(db, str(tg_user.id), product_id, quantity)
+
+    # Persist context message IDs on the order
+    order.payment_chat_id = tg_user.id
+    order.product_message_id = context.user_data.get("product_message_id")
+    order.quantity_prompt_message_id = context.user_data.get("quantity_prompt_message_id")
+    order.payment_message_type = "photo"
+    db.commit()
+
+    product_name = order.product.name if order.product else str(product_id)
+    expiry_dt = order.payment_expires_at
+    expiry_str = expiry_dt.strftime("%H:%M %d/%m/%Y") if expiry_dt else "—"
+    timeout = sepay.payment_timeout_minutes or 15
+
+    qr_url = generate_vietqr_url(
+        bank_bin=sepay.bank_bin,
+        account_number=sepay.account_number,
+        amount=order.total_price,
+        payment_code=order.payment_code,
+        account_name=sepay.account_name,
+        shop_name=shop_name,
+    )
+
+    caption = (
+        f"💳 <b>THANH TOÁN ĐƠN HÀNG</b>\n\n"
+        f"Mã đơn: <code>{order.order_code}</code>\n"
+        f"Sản phẩm: {html.escape(product_name)}\n"
+        f"Số lượng: {order.quantity}\n"
+        f"Số tiền: <b>{order.total_price:,.0f}đ</b>\n\n"
+        f"🏦 Ngân hàng: <b>{html.escape(sepay.bank_bin)}</b>\n"
+        f"Số tài khoản: <code>{html.escape(sepay.account_number)}</code>\n"
+        f"Chủ TK: {html.escape(sepay.account_name)}\n"
+        f"Nội dung CK: <code>{html.escape(order.payment_code)}</code>\n\n"
+        f"⏰ Hết hạn: {expiry_str} ({timeout} phút)"
+    )
+
+    kbd = payment_keyboard(order.id, support)
+
+    # Delete processing placeholder
+    try:
+        await processing_msg.delete()
+    except Exception:
+        pass
+
+    # Try sending QR as photo — URL direct first, then download fallback
+    sent_msg = None
+    try:
+        sent_msg = await context.bot.send_photo(
+            chat_id=tg_user.id,
+            photo=qr_url,
+            caption=caption,
+            parse_mode="HTML",
+            reply_markup=kbd,
+        )
+        order.payment_message_type = "photo"
+    except Exception:
+        pass
+
+    if not sent_msg:
+        try:
+            import httpx as _httpx
+            async with _httpx.AsyncClient(timeout=15) as c:
+                resp = await c.get(qr_url)
+            if resp.status_code == 200:
+                sent_msg = await context.bot.send_photo(
+                    chat_id=tg_user.id,
+                    photo=io.BytesIO(resp.content),
+                    caption=caption,
+                    parse_mode="HTML",
+                    reply_markup=kbd,
+                )
+                order.payment_message_type = "photo"
+        except Exception:
+            pass
+
+    if not sent_msg:
+        # Final fallback: text-only with "Tạo lại QR" button
+        text_only = caption + f'\n\n🔗 <a href="{qr_url}">Mở QR VietQR</a>'
+        try:
+            sent_msg = await context.bot.send_message(
+                chat_id=tg_user.id,
+                text=text_only,
+                parse_mode="HTML",
+                reply_markup=payment_keyboard(order.id, support, show_regen_qr=True),
+                disable_web_page_preview=True,
+            )
+            order.payment_message_type = "text"
+        except Exception as e:
+            logger.error(f"[order] could not send payment message for {order.order_code}: {e}")
+            if admin_id:
+                try:
+                    await context.bot.send_message(
+                        chat_id=int(admin_id),
+                        text=f"⚠️ Không thể gửi QR cho đơn {order.order_code} (user {tg_user.id}).",
+                    )
+                except Exception:
+                    pass
+
+    if sent_msg:
+        order.payment_message_id = sent_msg.message_id
+        db.commit()
+
+
 # ── Callback query handler ────────────────────────────────────────────────────
 
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -245,27 +391,30 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         async with _httpx.AsyncClient(timeout=10) as c:
                             resp = await c.get(image_url)
                         if resp.status_code == 200:
-                            await query.message.reply_photo(
+                            sent = await query.message.reply_photo(
                                 photo=io.BytesIO(resp.content),
                                 caption=text,
                                 parse_mode="HTML",
                                 reply_markup=product_detail_keyboard(p.id),
                             )
+                            context.user_data["product_message_id"] = sent.message_id
                             await query.message.delete()
                             return
                     else:
-                        await query.message.reply_photo(
+                        sent = await query.message.reply_photo(
                             photo=open(image_url, "rb"),
                             caption=text,
                             parse_mode="HTML",
                             reply_markup=product_detail_keyboard(p.id),
                         )
+                        context.user_data["product_message_id"] = sent.message_id
                         await query.message.delete()
                         return
                 except Exception:
                     pass
 
-            await query.message.edit_text(text, parse_mode="HTML", reply_markup=product_detail_keyboard(p.id))
+            sent = await query.message.edit_text(text, parse_mode="HTML", reply_markup=product_detail_keyboard(p.id))
+            context.user_data["product_message_id"] = query.message.message_id
         finally:
             db.close()
         return
@@ -276,7 +425,8 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["buying_product_id"] = product_id
         context.user_data["state"] = "waiting_quantity"
         context.user_data.pop("processing_order", None)
-        await query.message.reply_text("🔢 Nhập số lượng bạn muốn mua:")
+        prompt_msg = await query.message.reply_text("🔢 Nhập số lượng bạn muốn mua:")
+        context.user_data["quantity_prompt_message_id"] = prompt_msg.message_id
         return
 
     # ── confirm order ──
@@ -334,10 +484,108 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             order.status = OrderStatus.cancelled
             order.updated_at = datetime.utcnow()
             db.commit()
-            await query.message.edit_text(
-                f"❌ Đơn hàng <code>{order.order_code}</code> đã bị hủy.",
-                parse_mode="HTML",
+
+            # Delete all stored bot messages (product detail, quantity prompt, QR)
+            from services.payment_service import safe_delete_message as _safe_del
+            chat_id = order.payment_chat_id or order.telegram_user_id
+            await _safe_del(context.bot, chat_id, order.product_message_id)
+            await _safe_del(context.bot, chat_id, order.quantity_prompt_message_id)
+            await _safe_del(context.bot, chat_id, order.payment_message_id)
+
+            try:
+                await context.bot.send_message(chat_id=int(chat_id), text="❌ Đã hủy đơn hàng.")
+            except Exception:
+                pass
+        finally:
+            db.close()
+        return
+
+    # ── regenerate QR ──
+    if data.startswith("regen_qr:"):
+        order_id = int(data.split(":")[1])
+        tg_user = update.effective_user
+        db = SessionLocal()
+        try:
+            order = get_order_by_id(db, order_id)
+            if not order or order.telegram_user_id != str(tg_user.id):
+                await query.answer("Không tìm thấy đơn hàng.", show_alert=True)
+                return
+
+            sv = order.status.value if hasattr(order.status, "value") else str(order.status)
+            if sv != "pending_payment":
+                await query.answer("Đơn hàng không còn ở trạng thái chờ thanh toán.", show_alert=True)
+                return
+
+            from models import SepayConfig
+            from services.payment_service import generate_vietqr_url as _gen_qr, safe_delete_message as _safe_del
+            cfg = db.query(TelegramBotConfig).first()
+            support = cfg.support_username if cfg else ""
+            shop_name = getattr(cfg, "shop_name", "") or "" if cfg else ""
+            sepay = db.query(SepayConfig).first()
+
+            if not sepay or not sepay.account_number or not sepay.bank_bin:
+                await query.answer("Cấu hình ngân hàng chưa đầy đủ.", show_alert=True)
+                return
+
+            # Delete old QR message
+            chat_id = order.payment_chat_id or order.telegram_user_id
+            await _safe_del(context.bot, chat_id, order.payment_message_id)
+            order.payment_message_id = None
+            db.commit()
+
+            product_name = order.product.name if order.product else "—"
+            timeout = sepay.payment_timeout_minutes or 15
+            expiry_dt = order.payment_expires_at
+            expiry_str = expiry_dt.strftime("%H:%M %d/%m/%Y") if expiry_dt else "—"
+
+            qr_url = _gen_qr(
+                bank_bin=sepay.bank_bin,
+                account_number=sepay.account_number,
+                amount=order.total_price,
+                payment_code=order.payment_code,
+                account_name=sepay.account_name,
+                shop_name=shop_name,
             )
+            caption = (
+                f"💳 <b>THANH TOÁN ĐƠN HÀNG</b>\n\n"
+                f"Mã đơn: <code>{order.order_code}</code>\n"
+                f"Sản phẩm: {html.escape(product_name)}\n"
+                f"Số lượng: {order.quantity}\n"
+                f"Số tiền: <b>{order.total_price:,.0f}đ</b>\n\n"
+                f"🏦 Ngân hàng: <b>{html.escape(sepay.bank_bin)}</b>\n"
+                f"Số tài khoản: <code>{html.escape(sepay.account_number)}</code>\n"
+                f"Chủ TK: {html.escape(sepay.account_name)}\n"
+                f"Nội dung CK: <code>{html.escape(order.payment_code)}</code>\n\n"
+                f"⏰ Hết hạn: {expiry_str} ({timeout} phút)"
+            )
+            kbd = payment_keyboard(order.id, support)
+            sent_msg = None
+            try:
+                sent_msg = await context.bot.send_photo(
+                    chat_id=int(chat_id), photo=qr_url, caption=caption,
+                    parse_mode="HTML", reply_markup=kbd,
+                )
+                order.payment_message_type = "photo"
+            except Exception:
+                pass
+            if not sent_msg:
+                try:
+                    sent_msg = await context.bot.send_message(
+                        chat_id=int(chat_id),
+                        text=caption + f'\n\n🔗 <a href="{qr_url}">Mở QR VietQR</a>',
+                        parse_mode="HTML",
+                        reply_markup=payment_keyboard(order.id, support, show_regen_qr=True),
+                        disable_web_page_preview=True,
+                    )
+                    order.payment_message_type = "text"
+                except Exception as e:
+                    logger.error(f"[regen_qr] could not send QR for {order.order_code}: {e}")
+                    await query.answer("Không thể tạo QR. Vui lòng thử lại.", show_alert=True)
+                    return
+            if sent_msg:
+                order.payment_message_id = sent_msg.message_id
+                db.commit()
+            await query.answer("✅ Đã tạo lại QR.")
         finally:
             db.close()
         return

@@ -1,0 +1,243 @@
+Cập nhật luồng mua hàng trên Telegram Bot hiện tại.
+
+Không tạo project mới.
+Không xóa database.
+Giữ nguyên SePay, webhook và API nguồn đang có.
+
+MỤC TIÊU:
+
+Sau khi khách nhập số lượng hợp lệ, bot phải chuyển thẳng sang bước thanh toán SePay.
+
+Bỏ hoàn toàn bước:
+
+“XÁC NHẬN ĐƠN HÀNG”
+“✅ Xác nhận mua”
+“❌ Hủy”
+
+==================================================
+1. LUỒNG MỚI
+==================================================
+
+Luồng phải là:
+
+Khách mở sản phẩm
+→ bấm Mua ngay
+→ nhập số lượng
+→ bot kiểm tra số lượng
+→ tạo đơn pending_payment ngay
+→ tạo mã thanh toán
+→ gửi QR SePay ngay
+
+Không hỏi xác nhận thêm lần nữa.
+
+==================================================
+2. KHI KHÁCH NHẬP SỐ LƯỢNG
+==================================================
+
+Nếu số lượng hợp lệ:
+
+- Kiểm tra sản phẩm còn hoạt động.
+- Kiểm tra số lượng tối thiểu.
+- Kiểm tra tồn kho nguồn mới nhất.
+- Tính tổng tiền.
+- Tạo đơn pending_payment.
+- Sinh payment_code duy nhất.
+- Tạo QR đúng số tiền và nội dung.
+- Chuyển thẳng sang màn hình thanh toán.
+
+Nếu số lượng không hợp lệ:
+- Báo lỗi.
+- Yêu cầu nhập lại.
+- Không tạo đơn.
+
+==================================================
+3. MÀN HÌNH THANH TOÁN
+==================================================
+
+Bot gửi ảnh QR với caption:
+
+💳 <b>THANH TOÁN ĐƠN HÀNG</b>
+
+Mã đơn: <code>{order_code}</code>
+Sản phẩm: {product_name}
+Số lượng: {quantity}
+Tổng tiền: <b>{formatted_amount}</b>
+
+Ngân hàng: {bank_name}
+Số tài khoản: <code>{account_number}</code>
+Chủ tài khoản: {account_owner}
+
+Nội dung chuyển khoản:
+<code>{payment_code}</code>
+
+⚠️ Vui lòng chuyển đúng số tiền và đúng nội dung.
+Đơn hết hạn sau {expiry_minutes} phút.
+
+Nút:
+
+🔄 Kiểm tra thanh toán
+❌ Hủy đơn
+💬 Hỗ trợ
+
+==================================================
+4. LƯU MESSAGE ID
+==================================================
+
+Sau khi gửi QR, lưu vào order:
+
+- payment_message_id
+- payment_chat_id
+- payment_message_type = photo
+
+Nếu trước đó có tin nhắn mô tả sản phẩm hoặc tin nhắn hỏi số lượng, lưu thêm:
+
+- product_message_id
+- quantity_prompt_message_id
+
+Mục đích:
+sau khi thanh toán thành công có thể xóa các tin nhắn cũ.
+
+==================================================
+5. SAU KHI NHẬN ĐỦ THANH TOÁN
+==================================================
+
+Khi webhook SePay xác nhận đủ tiền:
+
+1. Cập nhật payment_status = paid.
+2. Xóa tin nhắn QR bằng:
+   delete_message(chat_id, payment_message_id)
+3. Xóa tin nhắn mô tả sản phẩm cũ nếu có.
+4. Xóa tin nhắn hỏi số lượng nếu có.
+5. Xóa hoặc chỉnh sửa tin nhắn trạng thái chờ thanh toán.
+6. Gửi một tin nhắn ngắn:
+
+✅ Đã nhận thanh toán.
+Đang lấy hàng tự động từ nguồn...
+
+7. Sau đó mới gọi API nguồn.
+8. Khi API trả hàng, gửi tài khoản cho khách.
+
+==================================================
+6. XÓA TIN NHẮN AN TOÀN
+==================================================
+
+Viết hàm:
+
+safe_delete_message(bot, chat_id, message_id)
+
+Yêu cầu:
+- Nếu message_id rỗng thì bỏ qua.
+- Nếu Telegram báo message not found thì bỏ qua.
+- Nếu không có quyền xóa thì ghi log và tiếp tục.
+- Không để lỗi xóa tin nhắn làm hỏng xử lý đơn.
+
+Xóa theo thứ tự:
+
+- product_message_id
+- quantity_prompt_message_id
+- payment_message_id
+
+==================================================
+7. KHÔNG XÓA TIN NHẮN CỦA KHÁCH
+==================================================
+
+Không cần xóa tin nhắn số lượng khách tự nhập nếu bot không có quyền hoặc không cần thiết.
+
+Chỉ ưu tiên xóa:
+- mô tả sản phẩm do bot gửi
+- lời nhắc nhập số lượng do bot gửi
+- ảnh QR và caption thanh toán do bot gửi
+
+==================================================
+8. SAU KHI GIAO HÀNG
+==================================================
+
+Gửi duy nhất nội dung sạch:
+
+✅ <b>MUA HÀNG THÀNH CÔNG</b>
+
+Mã đơn: <code>{order_code}</code>
+Sản phẩm: {product_name}
+Số lượng: {quantity}
+Tổng tiền: {formatted_amount}
+
+📦 <b>TÀI KHOẢN CỦA BẠN</b>
+
+<code>{delivery_text}</code>
+
+Nút:
+
+📦 Xem đơn
+📥 Tải lại tài khoản
+💬 Hỗ trợ
+🏠 Trang chủ
+
+Không gửi lại QR.
+Không gửi JSON thô.
+Không gửi lại mô tả sản phẩm cũ.
+
+==================================================
+9. TRƯỜNG HỢP API NGUỒN LỖI SAU THANH TOÁN
+==================================================
+
+Vẫn xóa QR sau khi đã xác nhận tiền.
+
+Gửi:
+
+✅ Đã nhận thanh toán.
+
+⚠️ Nguồn hàng đang gặp lỗi.
+Đơn của bạn đã được chuyển sang xử lý thủ công.
+
+Admin sẽ gửi hàng sớm nhất.
+
+Không tạo QR lại.
+Không đánh dấu chưa thanh toán.
+
+==================================================
+10. HỦY ĐƠN
+==================================================
+
+Nếu khách bấm Hủy đơn khi chưa thanh toán:
+
+- Cập nhật order = cancelled.
+- Xóa QR.
+- Xóa mô tả sản phẩm và lời nhắc số lượng nếu có.
+- Gửi:
+  ❌ Đã hủy đơn hàng.
+
+Nếu đã thanh toán:
+- Không cho khách tự hủy.
+- Báo liên hệ hỗ trợ.
+
+==================================================
+11. CHỐNG TẠO NHIỀU ĐƠN
+==================================================
+
+Khi user vừa nhập số lượng và đơn pending_payment đã được tạo:
+
+- Không tạo thêm đơn nếu handler chạy lặp.
+- Dùng khóa trạng thái hoặc idempotency key.
+- Một lần nhập số lượng chỉ tạo đúng một order.
+- Nếu gửi QR thất bại thì giữ đơn pending_payment và cho nút “Tạo lại QR”.
+
+==================================================
+12. TEST BẮT BUỘC
+==================================================
+
+Test:
+
+1. Mở sản phẩm.
+2. Bấm Mua ngay.
+3. Nhập số lượng 1.
+4. Không còn màn hình xác nhận.
+5. Bot gửi QR ngay.
+6. Webhook đủ tiền.
+7. Bot xóa QR.
+8. Bot xóa mô tả sản phẩm cũ.
+9. Bot gửi trạng thái đang lấy hàng.
+10. API nguồn trả hàng.
+11. Bot giao tài khoản.
+12. Không gửi JSON thô.
+13. Webhook lặp không giao hàng lần hai.
+14. API lỗi sau thanh toán vẫn xóa QR và chuyển xử lý thủ công.
