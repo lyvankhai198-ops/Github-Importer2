@@ -299,44 +299,98 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # ── SePay flow ──
             from services.payment_service import is_sepay_enabled, create_pending_payment_order, generate_vietqr_url, get_sepay_config
             if is_sepay_enabled(db):
-                order = create_pending_payment_order(db, str(tg_user.id), product_id, quantity)
                 cfg = get_sepay_config(db)
-                product_name = order.product.name if order.product else str(product_id)
-                expires = order.payment_expires_at.strftime("%H:%M %d/%m/%Y") if order.payment_expires_at else "—"
 
+                # ── Validate bank config BEFORE creating order ──────────────
+                missing = []
+                if not (cfg and cfg.account_number and cfg.account_number.strip()):
+                    missing.append("số tài khoản")
+                if not (cfg and cfg.bank_bin and cfg.bank_bin.strip()):
+                    missing.append("mã BIN ngân hàng")
+                if not (cfg and cfg.account_name and cfg.account_name.strip()):
+                    missing.append("tên chủ tài khoản")
+
+                if missing:
+                    await query.message.edit_text(
+                        "⚠️ Không thể tạo đơn: chưa cấu hình đầy đủ thông tin ngân hàng.\n"
+                        "Vui lòng liên hệ hỗ trợ."
+                    )
+                    # Notify admin with details
+                    admin_id = _get_admin_id(db)
+                    if admin_id:
+                        try:
+                            await context.bot.send_message(
+                                chat_id=int(admin_id),
+                                text=(
+                                    "⚠️ <b>Thiếu cấu hình ngân hàng để tạo QR.</b>\n\n"
+                                    f"Còn thiếu: {', '.join(missing)}\n"
+                                    "Vào Settings → SePay để cập nhật."
+                                ),
+                                parse_mode="HTML",
+                            )
+                        except Exception:
+                            pass
+                    context.user_data.clear()
+                    return
+                # ────────────────────────────────────────────────────────────
+
+                order = create_pending_payment_order(db, str(tg_user.id), product_id, quantity)
+                product_name = order.product.name if order.product else str(product_id)
+                expiry_minutes = cfg.payment_timeout_minutes or 15
+
+                # ── Caption per spec ────────────────────────────────────────
                 payment_text = (
                     f"💳 <b>THANH TOÁN ĐƠN HÀNG</b>\n\n"
                     f"Mã đơn: <code>{order.order_code}</code>\n"
                     f"Sản phẩm: {html.escape(product_name)}\n"
                     f"Số lượng: {quantity}\n"
                     f"Số tiền: <b>{order.total_price:,.0f}đ</b>\n\n"
-                    f"🏦 Ngân hàng:\n<b>{html.escape(cfg.bank_name or '—')}</b>\n\n"
-                    f"💳 Số tài khoản:\n<code>{cfg.account_number or '—'}</code>\n\n"
-                    f"👤 Chủ tài khoản:\n<b>{html.escape(cfg.account_name or '—')}</b>\n\n"
-                    f"📝 Nội dung:\n<code>{order.payment_code}</code>\n\n"
-                    f"⏰ Hết hạn: {expires}\n\n"
-                    "Vui lòng chuyển <b>đúng số tiền</b> và <b>đúng nội dung</b>."
+                    f"Ngân hàng: {html.escape(cfg.bank_name or '—')}\n"
+                    f"Số tài khoản: <code>{cfg.account_number}</code>\n"
+                    f"Chủ tài khoản: {html.escape(cfg.account_name)}\n\n"
+                    f"Nội dung chuyển khoản:\n"
+                    f"<code>{order.payment_code}</code>\n\n"
+                    f"⚠️ Vui lòng chuyển đúng số tiền và đúng nội dung.\n"
+                    f"Đơn hết hạn sau {expiry_minutes} phút."
                 )
+                # ────────────────────────────────────────────────────────────
 
-                qr_url = None
-                if cfg.bank_bin and cfg.account_number:
-                    qr_url = generate_vietqr_url(
-                        cfg.bank_bin,
-                        cfg.account_number,
-                        order.total_price,
-                        order.payment_code,
-                        cfg.account_name or "",
-                    )
+                shop_name = cfg.bank_name or "AI Center"
+                qr_url = generate_vietqr_url(
+                    cfg.bank_bin,
+                    cfg.account_number,
+                    order.total_price,
+                    order.payment_code,
+                    cfg.account_name,
+                    shop_name,
+                )
 
                 kbd = payment_keyboard(order.id, support)
 
-                if qr_url:
+                # ── Send QR: try URL directly first, fallback to httpx ──────
+                sent = False
+
+                # Attempt 1: Telegram loads the image URL directly
+                try:
+                    await query.message.delete()
+                    await context.bot.send_photo(
+                        chat_id=tg_user.id,
+                        photo=qr_url,
+                        caption=payment_text,
+                        parse_mode="HTML",
+                        reply_markup=kbd,
+                    )
+                    sent = True
+                except Exception as e1:
+                    logger.warning(f"[payment] send_photo URL failed ({e1}), trying httpx download")
+
+                # Attempt 2: download with httpx then send as bytes
+                if not sent:
                     try:
                         import httpx as _httpx
                         async with _httpx.AsyncClient(timeout=15) as c:
                             r = await c.get(qr_url)
                         if r.status_code == 200:
-                            await query.message.delete()
                             await context.bot.send_photo(
                                 chat_id=tg_user.id,
                                 photo=io.BytesIO(r.content),
@@ -344,12 +398,37 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                 parse_mode="HTML",
                                 reply_markup=kbd,
                             )
+                            sent = True
                         else:
-                            raise Exception("QR fetch failed")
+                            raise Exception(f"QR HTTP {r.status_code}")
+                    except Exception as e2:
+                        logger.error(f"[payment] httpx QR download failed ({e2})")
+                        admin_id = _get_admin_id(db)
+                        if admin_id:
+                            try:
+                                await context.bot.send_message(
+                                    chat_id=int(admin_id),
+                                    text=(
+                                        f"⚠️ Không tải được QR cho đơn <code>{order.order_code}</code>\n"
+                                        f"URL: {qr_url[:200]}\nLỗi: {str(e2)[:200]}"
+                                    ),
+                                    parse_mode="HTML",
+                                )
+                            except Exception:
+                                pass
+
+                # Fallback: text-only payment info
+                if not sent:
+                    try:
+                        await context.bot.send_message(
+                            chat_id=tg_user.id,
+                            text=payment_text,
+                            parse_mode="HTML",
+                            reply_markup=kbd,
+                        )
                     except Exception:
-                        await query.message.edit_text(payment_text, parse_mode="HTML", reply_markup=kbd)
-                else:
-                    await query.message.edit_text(payment_text, parse_mode="HTML", reply_markup=kbd)
+                        pass
+                # ────────────────────────────────────────────────────────────
 
                 # Notify admin
                 admin_id = _get_admin_id(db)

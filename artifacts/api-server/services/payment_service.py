@@ -72,19 +72,33 @@ def generate_payment_code(order_code: str, prefix: str = "AIC") -> str:
 
 # ── VietQR ─────────────────────────────────────────────────────────────────────
 
-def generate_vietqr_url(bank_bin: str, account_number: str, amount: float,
-                         payment_code: str, account_name: str = "") -> str:
+def generate_vietqr_url(
+    bank_bin: str,
+    account_number: str,
+    amount: float,
+    payment_code: str,
+    account_name: str = "",
+    shop_name: str = "",
+) -> str:
     """
-    Build VietQR image URL using public img.vietqr.io.
-    No API key required.
+    Build VietQR image URL using vietqr.app.
+    All parameters are URL-encoded with urllib.parse.urlencode.
+    Sensitive fields (api_token, webhook_secret) are NEVER included here.
     """
-    amount_int = int(amount)
-    encoded_code = quote(payment_code, safe="")
-    encoded_name = quote(account_name, safe="")
-    return (
-        f"https://img.vietqr.io/image/{bank_bin}-{account_number}-qr_only.jpg"
-        f"?amount={amount_int}&addInfo={encoded_code}&accountName={encoded_name}"
-    )
+    from urllib.parse import urlencode
+    params = {
+        "acc": account_number,
+        "bank": bank_bin,
+        "amount": int(amount),
+        "des": payment_code,
+        "template": "compact",
+        "download": "0",
+        "showinfo": "1",
+        "fullacc": "0",
+        "holder": account_name,
+        "store": shop_name,
+    }
+    return "https://vietqr.app/img?" + urlencode(params)
 
 
 # ── Create pending payment order ───────────────────────────────────────────────

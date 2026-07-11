@@ -142,13 +142,18 @@
                   {% endif %}
                 </div>
                 <div class="col-12">
-                  <label class="form-label">Webhook Secret</label>
+                  <label class="form-label">Webhook Secret <span class="text-danger">*</span></label>
                   <div class="input-group">
                     <input type="password" name="webhook_secret" id="sepaySecretInput" class="form-control"
-                           placeholder="{{ masked_webhook_secret or 'Nhập webhook secret...' }}">
+                           placeholder="{{ masked_webhook_secret or 'Nhập webhook secret (bắt buộc để bật SePay)...' }}">
                     <button type="button" class="btn btn-outline-secondary" onclick="togglePass('sepaySecretInput', this)"><i class="bi bi-eye"></i></button>
                   </div>
-                  {% if masked_webhook_secret %}<small class="text-muted masked-field">{{ masked_webhook_secret }}</small>{% endif %}
+                  {% if masked_webhook_secret %}
+                    <small class="text-success"><i class="bi bi-check-circle-fill"></i> Đã cấu hình: <span class="masked-field">{{ masked_webhook_secret }}</span></small>
+                  {% else %}
+                    <small class="text-danger"><i class="bi bi-exclamation-triangle-fill"></i> Chưa có — SePay không thể bật khi thiếu Webhook Secret.</small>
+                  {% endif %}
+                  <small class="text-muted d-block mt-1">SePay gửi header: <code>Authorization: Apikey {WEBHOOK_SECRET}</code></small>
                 </div>
                 <div class="col-sm-6">
                   <label class="form-label">Tiền tố nội dung</label>

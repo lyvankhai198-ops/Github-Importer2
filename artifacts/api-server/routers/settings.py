@@ -250,19 +250,20 @@ async def save_sepay_settings(
     sepay = get_or_create_sepay_config(db)
     want_enabled = (is_enabled == "on")
 
-    # Determine effective token after this save (new input or existing stored)
+    # Determine effective webhook_secret after this save (new input or existing stored)
     new_token = api_token.strip() if api_token.strip() and not api_token.strip().startswith("*") else ""
-    existing_token = decrypt(sepay.api_token_encrypted) if sepay.api_token_encrypted else ""
-    effective_token = new_token or existing_token
+    new_secret = webhook_secret.strip() if webhook_secret.strip() and not webhook_secret.strip().startswith("*") else ""
+    existing_secret = decrypt(sepay.webhook_secret_encrypted) if sepay.webhook_secret_encrypted else ""
+    effective_secret = new_secret or existing_secret
 
-    # SECURITY: refuse to enable SePay without a valid API token.
-    # An empty token would leave the public webhook endpoint open to anyone.
-    if want_enabled and not effective_token:
+    # SECURITY: refuse to enable SePay without a Webhook Secret.
+    # SePay auth header is "Apikey {WEBHOOK_SECRET}" — no secret = fail-closed rejection of all webhooks.
+    if want_enabled and not effective_secret:
         flash(
             request,
-            "⚠️ Không thể bật SePay: chưa nhập API Token. "
-            "Webhook endpoint sẽ từ chối mọi request khi không có token — "
-            "nhập API Token trước khi bật.",
+            "⚠️ Không thể bật SePay: chưa nhập Webhook Secret. "
+            "Webhook endpoint dùng Webhook Secret để xác thực — "
+            "nhập Webhook Secret trước khi bật.",
             "error",
         )
         return RedirectResponse(url="/settings?tab=sepay", status_code=302)

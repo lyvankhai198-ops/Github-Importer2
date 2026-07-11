@@ -29,12 +29,14 @@ def _verify_sepay_auth(request: Request, db: Session) -> bool:
     cfg = db.query(SepayConfig).first()
     if not cfg or not cfg.is_enabled:
         return False
-    stored = decrypt(cfg.api_token_encrypted) if cfg.api_token_encrypted else ""
-    # FAIL-CLOSED: if no token configured, reject all requests
+    # SePay sends: Authorization: Apikey {WEBHOOK_SECRET}
+    # We compare against webhook_secret_encrypted (not api_token)
+    stored = decrypt(cfg.webhook_secret_encrypted) if cfg.webhook_secret_encrypted else ""
+    # FAIL-CLOSED: if no webhook secret configured, reject all requests
     if not stored:
         logger.warning(
-            "[webhook/sepay] SePay is enabled but no API token is configured — "
-            "rejecting all requests. Configure an API token in Settings → SePay."
+            "[webhook/sepay] SePay is enabled but no Webhook Secret is configured — "
+            "rejecting all requests. Configure a Webhook Secret in Settings → SePay."
         )
         return False
     auth = request.headers.get("Authorization", "")
