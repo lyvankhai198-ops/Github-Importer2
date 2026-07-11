@@ -474,6 +474,19 @@ async def _deliver_to_user(order: Order, db: Session):
         support = cfg.support_username if cfg else ""
         admin_id = cfg.admin_telegram_id if cfg else ""
         bot = bot_manager._application.bot
+
+        # Delete the QR payment message so the chat is clean
+        if order.payment_message_id:
+            try:
+                await bot.delete_message(
+                    chat_id=int(order.telegram_user_id),
+                    message_id=order.payment_message_id,
+                )
+                order.payment_message_id = None
+                db.commit()
+            except Exception as e:
+                logger.debug(f"[payment] could not delete QR msg: {e}")
+
         sv = order.status.value if hasattr(order.status, "value") else str(order.status)
 
         if sv == "completed":

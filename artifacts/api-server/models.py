@@ -239,6 +239,7 @@ class Order(Base):
     paid_at = Column(DateTime, nullable=True)
     payment_transaction_id = Column(String(255), nullable=True)
     payment_raw_data = Column(Text, nullable=True)
+    payment_message_id = Column(Integer, nullable=True)  # Telegram message_id of QR photo
     # ─────────────────────────────────────────────────────────────────────────
     created_at = Column(DateTime, default=now)
     updated_at = Column(DateTime, default=now, onupdate=now)
