@@ -1,0 +1,430 @@
+Cập nhật project AI Center Web Bot Manager hiện tại.
+
+Không tạo project mới.
+Không xóa database.
+Giữ nguyên các kết nối API và đơn hàng hiện có.
+
+MỤC TIÊU:
+
+Bot Telegram của tôi phải hiển thị sản phẩm nguồn đầy đủ, đẹp và dễ đọc.
+Khi khách mua thành công, bot phải tự động lấy dữ liệu tài khoản từ phản hồi API nguồn và giao ngay cho khách.
+Tuyệt đối không gửi nguyên JSON thô cho khách.
+
+==================================================
+1. ĐỒNG BỘ ĐẦY ĐỦ SẢN PHẨM NGUỒN
+==================================================
+
+Khi gọi:
+
+GET /products
+
+Phải lưu toàn bộ các trường API trả về, gồm nếu có:
+
+- product_id
+- name
+- title
+- description
+- price
+- stock
+- min_quantity
+- max_quantity
+- warranty
+- duration
+- status
+- image
+- category
+- delivery_note
+- raw_json
+
+Không chỉ lưu tên, giá và tồn kho.
+
+Thêm hoặc cập nhật bảng api_products:
+
+- external_product_id
+- external_name
+- external_description
+- external_price
+- external_stock
+- external_min_quantity
+- external_max_quantity
+- external_warranty
+- external_duration
+- external_status
+- external_image_url
+- raw_json
+- last_sync_at
+
+Nếu API sử dụng tên field khác nhau, viết hàm normalize_product_data() để tự nhận diện.
+
+Ví dụ hỗ trợ:
+
+description
+desc
+details
+content
+note
+
+stock
+quantity
+available
+inventory
+
+price
+unit_price
+amount
+
+==================================================
+2. SẢN PHẨM BÁN TRÊN WEB
+==================================================
+
+Khi admin tạo sản phẩm từ API nguồn, tự điền:
+
+- Tên nguồn
+- Mô tả nguồn
+- Giá nguồn
+- Tồn kho nguồn
+- Số lượng tối thiểu nguồn
+- Thời hạn
+- Bảo hành
+
+Admin được sửa:
+
+- Tên hiển thị trên bot
+- Mô tả hiển thị
+- Giá bán
+- Ảnh
+- Số lượng tối thiểu bán
+- Bật/tắt
+
+Không được ghi đè giá bán của admin khi đồng bộ API.
+
+Nếu admin chưa nhập mô tả riêng:
+- dùng mô tả nguồn.
+
+Nếu admin đã nhập mô tả riêng:
+- giữ mô tả admin.
+
+==================================================
+3. HIỂN THỊ DANH SÁCH SẢN PHẨM TRÊN BOT
+==================================================
+
+Danh sách sản phẩm chỉ hiển thị nút:
+
+🟢 Tên sản phẩm
+🟡 Tên sản phẩm
+🔴 Tên sản phẩm
+
+Không hiển thị mô tả dài ở danh sách.
+
+Khi khách bấm vào sản phẩm, mới hiển thị chi tiết.
+
+==================================================
+4. CHI TIẾT SẢN PHẨM TRÊN BOT
+==================================================
+
+Trang chi tiết phải hiển thị đẹp, không JSON.
+
+Ví dụ:
+
+📦 [BHF] Canva Edu 1 Năm
+
+💰 Giá bán: 40.000đ/tài khoản
+📊 Tồn kho nguồn: 4
+🛒 Tối thiểu: 1
+⌛ Thời hạn: 1 năm
+🛡 Bảo hành: Full
+
+📝 Mô tả:
+<description lấy từ web hoặc nguồn API>
+
+Nút:
+
+🛒 Mua ngay
+🔙 Quay lại
+🏠 Trang chủ
+
+Nếu có ảnh:
+- gửi ảnh + caption.
+
+Nếu không có ảnh:
+- gửi text.
+
+==================================================
+5. LUỒNG MUA HÀNG
+==================================================
+
+Khi khách bấm “🛒 Mua ngay”:
+
+Bot hỏi:
+
+🔢 Nhập số lượng bạn muốn mua:
+
+Kiểm tra:
+
+- Phải là số nguyên.
+- Không nhỏ hơn minimum_quantity.
+- Không lớn hơn stock nguồn mới nhất.
+- Nếu giá hoặc tồn kho cũ quá 2 phút, gọi lại GET /products trước khi xác nhận.
+
+Sau đó hiển thị:
+
+🛒 XÁC NHẬN ĐƠN HÀNG
+
+Sản phẩm:
+Số lượng:
+Đơn giá:
+Tổng tiền:
+Nguồn giao: Tự động qua API
+
+Nút:
+
+✅ Xác nhận mua
+❌ Hủy
+
+==================================================
+6. GỌI API MUA HÀNG
+==================================================
+
+Khi khách xác nhận:
+
+POST /buy
+
+Header:
+
+X-API-Key: <api_key>
+Content-Type: application/json
+
+Body:
+
+{
+  "product_id": "<external_product_id>",
+  "quantity": <quantity>
+}
+
+Không dùng giá bán làm product_id.
+
+Không gửi request hai lần nếu khách bấm nút nhiều lần.
+
+Dùng:
+- idempotency key nội bộ
+- khóa trạng thái đơn processing
+- disable callback sau lần bấm đầu
+
+==================================================
+7. PARSE PHẢN HỒI API
+==================================================
+
+API nguồn có thể trả dạng:
+
+{
+  "success": true,
+  "order": {
+    "order_code": "DH185192453",
+    "product_name": "...",
+    "product_id": "...",
+    "quantity": 1,
+    "unit_price": 10000,
+    "amount": 10000,
+    "accounts": [
+      "email|password"
+    ],
+    "balance_after": 80500
+  }
+}
+
+Hoặc accounts có thể là:
+
+- string
+- array string
+- array object
+- account
+- items
+- data
+- result
+- credentials
+
+Viết hàm:
+
+normalize_delivery_items(response_json)
+
+Chuẩn hóa thành:
+
+[
+  {
+    "username": "",
+    "password": "",
+    "value": "",
+    "note": ""
+  }
+]
+
+Nếu `accounts` là một chuỗi:
+- nếu chứa xuống dòng thì tách từng dòng
+- nếu là một tài khoản thì giữ một dòng
+
+Nếu là object:
+- đọc các field:
+  email
+  username
+  account
+  password
+  pass
+  key
+  code
+  value
+  note
+
+==================================================
+8. GIAO HÀNG CHO KHÁCH
+==================================================
+
+Sau khi API trả thành công:
+
+Không gửi nguyên JSON.
+
+Phải gửi:
+
+✅ ĐƠN HÀNG THÀNH CÔNG
+
+Mã đơn: ORD-XXXX
+Mã đơn nguồn: DH185192453
+Sản phẩm: [BHF] Canva Edu 1 Năm
+Số lượng: 1
+Tổng tiền: 40.000đ
+
+📦 TÀI KHOẢN CỦA BẠN:
+
+<code>email|password</code>
+
+Cảm ơn bạn đã mua hàng.
+
+Nếu nhiều tài khoản:
+
+- Từ 1 đến 10: gửi mỗi tài khoản một dòng trong code block.
+- Trên 10: tạo file TXT và gửi cho khách.
+
+Tên file:
+
+ORD-XXXX.txt
+
+Mỗi dòng:
+
+email|password
+
+Dữ liệu code phải được escape HTML bằng html.escape().
+
+Dùng parse_mode="HTML".
+
+==================================================
+9. NÚT SAU KHI GIAO
+==================================================
+
+Sau khi giao thành công, hiện:
+
+📦 Xem đơn hàng
+📥 Tải lại tài khoản
+💬 Hỗ trợ
+🏠 Trang chủ
+
+Chỉ chủ đơn và admin được tải lại.
+
+==================================================
+10. WEB CHI TIẾT ĐƠN
+==================================================
+
+Trên web không được hiện raw JSON lộn xộn làm nội dung chính.
+
+Thay bằng các mục:
+
+- Mã đơn nội bộ
+- Mã đơn nguồn
+- Nguồn API
+- Sản phẩm
+- Số lượng
+- Giá nguồn
+- Giá bán
+- Tổng tiền
+- Lợi nhuận
+- Trạng thái
+- Thời gian
+- Dữ liệu giao hàng đã chuẩn hóa
+
+Phần “Phản hồi API gốc” phải:
+
+- thu gọn mặc định
+- có nút “Xem JSON gốc”
+- hiển thị JSON được format đẹp bằng indent
+- không hiển thị ngay giữa trang
+
+==================================================
+11. KHÔNG ĐỂ LỘ DỮ LIỆU NHẠY CẢM
+==================================================
+
+- Không ghi tài khoản/password vào activity logs.
+- Không ghi API key.
+- Không gửi raw response cho user.
+- Chỉ admin mới xem được raw JSON trên web.
+- Không hiển thị balance_after cho khách.
+- Không gửi giá nguồn cho khách.
+- Bot chỉ hiển thị giá bán.
+
+==================================================
+12. TRƯỜNG HỢP API TRẢ THIẾU HÀNG
+==================================================
+
+Nếu success = false:
+- không báo đơn thành công.
+- lưu error_message.
+- chuyển đơn failed.
+- gửi khách:
+
+❌ Mua hàng thất bại.
+Nguồn hiện chưa thể giao hàng. Vui lòng thử lại hoặc liên hệ hỗ trợ.
+
+Nếu API báo thành công nhưng số tài khoản trả về ít hơn quantity:
+- không đánh dấu hoàn thành hoàn toàn.
+- chuyển trạng thái partial_delivery.
+- gửi phần đã nhận cho khách.
+- báo admin ngay.
+- lưu số lượng thiếu.
+
+==================================================
+13. ĐỒNG BỘ TRẠNG THÁI ĐƠN NGUỒN
+==================================================
+
+Nếu phản hồi mua chưa có tài khoản ngay:
+
+- lưu mã đơn nguồn
+- gọi GET /orders/{order_id}
+- kiểm tra lại trạng thái tối đa 5 lần
+- khoảng cách 2 giây
+- nếu nhận được accounts thì giao ngay
+- nếu vẫn pending thì báo khách:
+
+⏳ Đơn đang được nguồn xử lý.
+Bot sẽ gửi tài khoản ngay khi nguồn trả hàng.
+
+Tạo background job tiếp tục kiểm tra.
+
+==================================================
+14. TEST BẮT BUỘC
+==================================================
+
+Dùng một sản phẩm nguồn thử nghiệm.
+
+Test:
+
+1. Đồng bộ GET /products.
+2. Mô tả nguồn được lưu đầy đủ.
+3. Bot hiện đúng mô tả.
+4. Giá bot là giá bán admin đặt, không phải giá nguồn.
+5. Bấm mua số lượng 1.
+6. POST /buy chỉ gọi đúng một lần.
+7. API trả accounts.
+8. Bot chỉ gửi tài khoản, không gửi JSON.
+9. Web hiện thông tin đơn đã format.
+10. Raw JSON được thu gọn.
+11. Mua nhiều tài khoản tạo file TXT.
+12. Không ghi password vào log.
+13. API lỗi không báo thành công.
+14. API trả thiếu số lượng phải báo partial.

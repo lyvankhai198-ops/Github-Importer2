@@ -36,6 +36,7 @@ class OrderStatus(str, enum.Enum):
     pending_manual = "pending_manual"
     processing_api = "processing_api"
     completed = "completed"
+    partial_delivery = "partial_delivery"
     failed = "failed"
     cancelled = "cancelled"
 
@@ -103,6 +104,9 @@ class Product(Base):
     description = Column(Text, nullable=True)
     image_path = Column(String(500), nullable=True)
     sale_price = Column(Float, default=0.0)
+    min_quantity = Column(Integer, default=1)      # minimum purchase quantity
+    warranty = Column(String(255), nullable=True)  # e.g. "Full"
+    duration = Column(String(255), nullable=True)  # e.g. "1 năm"
     source_type = Column(SAEnum(SourceType), default=SourceType.manual)
     delivery_mode = Column(SAEnum(DeliveryMode), default=DeliveryMode.manual)
     is_active = Column(Boolean, default=True)
@@ -140,8 +144,14 @@ class ApiProduct(Base):
     api_connection_id = Column(Integer, ForeignKey("api_connections.id"), nullable=False)
     external_product_id = Column(String(255), nullable=False)
     external_name = Column(String(500), nullable=True)
+    external_description = Column(Text, nullable=True)       # NEW
     external_price = Column(Float, nullable=True)
     external_stock = Column(Integer, nullable=True)
+    external_min_quantity = Column(Integer, nullable=True)   # NEW
+    external_max_quantity = Column(Integer, nullable=True)   # NEW
+    external_warranty = Column(String(255), nullable=True)   # NEW
+    external_duration = Column(String(255), nullable=True)   # NEW
+    external_image_url = Column(String(1000), nullable=True) # NEW
     external_status = Column(String(100), nullable=True)
     raw_json = Column(Text, nullable=True)
     last_sync_at = Column(DateTime, nullable=True)
@@ -178,9 +188,13 @@ class Order(Base):
     quantity = Column(Integer, default=1)
     unit_price = Column(Float, default=0.0)
     total_price = Column(Float, default=0.0)
+    source_unit_price = Column(Float, nullable=True)          # NEW: cost from API
     api_connection_id = Column(Integer, ForeignKey("api_connections.id"), nullable=True)
-    external_order_id = Column(String(255), nullable=True)
-    delivery_data = Column(Text, nullable=True)
+    external_order_id = Column(String(255), nullable=True)    # internal API order id
+    external_order_code = Column(String(255), nullable=True)  # NEW: human-readable source code e.g. DH185192453
+    delivery_data = Column(Text, nullable=True)               # raw API response (JSON)
+    delivery_items = Column(Text, nullable=True)              # NEW: normalized items JSON
+    partial_count = Column(Integer, nullable=True)            # NEW: how many actually delivered
     status = Column(SAEnum(OrderStatus), default=OrderStatus.pending_manual)
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime, default=now)

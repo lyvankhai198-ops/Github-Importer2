@@ -1,14 +1,39 @@
 {% extends "base.html" %}
 {% block title %}Đơn hàng {{ order.order_code }} - AI Center{% endblock %}
 {% block page_title %}🧾 Chi tiết đơn hàng{% endblock %}
+
+{% block extra_head %}
+<style>
+.account-item {
+  font-family: monospace;
+  background: var(--bs-tertiary-bg, #f8f9fa);
+  border: 1px solid var(--bs-border-color);
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-bottom: 6px;
+  word-break: break-all;
+  font-size: 0.88rem;
+}
+.profit-positive { color: #198754; font-weight: 600; }
+.profit-negative { color: #dc3545; font-weight: 600; }
+.info-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1rem; }
+.info-cell label { font-size: 0.75rem; color: var(--bs-secondary-color); display: block; margin-bottom: 2px; }
+</style>
+{% endblock %}
+
 {% block content %}
+{% set sv = order.status.value if order.status.value is defined else order.status %}
 <div class="row g-3">
+
+  {# ── LEFT COLUMN ── #}
   <div class="col-12 col-lg-8">
+
+    {# ── Header card ── #}
     <div class="card mb-3">
-      <div class="card-header d-flex justify-content-between align-items-center">
-        <h5 class="mb-0">{{ order.order_code }}</h5>
-        {% set sv = order.status.value if order.status.value is defined else order.status %}
+      <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <h5 class="mb-0"><code>{{ order.order_code }}</code></h5>
         {% if sv == 'completed' %}<span class="badge bg-success fs-6">✅ Hoàn thành</span>
+        {% elif sv == 'partial_delivery' %}<span class="badge bg-warning text-dark fs-6">⚠️ Giao thiếu</span>
         {% elif sv == 'pending_manual' %}<span class="badge bg-warning text-dark fs-6">⏳ Chờ xử lý</span>
         {% elif sv == 'processing_api' %}<span class="badge bg-info fs-6">🔄 Đang xử lý</span>
         {% elif sv == 'failed' %}<span class="badge bg-danger fs-6">❌ Thất bại</span>
@@ -16,38 +41,136 @@
         {% else %}<span class="badge bg-secondary fs-6">{{ sv }}</span>{% endif %}
       </div>
       <div class="card-body">
-        <div class="row g-3">
-          <div class="col-6"><label class="text-muted small">Người dùng Telegram</label><div class="fw-semibold">{{ order.telegram_user_id }}</div></div>
-          <div class="col-6"><label class="text-muted small">Sản phẩm</label><div class="fw-semibold">{{ order.product.name if order.product else order.product_id }}</div></div>
-          <div class="col-6"><label class="text-muted small">Số lượng</label><div>{{ order.quantity }}</div></div>
-          <div class="col-6"><label class="text-muted small">Đơn giá</label><div>{{ "{:,.0f}".format(order.unit_price) }}đ</div></div>
-          <div class="col-6"><label class="text-muted small">Tổng tiền</label><div class="fw-bold text-primary fs-5">{{ "{:,.0f}".format(order.total_price) }}đ</div></div>
-          <div class="col-6"><label class="text-muted small">Thời gian tạo</label><div>{{ order.created_at.strftime('%d/%m/%Y %H:%M:%S') }}</div></div>
-          {% if order.external_order_id %}<div class="col-6"><label class="text-muted small">ID đơn ngoài</label><div><code>{{ order.external_order_id }}</code></div></div>{% endif %}
-          {% if order.notes %}<div class="col-12"><label class="text-muted small">Ghi chú</label><div>{{ order.notes }}</div></div>{% endif %}
+        <div class="info-grid">
+          <div class="info-cell">
+            <label>Người dùng Telegram</label>
+            <div class="fw-semibold"><code>{{ order.telegram_user_id }}</code></div>
+          </div>
+          <div class="info-cell">
+            <label>Sản phẩm</label>
+            <div class="fw-semibold">{{ order.product.name if order.product else order.product_id }}</div>
+          </div>
+          <div class="info-cell">
+            <label>Số lượng</label>
+            <div>{{ order.quantity }}
+              {% if order.partial_count is not none and order.partial_count != order.quantity %}
+                <span class="badge bg-warning text-dark ms-1">Giao {{ order.partial_count }}/{{ order.quantity }}</span>
+              {% endif %}
+            </div>
+          </div>
+          <div class="info-cell">
+            <label>Đơn giá bán</label>
+            <div>{{ "{:,.0f}".format(order.unit_price) }}đ</div>
+          </div>
+          <div class="info-cell">
+            <label>Giá nguồn</label>
+            <div>{{ "{:,.0f}".format(order.source_unit_price) if order.source_unit_price else "—" }}đ</div>
+          </div>
+          <div class="info-cell">
+            <label>Tổng tiền</label>
+            <div class="fw-bold text-primary fs-5">{{ "{:,.0f}".format(order.total_price) }}đ</div>
+          </div>
+          {% if order.source_unit_price %}
+          <div class="info-cell">
+            <label>Lợi nhuận</label>
+            {% set profit = (order.unit_price - order.source_unit_price) * order.quantity %}
+            <div class="{% if profit >= 0 %}profit-positive{% else %}profit-negative{% endif %}">
+              {{ "{:,.0f}".format(profit) }}đ
+            </div>
+          </div>
+          {% endif %}
+          <div class="info-cell">
+            <label>Nguồn API</label>
+            <div>{{ order.api_connection.name if order.api_connection else "—" }}</div>
+          </div>
+          <div class="info-cell">
+            <label>Mã đơn nguồn</label>
+            <div><code>{{ order.external_order_code or order.external_order_id or "—" }}</code></div>
+          </div>
+          <div class="info-cell">
+            <label>Thời gian tạo</label>
+            <div>{{ order.created_at.strftime('%d/%m/%Y %H:%M:%S') }}</div>
+          </div>
+          {% if order.notes %}
+          <div class="info-cell" style="grid-column: 1/-1">
+            <label>Ghi chú</label>
+            <div>{{ order.notes }}</div>
+          </div>
+          {% endif %}
         </div>
       </div>
     </div>
 
-    {% if order.delivery_data %}
+    {# ── Normalized delivery items ── #}
+    {% if delivery_items %}
+    <div class="card mb-3">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <h6 class="mb-0">📦 Dữ liệu giao hàng
+          <span class="badge bg-secondary ms-1">{{ delivery_items|length }} tài khoản</span>
+        </h6>
+        <button class="btn btn-sm btn-outline-secondary" onclick="copyAll()">
+          <i class="bi bi-clipboard"></i> Sao chép tất cả
+        </button>
+      </div>
+      <div class="card-body" id="deliveryBlock">
+        {% for item in delivery_items %}
+        <div class="account-item">
+          {% if item.value %}{{ item.value }}{% elif item.username %}{{ item.username }}{% if item.password %}|{{ item.password }}{% endif %}{% endif %}
+          {% if item.note %} <span class="text-muted small ms-2">{{ item.note }}</span>{% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% elif order.delivery_data and sv == 'completed' %}
+    {# Fallback: old orders without normalized items #}
     <div class="card mb-3">
       <div class="card-header"><h6 class="mb-0">📦 Thông tin giao hàng</h6></div>
-      <div class="card-body"><pre class="mb-0" style="white-space:pre-wrap;word-break:break-all">{{ order.delivery_data }}</pre></div>
+      <div class="card-body">
+        <pre class="mb-0" style="white-space:pre-wrap;word-break:break-all;font-size:0.85rem">{{ order.delivery_data }}</pre>
+      </div>
     </div>
     {% endif %}
 
+    {# ── Raw JSON (collapsed) ── #}
+    {% if order.delivery_data %}
+    <div class="mb-3">
+      <div class="accordion" id="rawJsonAccordion">
+        <div class="accordion-item">
+          <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button"
+                    data-bs-toggle="collapse" data-bs-target="#rawJsonPanel">
+              🔍 Xem JSON gốc từ API nguồn
+            </button>
+          </h2>
+          <div id="rawJsonPanel" class="accordion-collapse collapse" data-bs-parent="#rawJsonAccordion">
+            <div class="accordion-body p-0">
+              <pre class="mb-0 p-3" style="font-size:0.78rem;max-height:400px;overflow:auto;background:var(--bs-tertiary-bg)">{{ raw_json_pretty }}</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    {# ── Source attempt history ── #}
     {% if order.source_attempts %}
     <div class="card mb-3">
       <div class="card-header"><h6 class="mb-0">🔄 Lịch sử thử nguồn</h6></div>
       <div class="card-body p-0">
         <table class="table table-sm mb-0">
-          <thead><tr><th>#</th><th>Nguồn</th><th>Trạng thái</th><th>External ID</th><th>Lỗi</th></tr></thead>
+          <thead>
+            <tr><th>#</th><th>Nguồn</th><th>Trạng thái</th><th>Mã đơn nguồn</th><th>Lỗi</th></tr>
+          </thead>
           <tbody>
             {% for a in order.source_attempts %}
             <tr>
               <td>{{ a.attempt_number }}</td>
-              <td>{{ a.product_source_id }}</td>
-              <td><span class="badge {% if a.status=='success' %}bg-success{% else %}bg-danger{% endif %}">{{ a.status }}</span></td>
+              <td>{{ a.product_source.api_product.connection.name if a.product_source and a.product_source.api_product and a.product_source.api_product.connection else a.product_source_id }}</td>
+              <td>
+                <span class="badge {% if a.status=='success' %}bg-success{% else %}bg-danger{% endif %}">
+                  {{ a.status }}
+                </span>
+              </td>
               <td><code>{{ a.external_order_id or '—' }}</code></td>
               <td><small class="text-danger">{{ a.error_message or '' }}</small></td>
             </tr>
@@ -59,52 +182,80 @@
     {% endif %}
   </div>
 
+  {# ── RIGHT COLUMN — Actions ── #}
   <div class="col-12 col-lg-4">
-    <!-- Complete Order -->
-    {% set sv = order.status.value if order.status.value is defined else order.status %}
-    {% if sv in ['pending_manual', 'processing_api', 'failed'] %}
+
+    {% if sv in ['pending_manual', 'processing_api', 'failed', 'partial_delivery'] %}
     <div class="card mb-3">
       <div class="card-header"><h6 class="mb-0">✅ Hoàn thành đơn hàng</h6></div>
       <form action="/orders/{{ order.id }}/complete" method="post">
         <div class="card-body">
           <label class="form-label">Thông tin giao hàng / Kết quả</label>
-          <textarea name="delivery_data" class="form-control" rows="4" placeholder="Nhập thông tin giao hàng...">{{ order.delivery_data or '' }}</textarea>
+          <textarea name="delivery_data" class="form-control" rows="4"
+                    placeholder="Nhập thông tin giao hàng...">{{ order.delivery_data or '' }}</textarea>
         </div>
-        <div class="card-footer"><button type="submit" class="btn btn-success w-100"><i class="bi bi-check-circle"></i> Hoàn thành & Gửi cho user</button></div>
+        <div class="card-footer">
+          <button type="submit" class="btn btn-success w-100">
+            <i class="bi bi-check-circle"></i> Hoàn thành & Gửi cho user
+          </button>
+        </div>
       </form>
     </div>
     {% endif %}
 
-    <!-- Change Status -->
     <div class="card mb-3">
       <div class="card-header"><h6 class="mb-0">🔁 Đổi trạng thái</h6></div>
       <form action="/orders/{{ order.id }}/status" method="post">
         <div class="card-body">
           <select name="new_status" class="form-select">
-            {% for st in order_statuses %}<option value="{{ st }}" {% if sv == st %}selected{% endif %}>{{ st }}</option>{% endfor %}
+            {% for st in order_statuses %}
+            <option value="{{ st }}" {% if sv == st %}selected{% endif %}>{{ st }}</option>
+            {% endfor %}
           </select>
         </div>
-        <div class="card-footer"><button type="submit" class="btn btn-warning w-100">Cập nhật trạng thái</button></div>
+        <div class="card-footer">
+          <button type="submit" class="btn btn-warning w-100">Cập nhật trạng thái</button>
+        </div>
       </form>
     </div>
 
-    <!-- Notify User -->
     <div class="card mb-3">
       <div class="card-header"><h6 class="mb-0">💬 Gửi tin nhắn cho user</h6></div>
       <form action="/orders/{{ order.id }}/notify" method="post">
-        <div class="card-body"><textarea name="message" class="form-control" rows="3" placeholder="Nội dung tin nhắn..."></textarea></div>
-        <div class="card-footer"><button type="submit" class="btn btn-info w-100 text-white">Gửi tin nhắn</button></div>
+        <div class="card-body">
+          <textarea name="message" class="form-control" rows="3" placeholder="Nội dung tin nhắn..."></textarea>
+        </div>
+        <div class="card-footer">
+          <button type="submit" class="btn btn-info w-100 text-white">Gửi tin nhắn</button>
+        </div>
       </form>
     </div>
 
-    <!-- Cancel -->
     {% if sv not in ['cancelled', 'completed'] %}
-    <form action="/orders/{{ order.id }}/cancel" method="post" onsubmit="return confirm('Hủy đơn hàng này?')">
-      <button type="submit" class="btn btn-outline-danger w-100"><i class="bi bi-x-circle"></i> Hủy đơn hàng</button>
+    <form action="/orders/{{ order.id }}/cancel" method="post"
+          onsubmit="return confirm('Hủy đơn hàng này?')" class="mb-3">
+      <button type="submit" class="btn btn-outline-danger w-100">
+        <i class="bi bi-x-circle"></i> Hủy đơn hàng
+      </button>
     </form>
     {% endif %}
 
-    <div class="mt-3"><a href="/orders" class="btn btn-outline-secondary w-100"><i class="bi bi-arrow-left"></i> Quay lại</a></div>
+    <a href="/orders" class="btn btn-outline-secondary w-100">
+      <i class="bi bi-arrow-left"></i> Quay lại
+    </a>
   </div>
 </div>
+
+<script>
+function copyAll() {
+  const items = document.querySelectorAll('#deliveryBlock .account-item');
+  const text = Array.from(items).map(el => el.textContent.trim()).join('\n');
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = event.target.closest('button');
+    const orig = btn.innerHTML;
+    btn.innerHTML = '<i class="bi bi-check"></i> Đã sao chép!';
+    setTimeout(() => btn.innerHTML = orig, 2000);
+  });
+}
+</script>
 {% endblock %}

@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
+from sqlalchemy import text
 
 from config import SECRET_KEY, ADMIN_USERNAME, ADMIN_PASSWORD, PORT
 from database import engine, SessionLocal
@@ -17,10 +18,41 @@ UPLOADS_DIR = BASE_DIR / "uploads"
 STATIC_DIR = BASE_DIR / "static"
 
 
+def _run_migrations():
+    """Add new columns to existing tables without dropping data."""
+    migrations = [
+        # ApiProduct new fields
+        "ALTER TABLE api_products ADD COLUMN external_description TEXT",
+        "ALTER TABLE api_products ADD COLUMN external_min_quantity INTEGER",
+        "ALTER TABLE api_products ADD COLUMN external_max_quantity INTEGER",
+        "ALTER TABLE api_products ADD COLUMN external_warranty VARCHAR(255)",
+        "ALTER TABLE api_products ADD COLUMN external_duration VARCHAR(255)",
+        "ALTER TABLE api_products ADD COLUMN external_image_url VARCHAR(1000)",
+        # Product new fields
+        "ALTER TABLE products ADD COLUMN min_quantity INTEGER DEFAULT 1",
+        "ALTER TABLE products ADD COLUMN warranty VARCHAR(255)",
+        "ALTER TABLE products ADD COLUMN duration VARCHAR(255)",
+        # Order new fields
+        "ALTER TABLE orders ADD COLUMN source_unit_price FLOAT",
+        "ALTER TABLE orders ADD COLUMN external_order_code VARCHAR(255)",
+        "ALTER TABLE orders ADD COLUMN delivery_items TEXT",
+        "ALTER TABLE orders ADD COLUMN partial_count INTEGER",
+    ]
+    with engine.connect() as conn:
+        for sql in migrations:
+            try:
+                conn.execute(text(sql))
+                conn.commit()
+            except Exception:
+                # Column already exists — safe to ignore
+                pass
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
     Base.metadata.create_all(bind=engine)
+    _run_migrations()
     UPLOADS_DIR.mkdir(exist_ok=True)
 
     db = SessionLocal()

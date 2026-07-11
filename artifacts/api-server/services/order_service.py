@@ -1,17 +1,31 @@
 import uuid
 import json
+import asyncio
+import logging
 from datetime import datetime
 from sqlalchemy.orm import Session
 from models import Order, OrderSourceAttempt, Product, User, OrderStatus, DeliveryMode
 from services.product_service import get_best_source
+from services.normalize import normalize_delivery_items
 from integrations.manager import api_manager
+
+logger = logging.getLogger(__name__)
+
+# Idempotency: track orders being processed to prevent double-submit
+_processing_keys: set = set()
 
 
 def _generate_order_code() -> str:
     return "ORD-" + uuid.uuid4().hex[:8].upper()
 
 
-def get_or_create_user(db: Session, telegram_id: str, username: str = None, first_name: str = None, last_name: str = None) -> User:
+def get_or_create_user(
+    db: Session,
+    telegram_id: str,
+    username: str = None,
+    first_name: str = None,
+    last_name: str = None,
+) -> User:
     user = db.query(User).filter(User.telegram_id == telegram_id).first()
     if not user:
         user = User(
@@ -36,7 +50,29 @@ def get_or_create_user(db: Session, telegram_id: str, username: str = None, firs
     return user
 
 
-async def create_order(db: Session, telegram_user_id: str, product_id: int, quantity: int) -> Order:
+async def _poll_source_order(adapter, external_order_id: str, max_attempts: int = 5, delay: float = 2.0):
+    """Poll GET /orders/{id} until accounts arrive or attempts exhaust."""
+    for attempt in range(max_attempts):
+        await asyncio.sleep(delay)
+        try:
+            result = await adapter.get_order(external_order_id)
+            if result.get("success"):
+                data = result.get("data", {})
+                items = normalize_delivery_items(data)
+                if items:
+                    return data, items
+        except Exception as e:
+            logger.warning(f"Poll attempt {attempt+1} failed: {e}")
+    return None, []
+
+
+async def create_order(
+    db: Session,
+    telegram_user_id: str,
+    product_id: int,
+    quantity: int,
+    idempotency_key: str = None,
+) -> Order:
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
         raise ValueError("Product not found")
@@ -58,40 +94,96 @@ async def create_order(db: Session, telegram_user_id: str, product_id: int, quan
     db.refresh(order)
 
     if product.delivery_mode == DeliveryMode.api_auto:
-        order.status = OrderStatus.processing_api
-        db.commit()
-        attempt_num = 1
-        source = get_best_source(db, product_id)
-        while source:
-            adapter = api_manager.get_adapter(source.api_product.connection)
-            result = await adapter.buy_product(
-                product_id=source.api_product.external_product_id,
-                quantity=quantity,
-                idempotency_key=order_code,
-            )
-            attempt = OrderSourceAttempt(
-                order_id=order.id,
-                product_source_id=source.id,
-                attempt_number=attempt_num,
-                status="success" if result.get("success") else "failed",
-                error_message=result.get("message") if not result.get("success") else None,
-                external_order_id=result.get("order_id"),
-            )
-            db.add(attempt)
-            db.commit()
-            if result.get("success"):
-                order.status = OrderStatus.completed
-                order.api_connection_id = source.api_product.api_connection_id
-                order.external_order_id = result.get("order_id")
-                order.delivery_data = json.dumps(result.get("data", {}))
-                db.commit()
-                break
-            attempt_num += 1
-            source = None
-        else:
-            order.status = OrderStatus.failed
+        idem_key = idempotency_key or order_code
+
+        # Idempotency guard — prevent double-submit
+        if idem_key in _processing_keys:
+            logger.warning(f"Order {order_code} already processing, skipping duplicate")
+            db.refresh(order)
+            return order
+        _processing_keys.add(idem_key)
+
+        try:
+            order.status = OrderStatus.processing_api
             db.commit()
 
+            source = get_best_source(db, product_id)
+            attempt_num = 1
+
+            while source:
+                adapter = api_manager.get_adapter(source.api_product.connection)
+                buy_result = await adapter.buy_product(
+                    product_id=source.api_product.external_product_id,
+                    quantity=quantity,
+                    idempotency_key=idem_key,
+                )
+
+                attempt = OrderSourceAttempt(
+                    order_id=order.id,
+                    product_source_id=source.id,
+                    attempt_number=attempt_num,
+                    status="success" if buy_result.get("success") else "failed",
+                    # Do NOT log full error containing credentials
+                    error_message=(buy_result.get("message") or "")[:500] if not buy_result.get("success") else None,
+                    external_order_id=buy_result.get("order_id"),
+                )
+                db.add(attempt)
+                db.commit()
+
+                if buy_result.get("success"):
+                    raw_data = buy_result.get("data", {})
+                    items = normalize_delivery_items(raw_data)
+
+                    # If no items yet, poll source for up to 5 times
+                    if not items and buy_result.get("order_id"):
+                        logger.info(f"No accounts yet for {order_code}, polling source order...")
+                        polled_data, items = await _poll_source_order(
+                            adapter, buy_result["order_id"]
+                        )
+                        if polled_data:
+                            raw_data = polled_data
+
+                    # Extract readable source order code
+                    order_data = raw_data.get("order", raw_data)
+                    external_order_code = (
+                        order_data.get("order_code") or
+                        order_data.get("order_id") or
+                        buy_result.get("order_id") or ""
+                    )
+
+                    # Detect partial delivery
+                    if items and len(items) < quantity:
+                        order.status = OrderStatus.partial_delivery
+                        order.partial_count = len(items)
+                    elif items:
+                        order.status = OrderStatus.completed
+                    else:
+                        # Still no items after polling → pending_manual for admin
+                        order.status = OrderStatus.pending_manual
+
+                    order.api_connection_id = source.api_product.api_connection_id
+                    order.external_order_id = buy_result.get("order_id")
+                    order.external_order_code = external_order_code
+                    order.source_unit_price = source.api_product.external_price
+                    # Store raw response — strip any sensitive balance info before logging
+                    safe_data = {k: v for k, v in raw_data.items() if k not in ("balance_after", "balance")}
+                    order.delivery_data = json.dumps(safe_data, ensure_ascii=False)
+                    # Store normalized items (without exposing to logs)
+                    order.delivery_items = json.dumps(items, ensure_ascii=False)
+                    db.commit()
+                    break
+
+                attempt_num += 1
+                source = None  # No fallback chain yet (extend if needed)
+
+            if order.status == OrderStatus.processing_api:
+                order.status = OrderStatus.failed
+                db.commit()
+
+        finally:
+            _processing_keys.discard(idem_key)
+
+    # Update user stats
     user = db.query(User).filter(User.telegram_id == telegram_user_id).first()
     if user:
         user.total_orders = (user.total_orders or 0) + 1
@@ -103,6 +195,10 @@ async def create_order(db: Session, telegram_user_id: str, product_id: int, quan
 
     db.refresh(order)
     return order
+
+
+def get_order_by_id(db: Session, order_id: int) -> Order:
+    return db.query(Order).filter(Order.id == order_id).first()
 
 
 def get_order_status(db: Session, order_id: int) -> Order:
@@ -118,3 +214,13 @@ def update_order_delivery(db: Session, order_id: int, delivery_data: str, status
         db.commit()
         db.refresh(order)
     return order
+
+
+def get_delivery_items(order: Order) -> list:
+    """Parse normalized delivery items from order."""
+    if not order.delivery_items:
+        return []
+    try:
+        return json.loads(order.delivery_items)
+    except Exception:
+        return []

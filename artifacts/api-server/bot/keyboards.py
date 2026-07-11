@@ -12,6 +12,7 @@ def main_menu_keyboard(is_admin: bool = False) -> ReplyKeyboardMarkup:
 
 
 def product_list_keyboard(products: list) -> InlineKeyboardMarkup:
+    """Danh sách: chỉ hiện emoji tình trạng + tên sản phẩm, không hiện giá."""
     buttons = []
     for item in products:
         p = item["product"]
@@ -22,7 +23,7 @@ def product_list_keyboard(products: list) -> InlineKeyboardMarkup:
             emoji = "🟡"
         else:
             emoji = "🔴"
-        label = f"{emoji} {p.name} - {p.sale_price:,.0f}đ"
+        label = f"{emoji} {p.name}"
         buttons.append([InlineKeyboardButton(label, callback_data=f"product:{p.id}")])
     buttons.append([InlineKeyboardButton("❌ Đóng", callback_data="close")])
     return InlineKeyboardMarkup(buttons)
@@ -31,14 +32,45 @@ def product_list_keyboard(products: list) -> InlineKeyboardMarkup:
 def product_detail_keyboard(product_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🛒 Mua ngay", callback_data=f"buy:{product_id}")],
-        [InlineKeyboardButton("◀️ Quay lại", callback_data="back_products")],
+        [
+            InlineKeyboardButton("◀️ Quay lại", callback_data="back_products"),
+            InlineKeyboardButton("🏠 Trang chủ", callback_data="home"),
+        ],
     ])
 
 
 def confirm_order_keyboard(product_id: int, quantity: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("✅ Xác nhận", callback_data=f"confirm_order:{product_id}:{quantity}"),
-            InlineKeyboardButton("❌ Huỷ", callback_data="cancel_order"),
+            InlineKeyboardButton("✅ Xác nhận mua", callback_data=f"confirm_order:{product_id}:{quantity}"),
+            InlineKeyboardButton("❌ Hủy", callback_data="cancel_order"),
         ]
     ])
+
+
+def post_delivery_keyboard(order_id: int, support_username: str = "") -> InlineKeyboardMarkup:
+    """Bàn phím sau khi giao hàng thành công."""
+    rows = [
+        [InlineKeyboardButton("📦 Xem đơn hàng", callback_data=f"view_order:{order_id}")],
+        [InlineKeyboardButton("📥 Tải lại tài khoản", callback_data=f"reload_order:{order_id}")],
+    ]
+    support_row = []
+    if support_username:
+        support_row.append(
+            InlineKeyboardButton("💬 Hỗ trợ", url=f"https://t.me/{support_username.lstrip('@')}")
+        )
+    support_row.append(InlineKeyboardButton("🏠 Trang chủ", callback_data="home"))
+    rows.append(support_row)
+    return InlineKeyboardMarkup(rows)
+
+
+def partial_delivery_keyboard(order_id: int, support_username: str = "") -> InlineKeyboardMarkup:
+    rows = [
+        [InlineKeyboardButton("📥 Tải lại tài khoản đã nhận", callback_data=f"reload_order:{order_id}")],
+    ]
+    if support_username:
+        rows.append([
+            InlineKeyboardButton("💬 Liên hệ hỗ trợ", url=f"https://t.me/{support_username.lstrip('@')}")
+        ])
+    rows.append([InlineKeyboardButton("🏠 Trang chủ", callback_data="home")])
+    return InlineKeyboardMarkup(rows)

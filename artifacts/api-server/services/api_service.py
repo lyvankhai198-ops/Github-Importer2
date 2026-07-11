@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from models import ApiConnection, ApiProduct
 from integrations.manager import api_manager
 from database import SessionLocal
+from services.normalize import normalize_product_data
 
 
 async def sync_api_products(db: Session, api_connection_id: int) -> dict:
@@ -18,15 +19,23 @@ async def sync_api_products(db: Session, api_connection_id: int) -> dict:
         synced = 0
         for p in products:
             ext_id = str(p.get("id", ""))
+            if not ext_id:
+                continue
             existing = db.query(ApiProduct).filter(
                 ApiProduct.api_connection_id == api_connection_id,
                 ApiProduct.external_product_id == ext_id
             ).first()
-            raw = json.dumps(p.get("raw", p))
+            raw = json.dumps(p.get("raw", p), ensure_ascii=False)
             if existing:
                 existing.external_name = p.get("name", "")
+                existing.external_description = p.get("description", "")
                 existing.external_price = p.get("price", 0)
                 existing.external_stock = p.get("stock", 0)
+                existing.external_min_quantity = p.get("min_quantity", 1)
+                existing.external_max_quantity = p.get("max_quantity")
+                existing.external_warranty = p.get("warranty", "")
+                existing.external_duration = p.get("duration", "")
+                existing.external_image_url = p.get("image_url", "")
                 existing.external_status = p.get("status", "")
                 existing.raw_json = raw
                 existing.last_sync_at = now
@@ -36,14 +45,31 @@ async def sync_api_products(db: Session, api_connection_id: int) -> dict:
                     api_connection_id=api_connection_id,
                     external_product_id=ext_id,
                     external_name=p.get("name", ""),
+                    external_description=p.get("description", ""),
                     external_price=p.get("price", 0),
                     external_stock=p.get("stock", 0),
+                    external_min_quantity=p.get("min_quantity", 1),
+                    external_max_quantity=p.get("max_quantity"),
+                    external_warranty=p.get("warranty", ""),
+                    external_duration=p.get("duration", ""),
+                    external_image_url=p.get("image_url", ""),
                     external_status=p.get("status", ""),
                     raw_json=raw,
                     last_sync_at=now,
                 )
                 db.add(new_prod)
             synced += 1
+
+        # Also update ProductSource.last_stock for linked products
+        from models import ProductSource
+        sources = db.query(ProductSource).join(ApiProduct).filter(
+            ApiProduct.api_connection_id == api_connection_id
+        ).all()
+        for src in sources:
+            if src.api_product:
+                src.last_stock = src.api_product.external_stock
+                src.last_cost = src.api_product.external_price
+
         conn.last_sync_at = now
         conn.last_success_at = now
         conn.last_error = None
@@ -78,7 +104,10 @@ async def _sync_loop(api_connection_id: int, interval_minutes: int):
         await asyncio.sleep(interval_minutes * 60)
         db = SessionLocal()
         try:
-            conn = db.query(ApiConnection).filter(ApiConnection.id == api_connection_id, ApiConnection.is_active == True).first()
+            conn = db.query(ApiConnection).filter(
+                ApiConnection.id == api_connection_id,
+                ApiConnection.is_active == True
+            ).first()
             if conn:
                 await sync_api_products(db, api_connection_id)
         except Exception:

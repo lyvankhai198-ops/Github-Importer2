@@ -78,11 +78,26 @@ async def order_detail(order_id: int, request: Request, db: Session = Depends(ge
         flash(request, "Đơn hàng không tồn tại!", "error")
         return RedirectResponse(url="/orders", status_code=302)
     flash_msg = request.session.pop("flash", None)
+    # Parse normalized delivery items for template
+    delivery_items = []
+    if order.delivery_items:
+        try:
+            delivery_items = json.loads(order.delivery_items)
+        except Exception:
+            pass
+    # Format raw JSON nicely for display (without re-encoding)
+    raw_json_pretty = ""
+    if order.delivery_data:
+        try:
+            raw_json_pretty = json.dumps(json.loads(order.delivery_data), ensure_ascii=False, indent=2)
+        except Exception:
+            raw_json_pretty = order.delivery_data
     return templates.TemplateResponse(request, "order_detail.html", {
-        
         "order": order,
         "flash": flash_msg,
         "order_statuses": [e.value for e in OrderStatus],
+        "delivery_items": delivery_items,
+        "raw_json_pretty": raw_json_pretty,
     })
 
 
@@ -98,12 +113,20 @@ async def complete_order(
     order = update_order_delivery(db, order_id, delivery_data, OrderStatus.completed)
     if order and bot_manager.is_running():
         try:
-            from bot.notifier import notify_user_order_complete
-            await notify_user_order_complete(
+            from bot.notifier import notify_user_delivery
+            from models import TelegramBotConfig
+            from database import SessionLocal as _SL
+            _db = _SL()
+            try:
+                cfg = _db.query(TelegramBotConfig).first()
+                support = cfg.support_username if cfg else ""
+            finally:
+                _db.close()
+            await notify_user_delivery(
                 bot_manager._application.bot,
                 order.telegram_user_id,
                 order,
-                delivery_data
+                support_username=support,
             )
         except Exception:
             pass

@@ -199,10 +199,19 @@ async def create_product_from_source(
     if existing:
         flash(request, "Sản phẩm đã tồn tại!", "error")
         return RedirectResponse(url="/products/api-sources", status_code=302)
+
+    # Use sale_price if admin set it; otherwise default to source price
+    final_price = sale_price if sale_price > 0 else (ap.external_price or 0.0)
+
     product = Product(
         name=ap.external_name or code,
         product_code=code,
-        sale_price=sale_price or (ap.external_price or 0.0),
+        # Description from source (admin can override later)
+        description=ap.external_description or "",
+        sale_price=final_price,
+        min_quantity=ap.external_min_quantity or 1,
+        warranty=ap.external_warranty or "",
+        duration=ap.external_duration or "",
         source_type=SourceType.api,
         delivery_mode=DeliveryMode.api_auto,
         is_active=True,
