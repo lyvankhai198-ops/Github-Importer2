@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Nguồn sản phẩm API - AI Center{% endblock %}
+{% block page_title %}🔗 Nguồn sản phẩm API{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <form class="d-flex gap-2 flex-wrap" method="get">
+    <select name="conn_id" class="form-select form-select-sm" style="width:200px">
+      <option value="0">Tất cả kết nối</option>
+      {% for c in connections %}
+      <option value="{{ c.id }}" {% if selected_conn == c.id %}selected{% endif %}>{{ c.name }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="btn btn-sm btn-outline-primary">Lọc</button>
+  </form>
+  <form action="/products/sync-all" method="post">
+    <button type="submit" class="btn btn-sm btn-success"><i class="bi bi-arrow-repeat"></i> Đồng bộ tất cả</button>
+  </form>
+</div>
+
+<div class="card">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead>
+          <tr><th>Kết nối</th><th>External ID</th><th>Tên</th><th>Giá</th><th>Tồn kho</th><th>Trạng thái</th><th>Sync lần cuối</th><th>Hành động</th></tr>
+        </thead>
+        <tbody>
+          {% for ap in api_products %}
+          <tr>
+            <td><small>{{ ap.connection.name if ap.connection else '—' }}</small></td>
+            <td><code>{{ ap.external_product_id }}</code></td>
+            <td>{{ ap.external_name or '—' }}</td>
+            <td>{{ "{:,.0f}".format(ap.external_price or 0) }}đ</td>
+            <td>
+              {% if ap.external_stock and ap.external_stock > 10 %}
+                <span class="badge bg-success">{{ ap.external_stock }}</span>
+              {% elif ap.external_stock and ap.external_stock > 0 %}
+                <span class="badge bg-warning text-dark">{{ ap.external_stock }}</span>
+              {% else %}
+                <span class="badge bg-danger">Hết</span>
+              {% endif %}
+            </td>
+            <td>{{ ap.external_status or '—' }}</td>
+            <td><small>{{ ap.last_sync_at.strftime('%d/%m %H:%M') if ap.last_sync_at else '—' }}</small></td>
+            <td>
+              <button class="btn btn-xs btn-outline-success me-1" data-bs-toggle="modal" data-bs-target="#createModal{{ ap.id }}">Tạo SP</button>
+              <button class="btn btn-xs btn-outline-primary" data-bs-toggle="modal" data-bs-target="#linkModal{{ ap.id }}">Liên kết</button>
+            </td>
+          </tr>
+          <!-- Create Product Modal -->
+          <div class="modal fade" id="createModal{{ ap.id }}" tabindex="-1">
+            <div class="modal-dialog"><div class="modal-content">
+              <div class="modal-header"><h5 class="modal-title">Tạo sản phẩm từ nguồn</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+              <form action="/products/api-sources/{{ ap.id }}/create-product" method="post">
+                <div class="modal-body">
+                  <p>Tạo sản phẩm từ: <strong>{{ ap.external_name }}</strong></p>
+                  <p>Giá nguồn: {{ "{:,.0f}".format(ap.external_price or 0) }}đ</p>
+                  <div class="mb-3"><label class="form-label">Giá bán</label><input type="number" name="sale_price" class="form-control" value="{{ ap.external_price or 0 }}" step="0.01"></div>
+                </div>
+                <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button><button type="submit" class="btn btn-success">Tạo sản phẩm</button></div>
+              </form>
+            </div></div>
+          </div>
+          <!-- Link Product Modal -->
+          <div class="modal fade" id="linkModal{{ ap.id }}" tabindex="-1">
+            <div class="modal-dialog"><div class="modal-content">
+              <div class="modal-header"><h5 class="modal-title">Liên kết với sản phẩm</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+              <form action="/products/api-sources/{{ ap.id }}/link-product" method="post">
+                <div class="modal-body">
+                  <div class="mb-3"><label class="form-label">Chọn sản phẩm</label>
+                    <select name="product_id" class="form-select" required>
+                      {% for p in all_products %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
+                    </select>
+                  </div>
+                  <div class="mb-3"><label class="form-label">Độ ưu tiên</label><input type="number" name="priority" class="form-control" value="1" min="1"></div>
+                </div>
+                <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button><button type="submit" class="btn btn-primary">Liên kết</button></div>
+              </form>
+            </div></div>
+          </div>
+          {% else %}
+          <tr><td colspan="8" class="text-center text-muted py-4">Chưa có sản phẩm API nào. Hãy đồng bộ từ kết nối API.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% if total > per_page %}
+<nav class="mt-3"><ul class="pagination pagination-sm justify-content-center">
+  {% for i in range(1, (total // per_page) + 2) %}
+  <li class="page-item {% if i == page %}active{% endif %}"><a class="page-link" href="?page={{ i }}&conn_id={{ selected_conn }}">{{ i }}</a></li>
+  {% endfor %}
+</ul></nav>
+{% endif %}
+{% endblock %}

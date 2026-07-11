@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+{% block title %}Sản phẩm - AI Center{% endblock %}
+{% block page_title %}📦 Sản phẩm{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <form class="d-flex gap-2 flex-wrap" method="get">
+    <input type="text" name="search" value="{{ search }}" class="form-control form-control-sm" placeholder="Tìm kiếm..." style="width:180px">
+    <select name="source_type" class="form-select form-select-sm" style="width:140px">
+      <option value="">Tất cả nguồn</option>
+      <option value="manual" {% if source_type_filter=='manual' %}selected{% endif %}>Thủ công</option>
+      <option value="api" {% if source_type_filter=='api' %}selected{% endif %}>API</option>
+    </select>
+    <select name="is_active" class="form-select form-select-sm" style="width:130px">
+      <option value="">Tất cả</option>
+      <option value="true" {% if is_active_filter=='true' %}selected{% endif %}>Đang bán</option>
+      <option value="false" {% if is_active_filter=='false' %}selected{% endif %}>Tạm ngưng</option>
+    </select>
+    <button type="submit" class="btn btn-sm btn-outline-primary">Lọc</button>
+  </form>
+  <div class="d-flex gap-2">
+    <a href="/products/api-sources" class="btn btn-sm btn-outline-info"><i class="bi bi-cloud"></i> Nguồn API</a>
+    <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addProductModal"><i class="bi bi-plus-lg"></i> Thêm sản phẩm</button>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead>
+          <tr><th>Ảnh</th><th>Tên / Mã</th><th>Giá bán</th><th>Nguồn</th><th>Giao hàng</th><th>Đã bán</th><th>Trạng thái</th><th>Hành động</th></tr>
+        </thead>
+        <tbody>
+          {% for p in products %}
+          <tr>
+            <td><img src="{{ p.image_path or '/static/img/no-image.png' }}" width="40" height="40" style="object-fit:cover;border-radius:4px" onerror="this.src='/static/img/no-image.png'"></td>
+            <td>
+              <div class="fw-semibold">{{ p.name }}</div>
+              <small class="text-muted">{{ p.product_code }}</small>
+            </td>
+            <td>{{ "{:,.0f}".format(p.sale_price) }}đ</td>
+            <td><span class="badge {% if p.source_type.value == 'api' %}bg-info{% else %}bg-secondary{% endif %}">{{ p.source_type.value }}</span></td>
+            <td><span class="badge {% if p.delivery_mode.value == 'api_auto' %}bg-success{% else %}bg-warning text-dark{% endif %}">{{ p.delivery_mode.value }}</span></td>
+            <td>{{ p.sold_count }}</td>
+            <td>
+              <div class="form-check form-switch">
+                <input class="form-check-input toggle-product" type="checkbox" {% if p.is_active %}checked{% endif %} data-id="{{ p.id }}">
+              </div>
+            </td>
+            <td>
+              <button class="btn btn-xs btn-outline-primary me-1" data-bs-toggle="modal" data-bs-target="#editModal{{ p.id }}"><i class="bi bi-pencil"></i></button>
+              <form action="/products/{{ p.id }}/delete" method="post" style="display:inline" onsubmit="return confirm('Xóa sản phẩm này?')">
+                <button type="submit" class="btn btn-xs btn-outline-danger"><i class="bi bi-trash"></i></button>
+              </form>
+            </td>
+          </tr>
+          <!-- Edit Modal -->
+          <div class="modal fade" id="editModal{{ p.id }}" tabindex="-1">
+            <div class="modal-dialog modal-lg">
+              <div class="modal-content">
+                <div class="modal-header"><h5 class="modal-title">Sửa: {{ p.name }}</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+                <form action="/products/{{ p.id }}/edit" method="post" enctype="multipart/form-data">
+                  <div class="modal-body">
+                    <div class="row g-3">
+                      <div class="col-md-6"><label class="form-label">Tên sản phẩm *</label><input type="text" name="name" class="form-control" value="{{ p.name }}" required></div>
+                      <div class="col-md-6"><label class="form-label">Mã sản phẩm *</label><input type="text" name="product_code" class="form-control" value="{{ p.product_code }}" required></div>
+                      <div class="col-md-6"><label class="form-label">Giá bán</label><input type="number" name="sale_price" class="form-control" value="{{ p.sale_price }}" step="0.01"></div>
+                      <div class="col-md-6"><label class="form-label">Chế độ giao hàng</label>
+                        <select name="delivery_mode" class="form-select">
+                          <option value="manual" {% if p.delivery_mode.value=='manual' %}selected{% endif %}>Thủ công</option>
+                          <option value="api_auto" {% if p.delivery_mode.value=='api_auto' %}selected{% endif %}>Tự động API</option>
+                        </select>
+                      </div>
+                      <div class="col-12"><label class="form-label">Mô tả</label><textarea name="description" class="form-control" rows="3">{{ p.description or '' }}</textarea></div>
+                      <div class="col-md-6"><label class="form-label">Ảnh sản phẩm</label><input type="file" name="image" class="form-control" accept="image/*"></div>
+                      <div class="col-md-6"><label class="form-label">Trạng thái</label>
+                        <select name="is_active" class="form-select">
+                          <option value="true" {% if p.is_active %}selected{% endif %}>Đang bán</option>
+                          <option value="false" {% if not p.is_active %}selected{% endif %}>Tạm ngưng</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button><button type="submit" class="btn btn-primary">Lưu thay đổi</button></div>
+                </form>
+              </div>
+            </div>
+          </div>
+          {% else %}
+          <tr><td colspan="8" class="text-center text-muted py-4">Chưa có sản phẩm nào</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% if total > per_page %}
+<nav class="mt-3"><ul class="pagination pagination-sm justify-content-center">
+  {% for i in range(1, (total // per_page) + 2) %}
+  <li class="page-item {% if i == page %}active{% endif %}"><a class="page-link" href="?page={{ i }}&search={{ search }}&source_type={{ source_type_filter }}&is_active={{ is_active_filter }}">{{ i }}</a></li>
+  {% endfor %}
+</ul></nav>
+{% endif %}
+
+<!-- Add Product Modal -->
+<div class="modal fade" id="addProductModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title">Thêm sản phẩm mới</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+      <form action="/products/add" method="post" enctype="multipart/form-data">
+        <div class="modal-body">
+          <div class="row g-3">
+            <div class="col-md-6"><label class="form-label">Tên sản phẩm *</label><input type="text" name="name" class="form-control" required></div>
+            <div class="col-md-6"><label class="form-label">Mã sản phẩm *</label><input type="text" name="product_code" class="form-control" required></div>
+            <div class="col-md-6"><label class="form-label">Giá bán</label><input type="number" name="sale_price" class="form-control" value="0" step="0.01"></div>
+            <div class="col-md-6"><label class="form-label">Chế độ giao hàng</label>
+              <select name="delivery_mode" class="form-select">
+                <option value="manual">Thủ công</option>
+                <option value="api_auto">Tự động API</option>
+              </select>
+            </div>
+            <div class="col-12"><label class="form-label">Mô tả</label><textarea name="description" class="form-control" rows="3"></textarea></div>
+            <div class="col-md-6"><label class="form-label">Ảnh sản phẩm</label><input type="file" name="image" class="form-control" accept="image/*" id="imageUpload"></div>
+            <div class="col-md-6"><label class="form-label">Trạng thái</label>
+              <select name="is_active" class="form-select">
+                <option value="true">Đang bán</option>
+                <option value="false">Tạm ngưng</option>
+              </select>
+            </div>
+            <div class="col-12"><img id="imagePreview" src="" style="max-height:100px;display:none" class="rounded"></div>
+          </div>
+        </div>
+        <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button><button type="submit" class="btn btn-primary">Thêm sản phẩm</button></div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+document.querySelectorAll('.toggle-product').forEach(el => {
+  el.addEventListener('change', function() {
+    fetch(`/products/${this.dataset.id}/toggle`, {method:'POST'})
+      .then(r => r.json()).then(d => { this.checked = d.is_active; });
+  });
+});
+document.getElementById('imageUpload')?.addEventListener('change', function() {
+  const prev = document.getElementById('imagePreview');
+  if (this.files && this.files[0]) {
+    prev.src = URL.createObjectURL(this.files[0]);
+    prev.style.display = 'block';
+  }
+});
+</script>
+{% endblock %}

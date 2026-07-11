@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Đơn hàng - AI Center{% endblock %}
+{% block page_title %}🧾 {{ title if title is defined else 'Đơn hàng' }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <form class="d-flex gap-2 flex-wrap" method="get">
+    <input type="text" name="search" value="{{ search }}" class="form-control form-control-sm" placeholder="Mã đơn, User ID..." style="width:160px">
+    <select name="status" class="form-select form-select-sm" style="width:160px">
+      <option value="">Tất cả trạng thái</option>
+      {% for st in order_statuses %}
+      <option value="{{ st }}" {% if status_filter == st %}selected{% endif %}>{{ st }}</option>
+      {% endfor %}
+    </select>
+    <input type="date" name="date_from" value="{{ date_from }}" class="form-control form-control-sm" style="width:140px">
+    <input type="date" name="date_to" value="{{ date_to }}" class="form-control form-control-sm" style="width:140px">
+    <button type="submit" class="btn btn-sm btn-outline-primary">Lọc</button>
+  </form>
+</div>
+
+<div class="card">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead>
+          <tr><th>Mã đơn</th><th>Người dùng</th><th>Sản phẩm</th><th>SL</th><th>Tổng tiền</th><th>Trạng thái</th><th>Thời gian</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for o in orders %}
+          <tr>
+            <td><a href="/orders/{{ o.id }}" class="fw-semibold">{{ o.order_code }}</a></td>
+            <td><small>{{ o.telegram_user_id }}</small></td>
+            <td>{{ o.product.name if o.product else '—' }}</td>
+            <td>{{ o.quantity }}</td>
+            <td>{{ "{:,.0f}".format(o.total_price) }}đ</td>
+            <td>
+              {% set sv = o.status.value if o.status.value is defined else o.status %}
+              {% if sv == 'completed' %}<span class="badge bg-success">✅ Hoàn thành</span>
+              {% elif sv == 'pending_manual' %}<span class="badge bg-warning text-dark">⏳ Chờ xử lý</span>
+              {% elif sv == 'processing_api' %}<span class="badge bg-info">🔄 Đang xử lý</span>
+              {% elif sv == 'failed' %}<span class="badge bg-danger">❌ Thất bại</span>
+              {% elif sv == 'cancelled' %}<span class="badge bg-secondary">🚫 Đã hủy</span>
+              {% else %}<span class="badge bg-secondary">{{ sv }}</span>{% endif %}
+            </td>
+            <td><small>{{ o.created_at.strftime('%d/%m/%Y %H:%M') }}</small></td>
+            <td><a href="/orders/{{ o.id }}" class="btn btn-xs btn-outline-primary"><i class="bi bi-eye"></i></a></td>
+          </tr>
+          {% else %}
+          <tr><td colspan="8" class="text-center text-muted py-4">Không có đơn hàng nào</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% if total > per_page %}
+<nav class="mt-3"><ul class="pagination pagination-sm justify-content-center">
+  {% for i in range(1, (total // per_page) + 2) %}
+  <li class="page-item {% if i == page %}active{% endif %}">
+    <a class="page-link" href="?page={{ i }}&status={{ status_filter }}&search={{ search }}&date_from={{ date_from }}&date_to={{ date_to }}">{{ i }}</a>
+  </li>
+  {% endfor %}
+</ul></nav>
+{% endif %}
+{% endblock %}

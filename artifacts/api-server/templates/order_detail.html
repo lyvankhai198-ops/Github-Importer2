@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}Đơn hàng {{ order.order_code }} - AI Center{% endblock %}
+{% block page_title %}🧾 Chi tiết đơn hàng{% endblock %}
+{% block content %}
+<div class="row g-3">
+  <div class="col-12 col-lg-8">
+    <div class="card mb-3">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">{{ order.order_code }}</h5>
+        {% set sv = order.status.value if order.status.value is defined else order.status %}
+        {% if sv == 'completed' %}<span class="badge bg-success fs-6">✅ Hoàn thành</span>
+        {% elif sv == 'pending_manual' %}<span class="badge bg-warning text-dark fs-6">⏳ Chờ xử lý</span>
+        {% elif sv == 'processing_api' %}<span class="badge bg-info fs-6">🔄 Đang xử lý</span>
+        {% elif sv == 'failed' %}<span class="badge bg-danger fs-6">❌ Thất bại</span>
+        {% elif sv == 'cancelled' %}<span class="badge bg-secondary fs-6">🚫 Đã hủy</span>
+        {% else %}<span class="badge bg-secondary fs-6">{{ sv }}</span>{% endif %}
+      </div>
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-6"><label class="text-muted small">Người dùng Telegram</label><div class="fw-semibold">{{ order.telegram_user_id }}</div></div>
+          <div class="col-6"><label class="text-muted small">Sản phẩm</label><div class="fw-semibold">{{ order.product.name if order.product else order.product_id }}</div></div>
+          <div class="col-6"><label class="text-muted small">Số lượng</label><div>{{ order.quantity }}</div></div>
+          <div class="col-6"><label class="text-muted small">Đơn giá</label><div>{{ "{:,.0f}".format(order.unit_price) }}đ</div></div>
+          <div class="col-6"><label class="text-muted small">Tổng tiền</label><div class="fw-bold text-primary fs-5">{{ "{:,.0f}".format(order.total_price) }}đ</div></div>
+          <div class="col-6"><label class="text-muted small">Thời gian tạo</label><div>{{ order.created_at.strftime('%d/%m/%Y %H:%M:%S') }}</div></div>
+          {% if order.external_order_id %}<div class="col-6"><label class="text-muted small">ID đơn ngoài</label><div><code>{{ order.external_order_id }}</code></div></div>{% endif %}
+          {% if order.notes %}<div class="col-12"><label class="text-muted small">Ghi chú</label><div>{{ order.notes }}</div></div>{% endif %}
+        </div>
+      </div>
+    </div>
+
+    {% if order.delivery_data %}
+    <div class="card mb-3">
+      <div class="card-header"><h6 class="mb-0">📦 Thông tin giao hàng</h6></div>
+      <div class="card-body"><pre class="mb-0" style="white-space:pre-wrap;word-break:break-all">{{ order.delivery_data }}</pre></div>
+    </div>
+    {% endif %}
+
+    {% if order.source_attempts %}
+    <div class="card mb-3">
+      <div class="card-header"><h6 class="mb-0">🔄 Lịch sử thử nguồn</h6></div>
+      <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+          <thead><tr><th>#</th><th>Nguồn</th><th>Trạng thái</th><th>External ID</th><th>Lỗi</th></tr></thead>
+          <tbody>
+            {% for a in order.source_attempts %}
+            <tr>
+              <td>{{ a.attempt_number }}</td>
+              <td>{{ a.product_source_id }}</td>
+              <td><span class="badge {% if a.status=='success' %}bg-success{% else %}bg-danger{% endif %}">{{ a.status }}</span></td>
+              <td><code>{{ a.external_order_id or '—' }}</code></td>
+              <td><small class="text-danger">{{ a.error_message or '' }}</small></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="col-12 col-lg-4">
+    <!-- Complete Order -->
+    {% set sv = order.status.value if order.status.value is defined else order.status %}
+    {% if sv in ['pending_manual', 'processing_api', 'failed'] %}
+    <div class="card mb-3">
+      <div class="card-header"><h6 class="mb-0">✅ Hoàn thành đơn hàng</h6></div>
+      <form action="/orders/{{ order.id }}/complete" method="post">
+        <div class="card-body">
+          <label class="form-label">Thông tin giao hàng / Kết quả</label>
+          <textarea name="delivery_data" class="form-control" rows="4" placeholder="Nhập thông tin giao hàng...">{{ order.delivery_data or '' }}</textarea>
+        </div>
+        <div class="card-footer"><button type="submit" class="btn btn-success w-100"><i class="bi bi-check-circle"></i> Hoàn thành & Gửi cho user</button></div>
+      </form>
+    </div>
+    {% endif %}
+
+    <!-- Change Status -->
+    <div class="card mb-3">
+      <div class="card-header"><h6 class="mb-0">🔁 Đổi trạng thái</h6></div>
+      <form action="/orders/{{ order.id }}/status" method="post">
+        <div class="card-body">
+          <select name="new_status" class="form-select">
+            {% for st in order_statuses %}<option value="{{ st }}" {% if sv == st %}selected{% endif %}>{{ st }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="card-footer"><button type="submit" class="btn btn-warning w-100">Cập nhật trạng thái</button></div>
+      </form>
+    </div>
+
+    <!-- Notify User -->
+    <div class="card mb-3">
+      <div class="card-header"><h6 class="mb-0">💬 Gửi tin nhắn cho user</h6></div>
+      <form action="/orders/{{ order.id }}/notify" method="post">
+        <div class="card-body"><textarea name="message" class="form-control" rows="3" placeholder="Nội dung tin nhắn..."></textarea></div>
+        <div class="card-footer"><button type="submit" class="btn btn-info w-100 text-white">Gửi tin nhắn</button></div>
+      </form>
+    </div>
+
+    <!-- Cancel -->
+    {% if sv not in ['cancelled', 'completed'] %}
+    <form action="/orders/{{ order.id }}/cancel" method="post" onsubmit="return confirm('Hủy đơn hàng này?')">
+      <button type="submit" class="btn btn-outline-danger w-100"><i class="bi bi-x-circle"></i> Hủy đơn hàng</button>
+    </form>
+    {% endif %}
+
+    <div class="mt-3"><a href="/orders" class="btn btn-outline-secondary w-100"><i class="bi bi-arrow-left"></i> Quay lại</a></div>
+  </div>
+</div>
+{% endblock %}

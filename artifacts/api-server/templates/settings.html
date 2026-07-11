@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+{% block title %}Cài đặt - AI Center{% endblock %}
+{% block page_title %}⚙️ Cài đặt{% endblock %}
+{% block content %}
+<ul class="nav nav-tabs mb-4" id="settingsTabs">
+  <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tabShop">🏪 Cửa hàng</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabBot">🤖 Bot Telegram</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabOrder">📦 Đơn hàng</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabApi">🔗 API</button></li>
+</ul>
+
+<div class="tab-content">
+  <!-- Shop Tab -->
+  <div class="tab-pane fade show active" id="tabShop">
+    <div class="card">
+      <div class="card-header"><h6 class="mb-0">Thông tin cửa hàng</h6></div>
+      <form action="/settings/store" method="post">
+        <div class="card-body">
+          <div class="mb-3"><label class="form-label">Tên cửa hàng</label><input type="text" name="shop_name" class="form-control" value="AI Center Bot Manager"></div>
+          <div class="mb-3"><label class="form-label">Username hỗ trợ</label><div class="input-group"><span class="input-group-text">@</span><input type="text" name="support_username" class="form-control" value="{{ cfg.support_username or '' }}"></div></div>
+        </div>
+        <div class="card-footer"><button type="submit" class="btn btn-primary">Lưu cài đặt</button></div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Bot Tab -->
+  <div class="tab-pane fade" id="tabBot">
+    <div class="row g-3">
+      <div class="col-12 col-lg-7">
+        <div class="card mb-3">
+          <div class="card-header"><h6 class="mb-0">Cấu hình Bot Telegram</h6></div>
+          <form action="/settings/bot" method="post">
+            <div class="card-body">
+              <div class="mb-3">
+                <label class="form-label">Bot Token</label>
+                <div class="input-group">
+                  <input type="password" name="bot_token" id="botTokenInput" class="form-control" placeholder="{{ masked_token or 'Nhập bot token...' }}">
+                  <button type="button" class="btn btn-outline-secondary" id="toggleBotToken"><i class="bi bi-eye"></i></button>
+                </div>
+                <small class="text-muted">Token hiện tại: {{ masked_token or 'Chưa cấu hình' }}</small>
+              </div>
+              <div class="mb-3"><label class="form-label">Admin Telegram ID</label><input type="text" name="admin_telegram_id" class="form-control" value="{{ cfg.admin_telegram_id or '' }}" placeholder="123456789"></div>
+              <div class="mb-3"><label class="form-label">Lời chào mừng</label><textarea name="welcome_message" class="form-control" rows="3" placeholder="Chào mừng bạn!">{{ cfg.welcome_message or '' }}</textarea></div>
+              <div class="mb-3"><label class="form-label">Username hỗ trợ</label><div class="input-group"><span class="input-group-text">@</span><input type="text" name="support_username" class="form-control" value="{{ cfg.support_username or '' }}"></div></div>
+            </div>
+            <div class="card-footer d-flex gap-2 flex-wrap">
+              <button type="submit" class="btn btn-primary">💾 Lưu cài đặt</button>
+              <button type="button" class="btn btn-outline-info" id="verifyBotBtn">✅ Xác minh token</button>
+            </div>
+          </form>
+        </div>
+      </div>
+      <div class="col-12 col-lg-5">
+        <!-- Bot Status -->
+        <div class="card mb-3">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <h6 class="mb-0">Trạng thái Bot</h6>
+            <span class="status-badge status-{{ bot_status.status }}" id="botStatusText">{{ bot_status.status }}</span>
+          </div>
+          <div class="card-body">
+            {% if cfg.bot_name %}<div><strong>Tên:</strong> {{ cfg.bot_name }}</div>{% endif %}
+            {% if cfg.bot_username %}<div><strong>Username:</strong> @{{ cfg.bot_username }}</div>{% endif %}
+            <div id="botInfoSection"></div>
+          </div>
+          <div class="card-footer d-flex gap-2 flex-wrap">
+            <button class="btn btn-success" id="startBotBtn" onclick="botAction('start')"><i class="bi bi-play-fill"></i> Start</button>
+            <button class="btn btn-danger" id="stopBotBtn" onclick="botAction('stop')"><i class="bi bi-stop-fill"></i> Stop</button>
+            <button class="btn btn-warning" id="restartBotBtn" onclick="botAction('restart')"><i class="bi bi-arrow-repeat"></i> Restart</button>
+            <button class="btn btn-outline-info" onclick="botAction('test-message')"><i class="bi bi-chat"></i> Test Msg</button>
+          </div>
+        </div>
+        <div id="botActionResult" class="alert d-none"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Order Tab -->
+  <div class="tab-pane fade" id="tabOrder">
+    <div class="card">
+      <div class="card-header"><h6 class="mb-0">Cài đặt đơn hàng</h6></div>
+      <form action="/settings/order" method="post">
+        <div class="card-body">
+          <div class="mb-3"><label class="form-label">Thông báo đơn mới</label>
+            <div class="form-check form-switch"><input class="form-check-input" type="checkbox" checked><label class="form-check-label">Thông báo admin khi có đơn mới</label></div>
+          </div>
+          <div class="mb-3"><label class="form-label">Auto-cancel sau (giờ)</label><input type="number" class="form-control" value="24" min="1"></div>
+        </div>
+        <div class="card-footer"><button type="submit" class="btn btn-primary">Lưu</button></div>
+      </form>
+    </div>
+  </div>
+
+  <!-- API Tab -->
+  <div class="tab-pane fade" id="tabApi">
+    <div class="card">
+      <div class="card-header"><h6 class="mb-0">Cài đặt API</h6></div>
+      <form action="/settings/api" method="post">
+        <div class="card-body">
+          <div class="mb-3"><label class="form-label">Timeout (giây)</label><input type="number" name="api_timeout" class="form-control" value="30" min="5"></div>
+          <div class="mb-3"><label class="form-label">Max Retries</label><input type="number" name="api_max_retries" class="form-control" value="3" min="1"></div>
+        </div>
+        <div class="card-footer"><button type="submit" class="btn btn-primary">Lưu</button></div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+document.getElementById('toggleBotToken')?.addEventListener('click', function() {
+  const inp = document.getElementById('botTokenInput');
+  const icon = this.querySelector('i');
+  inp.type = inp.type === 'password' ? 'text' : 'password';
+  icon.className = inp.type === 'password' ? 'bi bi-eye' : 'bi bi-eye-slash';
+});
+
+document.getElementById('verifyBotBtn')?.addEventListener('click', async function() {
+  this.disabled = true;
+  this.textContent = 'Đang xác minh...';
+  const token = document.getElementById('botTokenInput').value;
+  const fd = new FormData();
+  if (token) fd.append('token', token);
+  try {
+    const r = await fetch('/settings/bot/verify', {method:'POST', body: fd});
+    const d = await r.json();
+    const section = document.getElementById('botInfoSection');
+    if (d.success) {
+      section.innerHTML = `<div class="alert alert-success mt-2">✅ Bot: <strong>${d.bot_name}</strong> (@${d.bot_username})<br>ID: ${d.bot_id}</div>`;
+    } else {
+      section.innerHTML = `<div class="alert alert-danger mt-2">❌ ${d.message}</div>`;
+    }
+  } catch(e) {
+    document.getElementById('botInfoSection').innerHTML = `<div class="alert alert-danger mt-2">Lỗi: ${e}</div>`;
+  }
+  this.disabled = false;
+  this.textContent = '✅ Xác minh token';
+});
+
+async function botAction(action) {
+  const btns = ['startBotBtn','stopBotBtn','restartBotBtn'].forEach(id => {
+    const el = document.getElementById(id); if(el) el.disabled = true;
+  });
+  const resultDiv = document.getElementById('botActionResult');
+  try {
+    const r = await fetch(`/settings/bot/${action}`, {method:'POST'});
+    const d = await r.json();
+    resultDiv.className = 'alert ' + (d.success ? 'alert-success' : 'alert-danger');
+    resultDiv.textContent = d.message;
+    resultDiv.classList.remove('d-none');
+    setTimeout(() => resultDiv.classList.add('d-none'), 4000);
+  } catch(e) {
+    resultDiv.className = 'alert alert-danger';
+    resultDiv.textContent = 'Lỗi: ' + e;
+    resultDiv.classList.remove('d-none');
+  }
+  ['startBotBtn','stopBotBtn','restartBotBtn'].forEach(id => {
+    const el = document.getElementById(id); if(el) el.disabled = false;
+  });
+}
+</script>
+{% endblock %}
