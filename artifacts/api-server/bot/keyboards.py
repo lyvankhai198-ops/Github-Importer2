@@ -48,6 +48,22 @@ def confirm_order_keyboard(product_id: int, quantity: int) -> InlineKeyboardMark
     ])
 
 
+def payment_keyboard(order_id: int, support_username: str = "") -> InlineKeyboardMarkup:
+    """Bàn phím hiện cùng QR thanh toán."""
+    rows = [
+        [InlineKeyboardButton("🔄 Kiểm tra thanh toán", callback_data=f"check_payment:{order_id}")],
+        [InlineKeyboardButton("❌ Hủy đơn", callback_data=f"cancel_pending:{order_id}")],
+    ]
+    support_row = []
+    if support_username:
+        support_row.append(
+            InlineKeyboardButton("💬 Hỗ trợ", url=f"https://t.me/{support_username.lstrip('@')}")
+        )
+    support_row.append(InlineKeyboardButton("🏠 Trang chủ", callback_data="home"))
+    rows.append(support_row)
+    return InlineKeyboardMarkup(rows)
+
+
 def post_delivery_keyboard(order_id: int, support_username: str = "") -> InlineKeyboardMarkup:
     """Bàn phím sau khi giao hàng thành công."""
     rows = [

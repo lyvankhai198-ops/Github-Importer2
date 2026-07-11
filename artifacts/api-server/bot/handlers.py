@@ -7,16 +7,17 @@ from telegram.ext import ContextTypes
 from bot.keyboards import (
     main_menu_keyboard, product_list_keyboard, product_detail_keyboard,
     confirm_order_keyboard, post_delivery_keyboard, partial_delivery_keyboard,
+    payment_keyboard,
 )
 from services.product_service import get_active_products_for_bot, get_product_detail
 from services.order_service import create_order, get_or_create_user, get_order_by_id, get_delivery_items
 from services.normalize import format_delivery_message, format_partial_delivery_message
-from models import Order, TelegramBotConfig, OrderStatus
+from models import Order, TelegramBotConfig, OrderStatus, PaymentStatus
 from database import SessionLocal
 
 logger = logging.getLogger(__name__)
 
-# Idempotency: track callback queries that are being processed
+# Idempotency: track callback queries currently being processed
 _processing_callbacks: set = set()
 
 
@@ -44,12 +45,26 @@ def _get_support_username(db) -> str:
 def _status_label(status_val: str) -> str:
     return {
         "pending_manual": "⏳ Chờ xử lý",
+        "pending_payment": "💳 Chờ thanh toán",
         "processing_api": "🔄 Đang xử lý",
         "completed": "✅ Hoàn thành",
         "partial_delivery": "⚠️ Giao thiếu",
         "failed": "❌ Thất bại",
+        "api_failed": "🚨 Lỗi sau thanh toán",
+        "payment_expired": "⏰ Hết hạn TT",
         "cancelled": "🚫 Đã huỷ",
     }.get(status_val, status_val)
+
+
+def _payment_status_label(ps: str) -> str:
+    return {
+        "pending": "⏳ Chờ thanh toán",
+        "partial": "⚠️ Thanh toán thiếu",
+        "paid": "✅ Đã thanh toán đủ",
+        "overpaid": "💰 Thanh toán thừa",
+        "expired": "⏰ Hết hạn",
+        "failed": "❌ Thất bại",
+    }.get(ps or "", ps or "—")
 
 
 # ── Command handlers ──────────────────────────────────────────────────────────
@@ -180,7 +195,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             p = detail["product"]
             sources = detail["sources"]
 
-            # Get stock from sources (prefer api_product for freshness)
             stock = 0
             min_qty = p.min_quantity or 1
             api_src = None
@@ -190,14 +204,13 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     if src.api_product:
                         api_src = src.api_product
 
-            # Freshness check: if data > 2 min old, sync
+            # Freshness check
             if api_src and api_src.last_sync_at:
                 age = datetime.utcnow() - api_src.last_sync_at
                 if age > timedelta(minutes=2):
                     from services.api_service import sync_api_products
                     await sync_api_products(db, api_src.api_connection_id)
                     db.expire_all()
-                    # Re-fetch
                     detail = get_product_detail(db, product_id)
                     if detail:
                         p = detail["product"]
@@ -211,7 +224,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 stock_text = "🔴 Hết hàng"
 
-            # Build detail text
             lines = [f"📦 <b>{html.escape(p.name)}</b>\n"]
             lines.append(f"💰 Giá bán: <b>{p.sale_price:,.0f}đ/tài khoản</b>")
             lines.append(f"📊 Tồn kho nguồn: {stock}")
@@ -220,21 +232,12 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 lines.append(f"⌛ Thời hạn: {html.escape(p.duration)}")
             if p.warranty:
                 lines.append(f"🛡 Bảo hành: {html.escape(p.warranty)}")
-
-            # Description: use admin's description, fallback to source
-            description = p.description
-            if not description and api_src:
-                description = api_src.external_description
+            description = p.description or (api_src.external_description if api_src else None)
             if description:
                 lines.append(f"\n📝 Mô tả:\n{html.escape(description)}")
-
             text = "\n".join(lines)
 
-            # Send with image if available
-            image_url = p.image_path
-            if not image_url and api_src:
-                image_url = api_src.external_image_url
-
+            image_url = p.image_path or (api_src.external_image_url if api_src else None)
             if image_url:
                 try:
                     if image_url.startswith("http"):
@@ -260,7 +263,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         await query.message.delete()
                         return
                 except Exception:
-                    pass  # fall through to text
+                    pass
 
             await query.message.edit_text(text, parse_mode="HTML", reply_markup=product_detail_keyboard(p.id))
         finally:
@@ -278,7 +281,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ── confirm order ──
     if data.startswith("confirm_order:"):
-        # Idempotency: only process once
         cb_key = f"{update.effective_user.id}:{data}"
         if cb_key in _processing_callbacks:
             return
@@ -292,18 +294,85 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db = SessionLocal()
         try:
             await query.message.edit_text("⏳ Đang xử lý đơn hàng...")
+            support = _get_support_username(db)
 
+            # ── SePay flow ──
+            from services.payment_service import is_sepay_enabled, create_pending_payment_order, generate_vietqr_url, get_sepay_config
+            if is_sepay_enabled(db):
+                order = create_pending_payment_order(db, str(tg_user.id), product_id, quantity)
+                cfg = get_sepay_config(db)
+                product_name = order.product.name if order.product else str(product_id)
+                expires = order.payment_expires_at.strftime("%H:%M %d/%m/%Y") if order.payment_expires_at else "—"
+
+                payment_text = (
+                    f"💳 <b>THANH TOÁN ĐƠN HÀNG</b>\n\n"
+                    f"Mã đơn: <code>{order.order_code}</code>\n"
+                    f"Sản phẩm: {html.escape(product_name)}\n"
+                    f"Số lượng: {quantity}\n"
+                    f"Số tiền: <b>{order.total_price:,.0f}đ</b>\n\n"
+                    f"🏦 Ngân hàng:\n<b>{html.escape(cfg.bank_name or '—')}</b>\n\n"
+                    f"💳 Số tài khoản:\n<code>{cfg.account_number or '—'}</code>\n\n"
+                    f"👤 Chủ tài khoản:\n<b>{html.escape(cfg.account_name or '—')}</b>\n\n"
+                    f"📝 Nội dung:\n<code>{order.payment_code}</code>\n\n"
+                    f"⏰ Hết hạn: {expires}\n\n"
+                    "Vui lòng chuyển <b>đúng số tiền</b> và <b>đúng nội dung</b>."
+                )
+
+                qr_url = None
+                if cfg.bank_bin and cfg.account_number:
+                    qr_url = generate_vietqr_url(
+                        cfg.bank_bin,
+                        cfg.account_number,
+                        order.total_price,
+                        order.payment_code,
+                        cfg.account_name or "",
+                    )
+
+                kbd = payment_keyboard(order.id, support)
+
+                if qr_url:
+                    try:
+                        import httpx as _httpx
+                        async with _httpx.AsyncClient(timeout=15) as c:
+                            r = await c.get(qr_url)
+                        if r.status_code == 200:
+                            await query.message.delete()
+                            await context.bot.send_photo(
+                                chat_id=tg_user.id,
+                                photo=io.BytesIO(r.content),
+                                caption=payment_text,
+                                parse_mode="HTML",
+                                reply_markup=kbd,
+                            )
+                        else:
+                            raise Exception("QR fetch failed")
+                    except Exception:
+                        await query.message.edit_text(payment_text, parse_mode="HTML", reply_markup=kbd)
+                else:
+                    await query.message.edit_text(payment_text, parse_mode="HTML", reply_markup=kbd)
+
+                # Notify admin
+                admin_id = _get_admin_id(db)
+                if admin_id:
+                    try:
+                        from bot.notifier import notify_admin_new_payment_pending
+                        await notify_admin_new_payment_pending(context.bot, order, admin_id)
+                    except Exception:
+                        pass
+
+                context.user_data.clear()
+                return
+
+            # ── Direct API flow (SePay disabled) ──
             order = await create_order(db, str(tg_user.id), product_id, quantity)
             sv = order.status.value if hasattr(order.status, "value") else order.status
             product_name = order.product.name if order.product else str(product_id)
-            support = _get_support_username(db)
 
             if sv == "completed":
                 items = get_delivery_items(order)
                 if items:
                     text, file_bytes = format_delivery_message(order, items, product_name)
                     if file_bytes:
-                        # >10 accounts → send file
                         await query.message.delete()
                         await context.bot.send_document(
                             chat_id=tg_user.id,
@@ -335,11 +404,9 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 items = get_delivery_items(order)
                 text = format_partial_delivery_message(order, items, product_name)
                 await query.message.edit_text(
-                    text,
-                    parse_mode="HTML",
+                    text, parse_mode="HTML",
                     reply_markup=partial_delivery_keyboard(order.id, support),
                 )
-                # Notify admin
                 admin_id = _get_admin_id(db)
                 if admin_id:
                     delivered = len(items)
@@ -363,7 +430,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "❌ Mua hàng thất bại.\nNguồn hiện chưa thể giao hàng. "
                     "Vui lòng thử lại hoặc liên hệ hỗ trợ.",
                 )
-
             else:
                 await query.message.edit_text(
                     f"✅ <b>Đơn hàng đã đặt!</b>\n\n"
@@ -383,10 +449,80 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             _processing_callbacks.discard(cb_key)
         return
 
-    # ── cancel order ──
+    # ── cancel order (pre-payment) ──
     if data == "cancel_order":
         context.user_data.clear()
         await query.message.edit_text("❌ Đã huỷ đặt hàng.")
+        return
+
+    # ── cancel pending_payment order ──
+    if data.startswith("cancel_pending:"):
+        order_id = int(data.split(":")[1])
+        tg_user = update.effective_user
+        db = SessionLocal()
+        try:
+            order = get_order_by_id(db, order_id)
+            if not order or order.telegram_user_id != str(tg_user.id):
+                await query.answer("Không tìm thấy đơn hàng.", show_alert=True)
+                return
+
+            ps = order.payment_status.value if hasattr(order.payment_status, "value") else str(order.payment_status or "")
+            if ps in ("paid", "overpaid"):
+                await query.answer(
+                    "Đơn đã thanh toán — không thể hủy. Liên hệ hỗ trợ.", show_alert=True
+                )
+                return
+
+            order.status = OrderStatus.cancelled
+            order.updated_at = datetime.utcnow()
+            db.commit()
+            await query.message.edit_text(
+                f"❌ Đơn hàng <code>{order.order_code}</code> đã bị hủy.",
+                parse_mode="HTML",
+            )
+        finally:
+            db.close()
+        return
+
+    # ── check payment status ──
+    if data.startswith("check_payment:"):
+        order_id = int(data.split(":")[1])
+        tg_user = update.effective_user
+        db = SessionLocal()
+        try:
+            order = get_order_by_id(db, order_id)
+            if not order or order.telegram_user_id != str(tg_user.id):
+                await query.answer("Không tìm thấy đơn hàng.", show_alert=True)
+                return
+
+            sv = order.status.value if hasattr(order.status, "value") else str(order.status)
+            ps = order.payment_status.value if hasattr(order.payment_status, "value") else str(order.payment_status or "pending")
+
+            if sv == "completed":
+                await query.answer("✅ Đơn đã hoàn thành.", show_alert=True)
+                return
+
+            if ps == "pending":
+                await query.answer("⏳ Chưa nhận được thanh toán.", show_alert=True)
+            elif ps == "partial":
+                paid = order.paid_amount or 0
+                expected = order.expected_amount or order.total_price
+                remaining = expected - paid
+                await query.answer(
+                    f"⚠️ Đã nhận {paid:,.0f}đ.\nCòn thiếu {remaining:,.0f}đ.",
+                    show_alert=True,
+                )
+            elif ps in ("paid", "overpaid"):
+                await query.answer(
+                    "✅ Thanh toán thành công.\nĐơn đang được lấy hàng tự động.",
+                    show_alert=True,
+                )
+            elif sv == "payment_expired":
+                await query.answer("⏰ Đơn hàng đã hết hạn thanh toán.", show_alert=True)
+            else:
+                await query.answer(f"Trạng thái: {_payment_status_label(ps)}", show_alert=True)
+        finally:
+            db.close()
         return
 
     # ── view order ──
@@ -493,7 +629,6 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             p = detail["product"]
             sources = detail["sources"]
 
-            # Freshness check: sync if API product data > 2 min old
             for src in sources:
                 if src.is_active and src.api_product and src.api_product.last_sync_at:
                     age = datetime.utcnow() - src.api_product.last_sync_at
@@ -507,11 +642,9 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             sources = detail["sources"]
                         break
 
-            # Calculate total available stock
             total_stock = sum((s.last_stock or 0) for s in sources if s.is_active)
             min_qty = p.min_quantity or 1
 
-            # Validate quantity
             if quantity < min_qty:
                 await update.message.reply_text(
                     f"❌ Số lượng tối thiểu là <b>{min_qty}</b>.", parse_mode="HTML"
@@ -524,13 +657,18 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
 
             total = p.sale_price * quantity
+
+            # Show SePay notice if enabled
+            from services.payment_service import is_sepay_enabled
+            payment_note = "\n🔒 <i>Thanh toán qua chuyển khoản</i>" if is_sepay_enabled(db) else "\nNguồn giao: Tự động qua API"
+
             summary = (
                 f"🛒 <b>XÁC NHẬN ĐƠN HÀNG</b>\n\n"
                 f"Sản phẩm: {html.escape(p.name)}\n"
                 f"Số lượng: {quantity}\n"
                 f"Đơn giá: {p.sale_price:,.0f}đ\n"
-                f"Tổng tiền: <b>{total:,.0f}đ</b>\n"
-                f"Nguồn giao: Tự động qua API"
+                f"Tổng tiền: <b>{total:,.0f}đ</b>"
+                f"{payment_note}"
             )
             context.user_data["state"] = "confirming"
             await update.message.reply_text(

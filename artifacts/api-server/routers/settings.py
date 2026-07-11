@@ -1,3 +1,4 @@
+import json
 import httpx
 from pathlib import Path
 from datetime import datetime
@@ -6,7 +7,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from database import get_db
-from models import TelegramBotConfig, BotStatus
+from models import TelegramBotConfig, BotStatus, SepayConfig, PaymentTransaction
 from crypto import encrypt, decrypt, mask_key
 from services.bot_service import bot_manager
 
@@ -32,23 +33,47 @@ def get_or_create_bot_config(db: Session) -> TelegramBotConfig:
     return cfg
 
 
+def get_or_create_sepay_config(db: Session) -> SepayConfig:
+    cfg = db.query(SepayConfig).first()
+    if not cfg:
+        cfg = SepayConfig()
+        db.add(cfg)
+        db.commit()
+        db.refresh(cfg)
+    return cfg
+
+
+# ── Main settings page ────────────────────────────────────────────────────────
+
 @router.get("/settings", response_class=HTMLResponse)
 async def settings_page(request: Request, db: Session = Depends(get_db)):
     if not check_auth(request):
         return RedirectResponse(url="/login", status_code=302)
     cfg = get_or_create_bot_config(db)
+    sepay = get_or_create_sepay_config(db)
     bot_status = bot_manager.get_status()
     flash_msg = request.session.pop("flash", None)
     masked_token = mask_key(decrypt(cfg.bot_token_encrypted)) if cfg.bot_token_encrypted else ""
+    masked_sepay_token = mask_key(decrypt(sepay.api_token_encrypted)) if sepay.api_token_encrypted else ""
+    masked_webhook_secret = mask_key(decrypt(sepay.webhook_secret_encrypted)) if sepay.webhook_secret_encrypted else ""
+    base_url = str(request.base_url).rstrip("/")
+    webhook_url = f"{base_url}/webhooks/sepay"
+    active_tab = request.query_params.get("tab", "shop")
     return templates.TemplateResponse(request, "settings.html", {
-        
         "cfg": cfg,
+        "sepay": sepay,
         "bot_status": bot_status,
         "masked_token": masked_token,
+        "masked_sepay_token": masked_sepay_token,
+        "masked_webhook_secret": masked_webhook_secret,
+        "webhook_url": webhook_url,
         "flash": flash_msg,
         "mask_key": mask_key,
+        "active_tab": active_tab,
     })
 
+
+# ── Bot settings ──────────────────────────────────────────────────────────────
 
 @router.post("/settings/bot")
 async def save_bot_settings(
@@ -73,7 +98,7 @@ async def save_bot_settings(
     cfg.updated_at = datetime.utcnow()
     db.commit()
     flash(request, "Cài đặt bot đã được lưu!")
-    return RedirectResponse(url="/settings", status_code=302)
+    return RedirectResponse(url="/settings?tab=bot", status_code=302)
 
 
 @router.post("/settings/bot/verify")
@@ -198,3 +223,138 @@ async def save_api_settings(request: Request, db: Session = Depends(get_db)):
         return RedirectResponse(url="/login", status_code=302)
     flash(request, "Cài đặt API đã được lưu!")
     return RedirectResponse(url="/settings", status_code=302)
+
+
+# ── SePay settings ────────────────────────────────────────────────────────────
+
+@router.post("/settings/sepay")
+async def save_sepay_settings(
+    request: Request,
+    db: Session = Depends(get_db),
+    is_enabled: str = Form("off"),
+    bank_name: str = Form(""),
+    account_number: str = Form(""),
+    account_name: str = Form(""),
+    bank_bin: str = Form(""),
+    api_token: str = Form(""),
+    webhook_secret: str = Form(""),
+    payment_prefix: str = Form("AIC"),
+    payment_timeout_minutes: int = Form(15),
+    allow_overpay: str = Form("off"),
+    auto_refund_partial: str = Form("off"),
+    test_mode: str = Form("off"),
+):
+    if not check_auth(request):
+        return RedirectResponse(url="/login", status_code=302)
+
+    sepay = get_or_create_sepay_config(db)
+    want_enabled = (is_enabled == "on")
+
+    # Determine effective token after this save (new input or existing stored)
+    new_token = api_token.strip() if api_token.strip() and not api_token.strip().startswith("*") else ""
+    existing_token = decrypt(sepay.api_token_encrypted) if sepay.api_token_encrypted else ""
+    effective_token = new_token or existing_token
+
+    # SECURITY: refuse to enable SePay without a valid API token.
+    # An empty token would leave the public webhook endpoint open to anyone.
+    if want_enabled and not effective_token:
+        flash(
+            request,
+            "⚠️ Không thể bật SePay: chưa nhập API Token. "
+            "Webhook endpoint sẽ từ chối mọi request khi không có token — "
+            "nhập API Token trước khi bật.",
+            "error",
+        )
+        return RedirectResponse(url="/settings?tab=sepay", status_code=302)
+
+    sepay.is_enabled = want_enabled
+    if bank_name.strip():
+        sepay.bank_name = bank_name.strip()
+    if account_number.strip():
+        sepay.account_number = account_number.strip()
+    if account_name.strip():
+        sepay.account_name = account_name.strip()
+    if bank_bin.strip():
+        sepay.bank_bin = bank_bin.strip()
+    # Only update token/secret if user entered a new value (not the masked placeholder)
+    if new_token:
+        sepay.api_token_encrypted = encrypt(new_token)
+    if webhook_secret.strip() and not webhook_secret.strip().startswith("*"):
+        sepay.webhook_secret_encrypted = encrypt(webhook_secret.strip())
+    sepay.payment_prefix = (payment_prefix or "AIC").strip().upper()[:10]
+    sepay.payment_timeout_minutes = max(1, payment_timeout_minutes)
+    sepay.allow_overpay = (allow_overpay == "on")
+    sepay.auto_refund_partial = (auto_refund_partial == "on")
+    sepay.test_mode = (test_mode == "on")
+    sepay.updated_at = datetime.utcnow()
+    db.commit()
+    flash(request, "Cài đặt SePay đã được lưu!")
+    return RedirectResponse(url="/settings?tab=sepay", status_code=302)
+
+
+@router.get("/settings/sepay/logs")
+async def sepay_webhook_logs(request: Request, db: Session = Depends(get_db)):
+    if not check_auth(request):
+        return JSONResponse({"success": False}, status_code=401)
+    txs = (
+        db.query(PaymentTransaction)
+        .filter(PaymentTransaction.provider == "sepay")
+        .order_by(PaymentTransaction.created_at.desc())
+        .limit(50)
+        .all()
+    )
+    return JSONResponse([{
+        "id": t.id,
+        "tx_id": t.external_transaction_id,
+        "amount_in": t.amount_in,
+        "content": (t.transfer_content or "")[:80],
+        "match_status": t.match_status,
+        "order_id": t.matched_order_id,
+        "created_at": t.created_at.strftime("%d/%m/%Y %H:%M:%S") if t.created_at else "",
+    } for t in txs])
+
+
+@router.post("/settings/sepay/test-webhook")
+async def test_sepay_webhook(
+    request: Request,
+    db: Session = Depends(get_db),
+    amount: float = Form(0),
+    payment_code: str = Form(""),
+):
+    """Test mode only: simulate a SePay webhook transaction."""
+    if not check_auth(request):
+        return JSONResponse({"success": False, "message": "Unauthorized"}, status_code=401)
+    sepay = get_or_create_sepay_config(db)
+    if not sepay.test_mode:
+        return JSONResponse({"success": False, "message": "Bật Test Mode trước"})
+    if amount <= 0:
+        return JSONResponse({"success": False, "message": "Nhập số tiền > 0"})
+    if not payment_code.strip():
+        return JSONResponse({"success": False, "message": "Nhập mã thanh toán"})
+
+    import uuid
+    fake_tx = {
+        "id": f"TEST_{uuid.uuid4().hex[:8].upper()}",
+        "gateway": "TEST",
+        "transactionDate": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
+        "accountNumber": sepay.account_number or "000000000",
+        "transferContent": payment_code.strip().upper(),
+        "transferAmount": amount,
+        "referenceCode": "",
+    }
+    from services.payment_service import process_webhook_transaction
+    result = process_webhook_transaction(db, fake_tx)
+    action = result.get("action", "")
+    order_id = result.get("order_id")
+    if action in ("paid", "overpaid") and order_id:
+        import asyncio
+        from services.payment_service import process_paid_order
+        asyncio.create_task(process_paid_order(order_id))
+    return JSONResponse({"success": True, "result": result})
+
+
+@router.get("/settings/sepay/check-endpoint")
+async def check_sepay_endpoint(request: Request):
+    if not check_auth(request):
+        return JSONResponse({"success": False}, status_code=401)
+    return JSONResponse({"success": True, "message": "Webhook endpoint đang hoạt động ✅"})

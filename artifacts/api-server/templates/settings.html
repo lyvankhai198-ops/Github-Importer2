@@ -1,23 +1,36 @@
 {% extends "base.html" %}
 {% block title %}Cài đặt - AI Center{% endblock %}
 {% block page_title %}⚙️ Cài đặt{% endblock %}
+
+{% block extra_head %}
+<style>
+.nav-tabs .nav-link { font-size: 0.9rem; }
+.masked-field { font-family: monospace; letter-spacing: 2px; color: var(--bs-secondary-color); }
+</style>
+{% endblock %}
+
 {% block content %}
 <ul class="nav nav-tabs mb-4" id="settingsTabs">
-  <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tabShop">🏪 Cửa hàng</button></li>
-  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabBot">🤖 Bot Telegram</button></li>
-  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabOrder">📦 Đơn hàng</button></li>
-  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabApi">🔗 API</button></li>
+  <li class="nav-item"><button class="nav-link {% if active_tab == 'shop' or not active_tab %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#tabShop">🏪 Cửa hàng</button></li>
+  <li class="nav-item"><button class="nav-link {% if active_tab == 'bot' %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#tabBot">🤖 Bot Telegram</button></li>
+  <li class="nav-item"><button class="nav-link {% if active_tab == 'sepay' %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#tabSepay">💳 SePay</button></li>
+  <li class="nav-item"><button class="nav-link {% if active_tab == 'order' %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#tabOrder">📦 Đơn hàng</button></li>
+  <li class="nav-item"><button class="nav-link {% if active_tab == 'api' %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#tabApi">🔗 API</button></li>
 </ul>
 
 <div class="tab-content">
+
   <!-- Shop Tab -->
-  <div class="tab-pane fade show active" id="tabShop">
+  <div class="tab-pane fade {% if active_tab == 'shop' or not active_tab %}show active{% endif %}" id="tabShop">
     <div class="card">
       <div class="card-header"><h6 class="mb-0">Thông tin cửa hàng</h6></div>
       <form action="/settings/store" method="post">
         <div class="card-body">
           <div class="mb-3"><label class="form-label">Tên cửa hàng</label><input type="text" name="shop_name" class="form-control" value="AI Center Bot Manager"></div>
-          <div class="mb-3"><label class="form-label">Username hỗ trợ</label><div class="input-group"><span class="input-group-text">@</span><input type="text" name="support_username" class="form-control" value="{{ cfg.support_username or '' }}"></div></div>
+          <div class="mb-3"><label class="form-label">Username hỗ trợ</label>
+            <div class="input-group"><span class="input-group-text">@</span>
+            <input type="text" name="support_username" class="form-control" value="{{ cfg.support_username or '' }}"></div>
+          </div>
         </div>
         <div class="card-footer"><button type="submit" class="btn btn-primary">Lưu cài đặt</button></div>
       </form>
@@ -25,7 +38,7 @@
   </div>
 
   <!-- Bot Tab -->
-  <div class="tab-pane fade" id="tabBot">
+  <div class="tab-pane fade {% if active_tab == 'bot' %}show active{% endif %}" id="tabBot">
     <div class="row g-3">
       <div class="col-12 col-lg-7">
         <div class="card mb-3">
@@ -41,8 +54,11 @@
                 <small class="text-muted">Token hiện tại: {{ masked_token or 'Chưa cấu hình' }}</small>
               </div>
               <div class="mb-3"><label class="form-label">Admin Telegram ID</label><input type="text" name="admin_telegram_id" class="form-control" value="{{ cfg.admin_telegram_id or '' }}" placeholder="123456789"></div>
-              <div class="mb-3"><label class="form-label">Lời chào mừng</label><textarea name="welcome_message" class="form-control" rows="3" placeholder="Chào mừng bạn!">{{ cfg.welcome_message or '' }}</textarea></div>
-              <div class="mb-3"><label class="form-label">Username hỗ trợ</label><div class="input-group"><span class="input-group-text">@</span><input type="text" name="support_username" class="form-control" value="{{ cfg.support_username or '' }}"></div></div>
+              <div class="mb-3"><label class="form-label">Lời chào mừng</label><textarea name="welcome_message" class="form-control" rows="3">{{ cfg.welcome_message or '' }}</textarea></div>
+              <div class="mb-3"><label class="form-label">Username hỗ trợ</label>
+                <div class="input-group"><span class="input-group-text">@</span>
+                <input type="text" name="support_username" class="form-control" value="{{ cfg.support_username or '' }}"></div>
+              </div>
             </div>
             <div class="card-footer d-flex gap-2 flex-wrap">
               <button type="submit" class="btn btn-primary">💾 Lưu cài đặt</button>
@@ -52,7 +68,6 @@
         </div>
       </div>
       <div class="col-12 col-lg-5">
-        <!-- Bot Status -->
         <div class="card mb-3">
           <div class="card-header d-flex justify-content-between align-items-center">
             <h6 class="mb-0">Trạng thái Bot</h6>
@@ -75,13 +90,168 @@
     </div>
   </div>
 
+  <!-- SePay Tab -->
+  <div class="tab-pane fade {% if active_tab == 'sepay' %}show active{% endif %}" id="tabSepay">
+    <div class="row g-3">
+      <!-- Config card -->
+      <div class="col-12 col-lg-7">
+        <div class="card mb-3">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <h6 class="mb-0">💳 Thanh toán SePay</h6>
+            {% if sepay.is_enabled %}
+              <span class="badge bg-success">Đang bật</span>
+            {% else %}
+              <span class="badge bg-secondary">Đang tắt</span>
+            {% endif %}
+          </div>
+          <form action="/settings/sepay" method="post">
+            <div class="card-body">
+              <div class="mb-3 form-check form-switch">
+                <input class="form-check-input" type="checkbox" name="is_enabled" id="sepayEnabled" {{ 'checked' if sepay.is_enabled else '' }}>
+                <label class="form-check-label fw-semibold" for="sepayEnabled">Bật thanh toán SePay</label>
+              </div>
+              <div class="row g-3">
+                <div class="col-sm-6">
+                  <label class="form-label">Tên ngân hàng</label>
+                  <input type="text" name="bank_name" class="form-control" value="{{ sepay.bank_name or '' }}" placeholder="MB Bank">
+                </div>
+                <div class="col-sm-6">
+                  <label class="form-label">Mã BIN ngân hàng</label>
+                  <input type="text" name="bank_bin" class="form-control" value="{{ sepay.bank_bin or '' }}" placeholder="970422">
+                  <small class="text-muted">Dùng để tạo QR VietQR</small>
+                </div>
+                <div class="col-sm-6">
+                  <label class="form-label">Số tài khoản</label>
+                  <input type="text" name="account_number" class="form-control" value="{{ sepay.account_number or '' }}" placeholder="0123456789">
+                </div>
+                <div class="col-sm-6">
+                  <label class="form-label">Tên chủ tài khoản</label>
+                  <input type="text" name="account_name" class="form-control" value="{{ sepay.account_name or '' }}" placeholder="NGUYEN VAN A">
+                </div>
+                <div class="col-12">
+                  <label class="form-label">SePay API Token <span class="text-danger">*</span></label>
+                  <div class="input-group">
+                    <input type="password" name="api_token" id="sepayTokenInput" class="form-control"
+                           placeholder="{{ masked_sepay_token or 'Nhập API token (bắt buộc để bật SePay)...' }}">
+                    <button type="button" class="btn btn-outline-secondary" onclick="togglePass('sepayTokenInput', this)"><i class="bi bi-eye"></i></button>
+                  </div>
+                  {% if masked_sepay_token %}
+                    <small class="text-success"><i class="bi bi-check-circle-fill"></i> Đã cấu hình: <span class="masked-field">{{ masked_sepay_token }}</span></small>
+                  {% else %}
+                    <small class="text-danger"><i class="bi bi-exclamation-triangle-fill"></i> Chưa có token — SePay sẽ không thể bật cho đến khi nhập token hợp lệ.</small>
+                  {% endif %}
+                </div>
+                <div class="col-12">
+                  <label class="form-label">Webhook Secret</label>
+                  <div class="input-group">
+                    <input type="password" name="webhook_secret" id="sepaySecretInput" class="form-control"
+                           placeholder="{{ masked_webhook_secret or 'Nhập webhook secret...' }}">
+                    <button type="button" class="btn btn-outline-secondary" onclick="togglePass('sepaySecretInput', this)"><i class="bi bi-eye"></i></button>
+                  </div>
+                  {% if masked_webhook_secret %}<small class="text-muted masked-field">{{ masked_webhook_secret }}</small>{% endif %}
+                </div>
+                <div class="col-sm-6">
+                  <label class="form-label">Tiền tố nội dung</label>
+                  <input type="text" name="payment_prefix" class="form-control" value="{{ sepay.payment_prefix or 'AIC' }}" maxlength="10">
+                  <small class="text-muted">VD: AIC → mã TT: AICCF4B8D1A</small>
+                </div>
+                <div class="col-sm-6">
+                  <label class="form-label">Thời gian hết hạn (phút)</label>
+                  <input type="number" name="payment_timeout_minutes" class="form-control" value="{{ sepay.payment_timeout_minutes or 15 }}" min="1" max="1440">
+                </div>
+                <div class="col-12">
+                  <div class="form-check form-switch mb-2">
+                    <input class="form-check-input" type="checkbox" name="allow_overpay" id="allowOverpay" {{ 'checked' if sepay.allow_overpay else '' }}>
+                    <label class="form-check-label" for="allowOverpay">Cho phép thanh toán thừa (vẫn xử lý đơn)</label>
+                  </div>
+                  <div class="form-check form-switch mb-2">
+                    <input class="form-check-input" type="checkbox" name="auto_refund_partial" id="autoRefund" {{ 'checked' if sepay.auto_refund_partial else '' }}>
+                    <label class="form-check-label" for="autoRefund">Tự động hoàn đơn thiếu tiền</label>
+                  </div>
+                  <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" name="test_mode" id="testMode" {{ 'checked' if sepay.test_mode else '' }}>
+                    <label class="form-check-label text-warning fw-semibold" for="testMode">🧪 Test Mode (chỉ dùng khi phát triển)</label>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="card-footer">
+              <button type="submit" class="btn btn-primary">💾 Lưu cài đặt SePay</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Webhook info card -->
+      <div class="col-12 col-lg-5">
+        <div class="card mb-3">
+          <div class="card-header"><h6 class="mb-0">🌐 Cấu hình Webhook</h6></div>
+          <div class="card-body">
+            <label class="form-label small text-muted">URL Webhook (điền vào SePay Dashboard)</label>
+            <div class="input-group mb-3">
+              <input type="text" id="webhookUrl" class="form-control form-control-sm font-monospace"
+                     value="{{ webhook_url }}" readonly>
+              <button class="btn btn-outline-secondary btn-sm" onclick="copyWebhook()">
+                <i class="bi bi-clipboard"></i>
+              </button>
+            </div>
+            <div class="d-grid gap-2">
+              <button class="btn btn-outline-info btn-sm" onclick="checkEndpoint()">
+                🔍 Kiểm tra endpoint
+              </button>
+              <button class="btn btn-outline-warning btn-sm" onclick="viewLogs()">
+                📜 Xem log webhook
+              </button>
+            </div>
+            <div id="endpointResult" class="mt-2"></div>
+          </div>
+        </div>
+
+        <!-- Test mode -->
+        <div class="card mb-3" id="testCard" style="{{ '' if sepay.test_mode else 'display:none' }}">
+          <div class="card-header"><h6 class="mb-0">🧪 Tạo giao dịch thử</h6></div>
+          <div class="card-body">
+            <div class="mb-2">
+              <label class="form-label small">Mã thanh toán (payment_code)</label>
+              <input type="text" id="testCode" class="form-control form-control-sm" placeholder="AICCF4B8D1A">
+            </div>
+            <div class="mb-2">
+              <label class="form-label small">Số tiền (đ)</label>
+              <input type="number" id="testAmount" class="form-control form-control-sm" placeholder="40000">
+            </div>
+            <button class="btn btn-warning btn-sm w-100" onclick="sendTestWebhook()">
+              🚀 Gửi giao dịch thử
+            </button>
+            <div id="testResult" class="mt-2"></div>
+          </div>
+        </div>
+
+        <!-- Webhook logs -->
+        <div class="card d-none" id="logsCard">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <h6 class="mb-0">📜 Log webhook gần đây</h6>
+            <button class="btn btn-xs btn-outline-secondary btn-sm" onclick="viewLogs()">🔄</button>
+          </div>
+          <div class="card-body p-0">
+            <div class="table-responsive">
+              <table class="table table-sm table-hover mb-0 small">
+                <thead><tr><th>TX ID</th><th>Số tiền</th><th>Trạng thái</th><th>Thời gian</th></tr></thead>
+                <tbody id="logsBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Order Tab -->
-  <div class="tab-pane fade" id="tabOrder">
+  <div class="tab-pane fade {% if active_tab == 'order' %}show active{% endif %}" id="tabOrder">
     <div class="card">
       <div class="card-header"><h6 class="mb-0">Cài đặt đơn hàng</h6></div>
       <form action="/settings/order" method="post">
         <div class="card-body">
-          <div class="mb-3"><label class="form-label">Thông báo đơn mới</label>
+          <div class="mb-3">
             <div class="form-check form-switch"><input class="form-check-input" type="checkbox" checked><label class="form-check-label">Thông báo admin khi có đơn mới</label></div>
           </div>
           <div class="mb-3"><label class="form-label">Auto-cancel sau (giờ)</label><input type="number" class="form-control" value="24" min="1"></div>
@@ -92,7 +262,7 @@
   </div>
 
   <!-- API Tab -->
-  <div class="tab-pane fade" id="tabApi">
+  <div class="tab-pane fade {% if active_tab == 'api' %}show active{% endif %}" id="tabApi">
     <div class="card">
       <div class="card-header"><h6 class="mb-0">Cài đặt API</h6></div>
       <form action="/settings/api" method="post">
@@ -104,10 +274,13 @@
       </form>
     </div>
   </div>
+
 </div>
 {% endblock %}
+
 {% block scripts %}
 <script>
+// ── Token toggle ──────────────────────────────────────────────────────────────
 document.getElementById('toggleBotToken')?.addEventListener('click', function() {
   const inp = document.getElementById('botTokenInput');
   const icon = this.querySelector('i');
@@ -115,14 +288,21 @@ document.getElementById('toggleBotToken')?.addEventListener('click', function() 
   icon.className = inp.type === 'password' ? 'bi bi-eye' : 'bi bi-eye-slash';
 });
 
+function togglePass(inputId, btn) {
+  const inp = document.getElementById(inputId);
+  const icon = btn.querySelector('i');
+  inp.type = inp.type === 'password' ? 'text' : 'password';
+  icon.className = inp.type === 'password' ? 'bi bi-eye' : 'bi bi-eye-slash';
+}
+
+// ── Bot verify ────────────────────────────────────────────────────────────────
 document.getElementById('verifyBotBtn')?.addEventListener('click', async function() {
-  this.disabled = true;
-  this.textContent = 'Đang xác minh...';
+  this.disabled = true; this.textContent = 'Đang xác minh...';
   const token = document.getElementById('botTokenInput').value;
   const fd = new FormData();
   if (token) fd.append('token', token);
   try {
-    const r = await fetch('/settings/bot/verify', {method:'POST', body: fd});
+    const r = await fetch('/settings/bot/verify', {method:'POST', body:fd});
     const d = await r.json();
     const section = document.getElementById('botInfoSection');
     if (d.success) {
@@ -133,14 +313,12 @@ document.getElementById('verifyBotBtn')?.addEventListener('click', async functio
   } catch(e) {
     document.getElementById('botInfoSection').innerHTML = `<div class="alert alert-danger mt-2">Lỗi: ${e}</div>`;
   }
-  this.disabled = false;
-  this.textContent = '✅ Xác minh token';
+  this.disabled = false; this.textContent = '✅ Xác minh token';
 });
 
+// ── Bot action ────────────────────────────────────────────────────────────────
 async function botAction(action) {
-  const btns = ['startBotBtn','stopBotBtn','restartBotBtn'].forEach(id => {
-    const el = document.getElementById(id); if(el) el.disabled = true;
-  });
+  ['startBotBtn','stopBotBtn','restartBotBtn'].forEach(id => { const el = document.getElementById(id); if(el) el.disabled = true; });
   const resultDiv = document.getElementById('botActionResult');
   try {
     const r = await fetch(`/settings/bot/${action}`, {method:'POST'});
@@ -154,9 +332,79 @@ async function botAction(action) {
     resultDiv.textContent = 'Lỗi: ' + e;
     resultDiv.classList.remove('d-none');
   }
-  ['startBotBtn','stopBotBtn','restartBotBtn'].forEach(id => {
-    const el = document.getElementById(id); if(el) el.disabled = false;
+  ['startBotBtn','stopBotBtn','restartBotBtn'].forEach(id => { const el = document.getElementById(id); if(el) el.disabled = false; });
+}
+
+// ── Test mode toggle ──────────────────────────────────────────────────────────
+document.getElementById('testMode')?.addEventListener('change', function() {
+  document.getElementById('testCard').style.display = this.checked ? '' : 'none';
+});
+
+// ── Webhook helpers ───────────────────────────────────────────────────────────
+function copyWebhook() {
+  const url = document.getElementById('webhookUrl').value;
+  navigator.clipboard.writeText(url).then(() => {
+    const btn = event.target.closest('button');
+    const orig = btn.innerHTML;
+    btn.innerHTML = '<i class="bi bi-check"></i>';
+    setTimeout(() => btn.innerHTML = orig, 1500);
   });
+}
+
+async function checkEndpoint() {
+  const div = document.getElementById('endpointResult');
+  div.innerHTML = '<span class="text-muted small">Đang kiểm tra...</span>';
+  try {
+    const r = await fetch('/settings/sepay/check-endpoint');
+    const d = await r.json();
+    div.innerHTML = `<div class="alert alert-${d.success ? 'success' : 'danger'} py-1 px-2 small mt-1">${d.message}</div>`;
+  } catch(e) {
+    div.innerHTML = `<div class="alert alert-danger py-1 px-2 small mt-1">Lỗi: ${e}</div>`;
+  }
+}
+
+async function viewLogs() {
+  const card = document.getElementById('logsCard');
+  card.classList.remove('d-none');
+  const tbody = document.getElementById('logsBody');
+  tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">Đang tải...</td></tr>';
+  try {
+    const r = await fetch('/settings/sepay/logs');
+    const logs = await r.json();
+    if (!logs.length) {
+      tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">Chưa có log nào</td></tr>';
+      return;
+    }
+    tbody.innerHTML = logs.map(l => `
+      <tr>
+        <td><code class="small">${l.tx_id.slice(0,12)}</code></td>
+        <td>${Number(l.amount_in).toLocaleString('vi-VN')}đ</td>
+        <td><span class="badge ${l.match_status === 'matched' ? 'bg-success' : l.match_status === 'partial' ? 'bg-warning text-dark' : l.match_status === 'unmatched' ? 'bg-secondary' : 'bg-danger'}">${l.match_status}</span></td>
+        <td class="small">${l.created_at}</td>
+      </tr>
+    `).join('');
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="4" class="text-danger small">${e}</td></tr>`;
+  }
+}
+
+async function sendTestWebhook() {
+  const code = document.getElementById('testCode').value.trim();
+  const amount = parseFloat(document.getElementById('testAmount').value);
+  const div = document.getElementById('testResult');
+  if (!code || !amount) { div.innerHTML = '<div class="alert alert-warning small py-1">Điền đầy đủ thông tin.</div>'; return; }
+  const fd = new FormData();
+  fd.append('payment_code', code);
+  fd.append('amount', amount);
+  div.innerHTML = '<span class="text-muted small">Đang gửi...</span>';
+  try {
+    const r = await fetch('/settings/sepay/test-webhook', {method:'POST', body:fd});
+    const d = await r.json();
+    const action = d.result?.action || '—';
+    div.innerHTML = `<div class="alert alert-${d.success ? 'success' : 'danger'} py-1 px-2 small">action: <b>${action}</b></div>`;
+  } catch(e) {
+    div.innerHTML = `<div class="alert alert-danger py-1 small">${e}</div>`;
+  }
 }
 </script>
 {% endblock %}

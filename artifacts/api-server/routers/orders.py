@@ -27,6 +27,7 @@ async def orders_list(
     request: Request,
     db: Session = Depends(get_db),
     status: str = "",
+    payment_status: str = "",
     search: str = "",
     date_from: str = "",
     date_to: str = "",
@@ -34,9 +35,15 @@ async def orders_list(
 ):
     if not check_auth(request):
         return RedirectResponse(url="/login", status_code=302)
+    from models import PaymentStatus
     q = db.query(Order)
     if status:
         q = q.filter(Order.status == status)
+    if payment_status:
+        try:
+            q = q.filter(Order.payment_status == PaymentStatus(payment_status))
+        except Exception:
+            pass
     if search:
         q = q.filter(Order.order_code.ilike(f"%{search}%") | Order.telegram_user_id.ilike(f"%{search}%"))
     if date_from:
@@ -55,9 +62,9 @@ async def orders_list(
     orders = q.order_by(Order.created_at.desc()).offset((page - 1) * per_page).limit(per_page).all()
     flash_msg = request.session.pop("flash", None)
     return templates.TemplateResponse(request, "orders.html", {
-        
         "orders": orders,
         "status_filter": status,
+        "payment_status_filter": payment_status,
         "search": search,
         "date_from": date_from,
         "date_to": date_to,

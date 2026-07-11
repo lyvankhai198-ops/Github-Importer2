@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Float, Boolean, Text, DateTime, ForeignKey, Enum as SAEnum
+from sqlalchemy import Column, Integer, String, Float, Boolean, Text, DateTime, ForeignKey, Enum as SAEnum, UniqueConstraint
 from sqlalchemy.orm import relationship
 from database import Base
 import enum
@@ -34,11 +34,23 @@ class ApiType(str, enum.Enum):
 
 class OrderStatus(str, enum.Enum):
     pending_manual = "pending_manual"
+    pending_payment = "pending_payment"    # waiting for customer payment
     processing_api = "processing_api"
     completed = "completed"
     partial_delivery = "partial_delivery"
     failed = "failed"
+    api_failed = "api_failed"              # paid but API source failed
+    payment_expired = "payment_expired"    # payment window expired
     cancelled = "cancelled"
+
+
+class PaymentStatus(str, enum.Enum):
+    pending = "pending"
+    partial = "partial"
+    paid = "paid"
+    overpaid = "overpaid"
+    expired = "expired"
+    failed = "failed"
 
 
 def now():
@@ -79,6 +91,26 @@ class TelegramBotConfig(Base):
     updated_at = Column(DateTime, default=now, onupdate=now)
 
 
+class SepayConfig(Base):
+    """SePay payment gateway configuration. Sensitive fields are Fernet-encrypted."""
+    __tablename__ = "sepay_config"
+    id = Column(Integer, primary_key=True, index=True)
+    is_enabled = Column(Boolean, default=False)
+    bank_name = Column(String(255), nullable=True)
+    account_number = Column(String(100), nullable=True)
+    account_name = Column(String(255), nullable=True)
+    bank_bin = Column(String(20), nullable=True)
+    api_token_encrypted = Column(Text, nullable=True)        # NEVER logged
+    webhook_secret_encrypted = Column(Text, nullable=True)   # NEVER logged
+    payment_prefix = Column(String(20), default="AIC")
+    payment_timeout_minutes = Column(Integer, default=15)
+    allow_overpay = Column(Boolean, default=True)
+    auto_refund_partial = Column(Boolean, default=False)
+    test_mode = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=now)
+    updated_at = Column(DateTime, default=now, onupdate=now)
+
+
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
@@ -104,9 +136,9 @@ class Product(Base):
     description = Column(Text, nullable=True)
     image_path = Column(String(500), nullable=True)
     sale_price = Column(Float, default=0.0)
-    min_quantity = Column(Integer, default=1)      # minimum purchase quantity
-    warranty = Column(String(255), nullable=True)  # e.g. "Full"
-    duration = Column(String(255), nullable=True)  # e.g. "1 năm"
+    min_quantity = Column(Integer, default=1)
+    warranty = Column(String(255), nullable=True)
+    duration = Column(String(255), nullable=True)
     source_type = Column(SAEnum(SourceType), default=SourceType.manual)
     delivery_mode = Column(SAEnum(DeliveryMode), default=DeliveryMode.manual)
     is_active = Column(Boolean, default=True)
@@ -144,14 +176,14 @@ class ApiProduct(Base):
     api_connection_id = Column(Integer, ForeignKey("api_connections.id"), nullable=False)
     external_product_id = Column(String(255), nullable=False)
     external_name = Column(String(500), nullable=True)
-    external_description = Column(Text, nullable=True)       # NEW
+    external_description = Column(Text, nullable=True)
     external_price = Column(Float, nullable=True)
     external_stock = Column(Integer, nullable=True)
-    external_min_quantity = Column(Integer, nullable=True)   # NEW
-    external_max_quantity = Column(Integer, nullable=True)   # NEW
-    external_warranty = Column(String(255), nullable=True)   # NEW
-    external_duration = Column(String(255), nullable=True)   # NEW
-    external_image_url = Column(String(1000), nullable=True) # NEW
+    external_min_quantity = Column(Integer, nullable=True)
+    external_max_quantity = Column(Integer, nullable=True)
+    external_warranty = Column(String(255), nullable=True)
+    external_duration = Column(String(255), nullable=True)
+    external_image_url = Column(String(1000), nullable=True)
     external_status = Column(String(100), nullable=True)
     raw_json = Column(Text, nullable=True)
     last_sync_at = Column(DateTime, nullable=True)
@@ -188,15 +220,26 @@ class Order(Base):
     quantity = Column(Integer, default=1)
     unit_price = Column(Float, default=0.0)
     total_price = Column(Float, default=0.0)
-    source_unit_price = Column(Float, nullable=True)          # NEW: cost from API
+    source_unit_price = Column(Float, nullable=True)
     api_connection_id = Column(Integer, ForeignKey("api_connections.id"), nullable=True)
-    external_order_id = Column(String(255), nullable=True)    # internal API order id
-    external_order_code = Column(String(255), nullable=True)  # NEW: human-readable source code e.g. DH185192453
-    delivery_data = Column(Text, nullable=True)               # raw API response (JSON)
-    delivery_items = Column(Text, nullable=True)              # NEW: normalized items JSON
-    partial_count = Column(Integer, nullable=True)            # NEW: how many actually delivered
+    external_order_id = Column(String(255), nullable=True)
+    external_order_code = Column(String(255), nullable=True)
+    delivery_data = Column(Text, nullable=True)
+    delivery_items = Column(Text, nullable=True)
+    partial_count = Column(Integer, nullable=True)
     status = Column(SAEnum(OrderStatus), default=OrderStatus.pending_manual)
     notes = Column(Text, nullable=True)
+    # ── Payment fields (all nullable — existing orders unaffected) ────────────
+    payment_status = Column(SAEnum(PaymentStatus), nullable=True)
+    payment_method = Column(String(50), nullable=True, default="bank_transfer")
+    payment_code = Column(String(50), nullable=True, index=True)
+    expected_amount = Column(Float, nullable=True)
+    paid_amount = Column(Float, nullable=True, default=0.0)
+    payment_expires_at = Column(DateTime, nullable=True)
+    paid_at = Column(DateTime, nullable=True)
+    payment_transaction_id = Column(String(255), nullable=True)
+    payment_raw_data = Column(Text, nullable=True)
+    # ─────────────────────────────────────────────────────────────────────────
     created_at = Column(DateTime, default=now)
     updated_at = Column(DateTime, default=now, onupdate=now)
 
@@ -204,6 +247,36 @@ class Order(Base):
     product = relationship("Product", back_populates="orders")
     api_connection = relationship("ApiConnection", back_populates="orders")
     source_attempts = relationship("OrderSourceAttempt", back_populates="order", cascade="all, delete-orphan")
+    payment_transactions = relationship(
+        "PaymentTransaction", back_populates="matched_order",
+        foreign_keys="PaymentTransaction.matched_order_id",
+    )
+
+
+class PaymentTransaction(Base):
+    """One row per incoming SePay webhook. Unique on (provider, external_transaction_id)."""
+    __tablename__ = "payment_transactions"
+    id = Column(Integer, primary_key=True, index=True)
+    provider = Column(String(50), default="sepay", nullable=False)
+    external_transaction_id = Column(String(255), nullable=False)
+    gateway = Column(String(100), nullable=True)
+    transaction_date = Column(DateTime, nullable=True)
+    account_number = Column(String(100), nullable=True)
+    transfer_content = Column(Text, nullable=True)
+    amount_in = Column(Float, default=0.0)
+    amount_out = Column(Float, default=0.0)
+    reference_code = Column(String(255), nullable=True)
+    matched_order_id = Column(Integer, ForeignKey("orders.id"), nullable=True)
+    match_status = Column(String(50), nullable=True)  # matched/partial/unmatched/late_payment
+    raw_json = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=now)
+
+    matched_order = relationship("Order", back_populates="payment_transactions",
+                                  foreign_keys=[matched_order_id])
+
+    __table_args__ = (
+        UniqueConstraint("provider", "external_transaction_id", name="uq_payment_tx"),
+    )
 
 
 class OrderSourceAttempt(Base):

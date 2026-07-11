@@ -23,6 +23,8 @@
 
 {% block content %}
 {% set sv = order.status.value if order.status.value is defined else order.status %}
+{% set ps = (order.payment_status.value if order.payment_status.value is defined else order.payment_status) if order.payment_status else None %}
+
 <div class="row g-3">
 
   {# ── LEFT COLUMN ── #}
@@ -33,9 +35,12 @@
       <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
         <h5 class="mb-0"><code>{{ order.order_code }}</code></h5>
         {% if sv == 'completed' %}<span class="badge bg-success fs-6">✅ Hoàn thành</span>
+        {% elif sv == 'pending_payment' %}<span class="badge bg-warning text-dark fs-6">💳 Chờ thanh toán</span>
         {% elif sv == 'partial_delivery' %}<span class="badge bg-warning text-dark fs-6">⚠️ Giao thiếu</span>
         {% elif sv == 'pending_manual' %}<span class="badge bg-warning text-dark fs-6">⏳ Chờ xử lý</span>
         {% elif sv == 'processing_api' %}<span class="badge bg-info fs-6">🔄 Đang xử lý</span>
+        {% elif sv == 'api_failed' %}<span class="badge bg-danger fs-6">🚨 API lỗi</span>
+        {% elif sv == 'payment_expired' %}<span class="badge bg-secondary fs-6">⏰ Hết hạn TT</span>
         {% elif sv == 'failed' %}<span class="badge bg-danger fs-6">❌ Thất bại</span>
         {% elif sv == 'cancelled' %}<span class="badge bg-secondary fs-6">🚫 Đã hủy</span>
         {% else %}<span class="badge bg-secondary fs-6">{{ sv }}</span>{% endif %}
@@ -92,7 +97,7 @@
             <div>{{ order.created_at.strftime('%d/%m/%Y %H:%M:%S') }}</div>
           </div>
           {% if order.notes %}
-          <div class="info-cell" style="grid-column: 1/-1">
+          <div class="info-cell" style="grid-column:1/-1">
             <label>Ghi chú</label>
             <div>{{ order.notes }}</div>
           </div>
@@ -100,6 +105,117 @@
         </div>
       </div>
     </div>
+
+    {# ── Payment card (only for orders with payment flow) ── #}
+    {% if ps %}
+    <div class="card mb-3 border-{% if ps == 'paid' or ps == 'overpaid' %}success{% elif ps == 'partial' %}warning{% elif ps == 'expired' %}secondary{% else %}info{% endif %}">
+      <div class="card-header">
+        <h6 class="mb-0">💳 Thông tin thanh toán</h6>
+      </div>
+      <div class="card-body">
+        <div class="info-grid">
+          <div class="info-cell">
+            <label>Trạng thái TT</label>
+            <div>
+              {% if ps == 'paid' %}<span class="badge bg-success">✅ Đã thanh toán đủ</span>
+              {% elif ps == 'overpaid' %}<span class="badge bg-info">💰 Thanh toán thừa</span>
+              {% elif ps == 'partial' %}<span class="badge bg-warning text-dark">⚠️ Thanh toán thiếu</span>
+              {% elif ps == 'expired' %}<span class="badge bg-secondary">⏰ Hết hạn</span>
+              {% elif ps == 'pending' %}<span class="badge bg-light text-dark border">⏳ Chờ thanh toán</span>
+              {% else %}<span class="badge bg-secondary">{{ ps }}</span>{% endif %}
+            </div>
+          </div>
+          <div class="info-cell">
+            <label>Mã thanh toán</label>
+            <div><code class="fs-6">{{ order.payment_code or "—" }}</code></div>
+          </div>
+          <div class="info-cell">
+            <label>Cần thanh toán</label>
+            <div class="fw-semibold">{{ "{:,.0f}".format(order.expected_amount or order.total_price) }}đ</div>
+          </div>
+          <div class="info-cell">
+            <label>Đã nhận</label>
+            <div class="fw-semibold {% if (order.paid_amount or 0) >= (order.expected_amount or order.total_price) %}text-success{% else %}text-warning{% endif %}">
+              {{ "{:,.0f}".format(order.paid_amount or 0) }}đ
+            </div>
+          </div>
+          {% if (order.paid_amount or 0) < (order.expected_amount or order.total_price) %}
+          <div class="info-cell">
+            <label>Còn thiếu</label>
+            <div class="text-danger fw-semibold">
+              {{ "{:,.0f}".format((order.expected_amount or order.total_price) - (order.paid_amount or 0)) }}đ
+            </div>
+          </div>
+          {% endif %}
+          {% if order.paid_at %}
+          <div class="info-cell">
+            <label>Thời gian TT</label>
+            <div>{{ order.paid_at.strftime('%d/%m/%Y %H:%M:%S') }}</div>
+          </div>
+          {% endif %}
+          {% if order.payment_expires_at %}
+          <div class="info-cell">
+            <label>Hết hạn lúc</label>
+            <div>{{ order.payment_expires_at.strftime('%d/%m/%Y %H:%M') }}</div>
+          </div>
+          {% endif %}
+          {% if order.payment_transaction_id %}
+          <div class="info-cell">
+            <label>TX ID</label>
+            <div><code class="small">{{ order.payment_transaction_id }}</code></div>
+          </div>
+          {% endif %}
+        </div>
+
+        {# SePay transactions list #}
+        {% if order.payment_transactions %}
+        <hr>
+        <h6 class="small text-muted mb-2">Giao dịch SePay liên quan</h6>
+        <div class="table-responsive">
+          <table class="table table-sm mb-0 small">
+            <thead>
+              <tr><th>TX ID</th><th>Số tiền</th><th>Nội dung</th><th>Trạng thái</th><th>Thời gian</th></tr>
+            </thead>
+            <tbody>
+              {% for tx in order.payment_transactions %}
+              <tr>
+                <td><code>{{ tx.external_transaction_id[:16] }}{% if tx.external_transaction_id|length > 16 %}…{% endif %}</code></td>
+                <td class="text-success fw-semibold">+{{ "{:,.0f}".format(tx.amount_in) }}đ</td>
+                <td>{{ (tx.transfer_content or '')[:40] }}</td>
+                <td>
+                  <span class="badge {% if tx.match_status == 'matched' %}bg-success{% elif tx.match_status == 'partial' %}bg-warning text-dark{% elif tx.match_status == 'late_payment' %}bg-danger{% else %}bg-secondary{% endif %}">
+                    {{ tx.match_status or '—' }}
+                  </span>
+                </td>
+                <td>{{ tx.created_at.strftime('%d/%m/%Y %H:%M') if tx.created_at else '—' }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        {# Raw webhook accordion #}
+        {% if order.payment_transactions[0].raw_json %}
+        <div class="accordion mt-2" id="rawWebhookAccordion">
+          <div class="accordion-item">
+            <h2 class="accordion-header">
+              <button class="accordion-button collapsed small py-2" type="button"
+                      data-bs-toggle="collapse" data-bs-target="#rawWebhookPanel">
+                🔍 Xem raw webhook JSON
+              </button>
+            </h2>
+            <div id="rawWebhookPanel" class="accordion-collapse collapse">
+              <div class="accordion-body p-0">
+                <pre class="mb-0 p-3" style="font-size:0.75rem;max-height:300px;overflow:auto;background:var(--bs-tertiary-bg)">{{ order.payment_transactions[0].raw_json }}</pre>
+              </div>
+            </div>
+          </div>
+        </div>
+        {% endif %}
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
 
     {# ── Normalized delivery items ── #}
     {% if delivery_items %}
@@ -122,7 +238,6 @@
       </div>
     </div>
     {% elif order.delivery_data and sv == 'completed' %}
-    {# Fallback: old orders without normalized items #}
     <div class="card mb-3">
       <div class="card-header"><h6 class="mb-0">📦 Thông tin giao hàng</h6></div>
       <div class="card-body">
@@ -131,8 +246,8 @@
     </div>
     {% endif %}
 
-    {# ── Raw JSON (collapsed) ── #}
-    {% if order.delivery_data %}
+    {# ── Raw API response (collapsed) ── #}
+    {% if raw_json_pretty %}
     <div class="mb-3">
       <div class="accordion" id="rawJsonAccordion">
         <div class="accordion-item">
@@ -142,7 +257,7 @@
               🔍 Xem JSON gốc từ API nguồn
             </button>
           </h2>
-          <div id="rawJsonPanel" class="accordion-collapse collapse" data-bs-parent="#rawJsonAccordion">
+          <div id="rawJsonPanel" class="accordion-collapse collapse">
             <div class="accordion-body p-0">
               <pre class="mb-0 p-3" style="font-size:0.78rem;max-height:400px;overflow:auto;background:var(--bs-tertiary-bg)">{{ raw_json_pretty }}</pre>
             </div>
@@ -158,19 +273,13 @@
       <div class="card-header"><h6 class="mb-0">🔄 Lịch sử thử nguồn</h6></div>
       <div class="card-body p-0">
         <table class="table table-sm mb-0">
-          <thead>
-            <tr><th>#</th><th>Nguồn</th><th>Trạng thái</th><th>Mã đơn nguồn</th><th>Lỗi</th></tr>
-          </thead>
+          <thead><tr><th>#</th><th>Nguồn</th><th>Trạng thái</th><th>Mã đơn nguồn</th><th>Lỗi</th></tr></thead>
           <tbody>
             {% for a in order.source_attempts %}
             <tr>
               <td>{{ a.attempt_number }}</td>
               <td>{{ a.product_source.api_product.connection.name if a.product_source and a.product_source.api_product and a.product_source.api_product.connection else a.product_source_id }}</td>
-              <td>
-                <span class="badge {% if a.status=='success' %}bg-success{% else %}bg-danger{% endif %}">
-                  {{ a.status }}
-                </span>
-              </td>
+              <td><span class="badge {% if a.status=='success' %}bg-success{% else %}bg-danger{% endif %}">{{ a.status }}</span></td>
               <td><code>{{ a.external_order_id or '—' }}</code></td>
               <td><small class="text-danger">{{ a.error_message or '' }}</small></td>
             </tr>
@@ -185,7 +294,7 @@
   {# ── RIGHT COLUMN — Actions ── #}
   <div class="col-12 col-lg-4">
 
-    {% if sv in ['pending_manual', 'processing_api', 'failed', 'partial_delivery'] %}
+    {% if sv in ['pending_manual', 'processing_api', 'failed', 'partial_delivery', 'api_failed'] %}
     <div class="card mb-3">
       <div class="card-header"><h6 class="mb-0">✅ Hoàn thành đơn hàng</h6></div>
       <form action="/orders/{{ order.id }}/complete" method="post">
