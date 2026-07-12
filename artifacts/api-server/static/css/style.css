@@ -162,11 +162,13 @@ body {
 .status-running { background: #dcfce7; color: #166534; }
 .status-stopped { background: #f1f5f9; color: #475569; }
 .status-starting { background: #fef3c7; color: #92400e; }
+.status-reconnecting { background: #ffedd5; color: #9a3412; }
 .status-error { background: #fee2e2; color: #991b1b; }
 
 [data-theme="dark"] .status-running { background: #14532d; color: #86efac; }
 [data-theme="dark"] .status-stopped { background: #1e293b; color: #94a3b8; }
 [data-theme="dark"] .status-starting { background: #451a03; color: #fde68a; }
+[data-theme="dark"] .status-reconnecting { background: #431407; color: #fdba74; }
 [data-theme="dark"] .status-error { background: #450a0a; color: #fca5a5; }
 
 .bot-status-badge {

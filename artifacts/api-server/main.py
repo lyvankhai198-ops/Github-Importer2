@@ -1,4 +1,5 @@
 import os
+import logging
 import asyncio
 import uvicorn
 from contextlib import asynccontextmanager
@@ -14,9 +15,19 @@ from database import engine, SessionLocal
 from models import Base, AdminUser
 from auth import hash_password
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger(__name__)
+
 BASE_DIR = Path(__file__).parent
 UPLOADS_DIR = BASE_DIR / "uploads"
 STATIC_DIR = BASE_DIR / "static"
+
+# Background tasks started at lifespan startup, cancelled cleanly at shutdown
+# so a restart never ends up with duplicate schedulers/pollers.
+_background_tasks: list = []
 
 
 def _run_migrations():
@@ -108,12 +119,17 @@ def _run_migrations():
             FOREIGN KEY(sold_order_id) REFERENCES orders(id)
         )""",
         "CREATE INDEX IF NOT EXISTS ix_inventory_items_product_status ON inventory_items (product_id, status)",
+        # Forced language-picker gate for brand-new users (see User.language_selected)
+        "ALTER TABLE users ADD COLUMN language_selected BOOLEAN DEFAULT 0",
     ]
     with engine.connect() as conn:
+        ran_language_selected_migration = False
         for sql in migrations:
             try:
                 conn.execute(text(sql))
                 conn.commit()
+                if "language_selected" in sql:
+                    ran_language_selected_migration = True
             except Exception:
                 pass  # column / index already exists
 
@@ -125,6 +141,16 @@ def _run_migrations():
             conn.commit()
         except Exception:
             pass
+
+        # Grandfather in existing users: they've already been using the bot,
+        # so don't suddenly force a language picker on them. Only brand-new
+        # rows created after this migration start with language_selected=0.
+        if ran_language_selected_migration:
+            try:
+                conn.execute(text("UPDATE users SET language_selected = 1"))
+                conn.commit()
+            except Exception:
+                pass
 
 
 def _seed_payment_methods():
@@ -154,10 +180,26 @@ def _seed_payment_methods():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # ── Startup ───────────────────────────────────────────────────────────────
+    logger.info("APP_STARTING")
     Base.metadata.create_all(bind=engine)
     _run_migrations()
     _seed_payment_methods()
     UPLOADS_DIR.mkdir(exist_ok=True)
+    logger.info("DATABASE_READY")
+
+    # A freshly-started process never has a live bot task yet, regardless of
+    # whatever status was persisted from a previous process's lifetime — reset
+    # it so the admin UI doesn't show a stale "running"/"reconnecting" badge
+    # before the auto-start block below (if any) sets the real status.
+    from models import TelegramBotConfig as _TBC, BotStatus as _BS
+    db0 = SessionLocal()
+    try:
+        cfg0 = db0.query(_TBC).first()
+        if cfg0 and cfg0.bot_status != _BS.stopped:
+            cfg0.bot_status = _BS.stopped
+            db0.commit()
+    finally:
+        db0.close()
 
     # Create default admin user if none exists
     db = SessionLocal()
@@ -182,25 +224,58 @@ async def lifespan(app: FastAPI):
         connections = db2.query(ApiConnection).filter(ApiConnection.is_active == True).all()
         for conn in connections:
             start_sync_scheduler(conn.id, conn.sync_interval_minutes)
+        logger.info(f"SYNC_SCHEDULER_STARTED: {len(connections)} connection(s)")
     finally:
         db2.close()
 
     # Start payment expiry background loop
     from services.payment_service import expire_payment_orders_loop
-    asyncio.create_task(expire_payment_orders_loop())
+    _background_tasks.append(asyncio.create_task(expire_payment_orders_loop()))
 
     # Start crypto monitor workers (each independent — one crash won't affect others)
     from services.crypto_monitor import bep20_monitor_loop, trc20_monitor_loop, binance_merchant_loop
-    asyncio.create_task(bep20_monitor_loop())
-    asyncio.create_task(trc20_monitor_loop())
-    asyncio.create_task(binance_merchant_loop())
+    _background_tasks.append(asyncio.create_task(bep20_monitor_loop()))
+    _background_tasks.append(asyncio.create_task(trc20_monitor_loop()))
+    _background_tasks.append(asyncio.create_task(binance_merchant_loop()))
+
+    # Auto-start the Telegram bot if it's configured + enabled, so it comes
+    # back up on its own after a restart/redeploy without an admin visiting
+    # the web UI. If the token is missing/invalid, the site still starts —
+    # bot status simply stays "error" until fixed from /settings.
+    from models import TelegramBotConfig
+    from services.bot_service import bot_manager
+    from crypto import decrypt
+    db3 = SessionLocal()
+    try:
+        cfg = db3.query(TelegramBotConfig).first()
+        if cfg and cfg.is_enabled:
+            token = decrypt(cfg.bot_token_encrypted) if cfg.bot_token_encrypted else ""
+            if token:
+                await bot_manager.start_bot(token)
+            else:
+                logger.warning("TELEGRAM_BOT_AUTOSTART_SKIPPED: bot enabled but no token configured")
+    finally:
+        db3.close()
 
     yield
 
     # ── Shutdown ──────────────────────────────────────────────────────────────
-    from services.bot_service import bot_manager
-    if bot_manager.is_running():
-        await bot_manager.stop_bot()
+    from services.bot_service import bot_manager as _bm
+    if _bm.is_running():
+        await _bm.stop_bot()
+
+    from services.api_service import stop_all_sync_schedulers
+    stop_all_sync_schedulers()
+
+    for task in _background_tasks:
+        if not task.done():
+            task.cancel()
+    for task in _background_tasks:
+        try:
+            await asyncio.wait_for(asyncio.shield(task), timeout=5)
+        except (asyncio.CancelledError, asyncio.TimeoutError, Exception):
+            pass
+    logger.info("APP_SHUTDOWN_COMPLETE")
 
 
 app = FastAPI(title="AI Center Web Bot Manager", lifespan=lifespan)

@@ -8,3 +8,6 @@
 - [process_paid_order idempotent](process-paid-order.md) — shared by all payment methods; gate on order.status + payment_status; _processing_paid set prevents concurrent re-entry
 - [VND price formatting](vnd-price-formatting.md) — Python's `{:,.0f}` uses comma not dot; every VND display needs `.replace(",", ".")` or `format_vnd()`
 - [Local inventory manual_stock](inventory-manual-stock.md) — live-computed stock, BEGIN IMMEDIATE reservation prevents double-allocation, manual_admin/legacy "manual" never stock-gated
+- [Bot watchdog/reconnect pattern](bot-watchdog-reconnect.md) — supervisor loop with 5/15/30/60s x10 then 5min backoff; fatal auth errors (bad token) must skip retries, not loop forever
+- [Reset persisted process-state on boot](bot-status-reset-on-boot.md) — DB-stored runtime status (bot_status) must reset to a safe baseline at boot; it describes a task from the previous process, not this one
+- [Language-gate needs its own flag](language-gate-flag.md) — a nullable-looking column with a non-null DB default (User.language_code default "vi") can't represent "unset"; add a separate boolean instead of checking the value

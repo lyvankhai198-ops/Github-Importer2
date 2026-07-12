@@ -17,6 +17,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "lang_vi": "🇻🇳 Tiếng Việt",
         "lang_en": "🇬🇧 English",
         "lang_changed": "✅ Đã chuyển sang Tiếng Việt.",
+        "cancelled_returned_home": "❌ Đã hủy thao tác. Bạn đang ở trang chủ.",
+        "btn_cancel_flow": "❌ Hủy bỏ",
         # ── Product list ──────────────────────────────────────────────────────
         "product_list_title": "🛍 <b>Danh sách sản phẩm:</b>",
         "product_list_empty": "Hiện không có sản phẩm nào.",
@@ -44,7 +46,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "out_of_stock_title": "🔴 SẢN PHẨM ĐÃ HẾT HÀNG",
         "out_of_stock_body": "Sản phẩm này hiện không còn hàng tại nguồn.\nVui lòng quay lại sau hoặc chọn sản phẩm khác.",
         # ── Quantity prompt ───────────────────────────────────────────────────
-        "enter_quantity": "🔢 Nhập số lượng bạn muốn mua:",
+        "enter_quantity": "🔢 Nhập số lượng bạn muốn mua:\n(Gõ /cancel hoặc \"Hủy\" để hủy bỏ)",
         "qty_invalid": "❌ Vui lòng nhập số lượng hợp lệ (số nguyên dương).",
         "qty_below_min": "❌ Số lượng tối thiểu là <b>{min}</b>.",
         "qty_exceeds_stock": "⚠️ Số lượng còn lại không đủ.\n\nKho hiện có: <b>{stock}</b>\nBạn yêu cầu: <b>{qty}</b>",
@@ -166,6 +168,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "lang_vi": "🇻🇳 Tiếng Việt",
         "lang_en": "🇬🇧 English",
         "lang_changed": "✅ Switched to English.",
+        "cancelled_returned_home": "❌ Cancelled. You're back at the home menu.",
+        "btn_cancel_flow": "❌ Cancel",
         # ── Product list ──────────────────────────────────────────────────────
         "product_list_title": "🛍 <b>Product list:</b>",
         "product_list_empty": "No products available.",
@@ -193,7 +197,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "out_of_stock_title": "🔴 OUT OF STOCK",
         "out_of_stock_body": "This product is currently out of stock at the source.\nPlease come back later or choose another product.",
         # ── Quantity prompt ───────────────────────────────────────────────────
-        "enter_quantity": "🔢 Enter the quantity you want to buy:",
+        "enter_quantity": "🔢 Enter the quantity you want to buy:\n(Type /cancel or \"Cancel\" to abort)",
         "qty_invalid": "❌ Please enter a valid quantity (positive integer).",
         "qty_below_min": "❌ Minimum quantity is <b>{min}</b>.",
         "qty_exceeds_stock": "⚠️ Not enough stock.\n\nAvailable: <b>{stock}</b>\nYou requested: <b>{qty}</b>",

@@ -148,6 +148,24 @@ def _payment_status_label(ps: str, lang: str = "vi") -> str:
 
 # ── Command handlers ──────────────────────────────────────────────────────────
 
+async def _require_language_selected(update: Update, db) -> bool:
+    """
+    Gate helper for entry points other than /start (menu buttons, /menu,
+    /orders, /support, ...). A brand-new user could in theory hit one of
+    these before ever sending /start; if so, show the forced language
+    picker and return False so the caller stops processing.
+    """
+    tg_user = update.effective_user
+    user = get_or_create_user(db, str(tg_user.id), tg_user.username, tg_user.first_name, tg_user.last_name)
+    if not user or not getattr(user, "language_selected", False):
+        await update.message.reply_text(
+            t("vi", "choose_lang"),
+            reply_markup=language_keyboard(),
+        )
+        return False
+    return True
+
+
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db = SessionLocal()
     try:
@@ -155,8 +173,10 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = get_or_create_user(db, str(tg_user.id), tg_user.username, tg_user.first_name, tg_user.last_name)
         lang = get_user_lang(db, str(tg_user.id))
 
-        # First-time users: show language selection
-        if not user or not getattr(user, "language_code", None):
+        # Brand-new users: force the language picker before anything else.
+        # (language_code always defaults to "vi" at the DB level, so we gate
+        # on the explicit language_selected flag instead.)
+        if not user or not getattr(user, "language_selected", False):
             await update.message.reply_text(
                 t("vi", "choose_lang"),
                 reply_markup=language_keyboard(),
@@ -186,6 +206,8 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handler for /menu command — shows account info + main menu."""
     db = SessionLocal()
     try:
+        if not await _require_language_selected(update, db):
+            return
         tg_user = update.effective_user
         user = get_or_create_user(db, str(tg_user.id), tg_user.username, tg_user.first_name, tg_user.last_name)
         lang = _get_lang(db, tg_user.id)
@@ -226,6 +248,8 @@ async def myid_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def products_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db = SessionLocal()
     try:
+        if not await _require_language_selected(update, db):
+            return
         lang = _get_lang(db, update.effective_user.id)
         show_oos = _get_show_out_of_stock(db)
         per_page = _get_products_per_page(db)
@@ -245,6 +269,8 @@ async def products_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def orders_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db = SessionLocal()
     try:
+        if not await _require_language_selected(update, db):
+            return
         lang = _get_lang(db, update.effective_user.id)
         tg_user = update.effective_user
         orders = (
@@ -274,6 +300,8 @@ async def orders_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def support_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db = SessionLocal()
     try:
+        if not await _require_language_selected(update, db):
+            return
         lang = _get_lang(db, update.effective_user.id)
         support = _get_support_username(db)
         if support:
@@ -286,6 +314,27 @@ async def support_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def admin_panel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🌐 Truy cập trang quản trị tại địa chỉ máy chủ của bạn.")
+
+
+async def cancel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    /cancel (also triggered by "❌ Hủy bỏ" / "❌ Cancel" free text) — universal
+    escape hatch: clears any in-progress flow (e.g. waiting_quantity) and
+    returns the user to the main menu, from anywhere in the bot.
+    """
+    context.user_data.clear()
+    db = SessionLocal()
+    try:
+        tg_user = update.effective_user
+        lang = _get_lang(db, tg_user.id)
+        admin_id = _get_admin_id(db)
+        is_admin = str(tg_user.id) == str(admin_id)
+        await update.message.reply_text(
+            t(lang, "cancelled_returned_home"),
+            reply_markup=main_menu_keyboard(lang=lang, is_admin=is_admin),
+        )
+    finally:
+        db.close()
 
 
 # ── Payment setup helpers ─────────────────────────────────────────────────────
@@ -845,6 +894,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user = db.query(User).filter(User.telegram_id == str(tg_user.id)).first()
             if user:
                 user.language_code = lang_code
+                user.language_selected = True
                 db.commit()
             admin_id = _get_admin_id(db)
             is_admin = str(tg_user.id) == str(admin_id)

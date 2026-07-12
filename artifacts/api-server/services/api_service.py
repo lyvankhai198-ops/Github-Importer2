@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 from datetime import datetime
 from sqlalchemy.orm import Session
 from models import ApiConnection, ApiProduct
@@ -7,16 +8,29 @@ from integrations.manager import api_manager
 from database import SessionLocal
 from services.normalize import normalize_product_data
 
+logger = logging.getLogger(__name__)
+
 
 async def sync_api_products(db: Session, api_connection_id: int) -> dict:
     conn = db.query(ApiConnection).filter(ApiConnection.id == api_connection_id).first()
     if not conn:
         return {"success": False, "message": "Connection not found"}
     adapter = api_manager.get_adapter(conn)
+    logger.info(f"API_SYNC_STARTED: connection_id={api_connection_id}")
     try:
         products = await adapter.get_products()
         now = datetime.utcnow()
         synced = 0
+        # Track pre-sync stock for api_auto-linked products so we can detect
+        # restock / out-of-stock transitions after this loop updates them.
+        from models import ProductSource, DeliveryMode
+        pre_sync_stock = {
+            src.product_id: (src.api_product.external_stock or 0)
+            for src in db.query(ProductSource).join(ApiProduct).filter(
+                ApiProduct.api_connection_id == api_connection_id
+            ).all()
+            if src.api_product
+        }
         for p in products:
             ext_id = str(p.get("id", ""))
             if not ext_id:
@@ -61,25 +75,101 @@ async def sync_api_products(db: Session, api_connection_id: int) -> dict:
             synced += 1
 
         # Also update ProductSource.last_stock for linked products
-        from models import ProductSource
         sources = db.query(ProductSource).join(ApiProduct).filter(
             ApiProduct.api_connection_id == api_connection_id
         ).all()
+        transitions = []  # (product_id, back_in_stock: bool)
         for src in sources:
-            if src.api_product:
-                src.last_stock = src.api_product.external_stock
-                src.last_cost = src.api_product.external_price
+            if not src.api_product:
+                continue
+            old_stock = pre_sync_stock.get(src.product_id, 0)
+            new_stock = src.api_product.external_stock or 0
+            src.last_stock = new_stock
+            src.last_cost = src.api_product.external_price
+            if old_stock <= 0 and new_stock > 0:
+                transitions.append((src.product_id, True))
+            elif old_stock > 0 and new_stock <= 0:
+                transitions.append((src.product_id, False))
 
         conn.last_sync_at = now
         conn.last_success_at = now
         conn.last_error = None
         db.commit()
+        logger.info(f"API_SYNC_COMPLETED: connection_id={api_connection_id} synced={synced}")
+
+        for product_id, back_in_stock in transitions:
+            if back_in_stock:
+                logger.info(f"PRODUCT_RESTOCKED: product_id={product_id} connection_id={api_connection_id}")
+            else:
+                logger.info(f"PRODUCT_OUT_OF_STOCK: product_id={product_id} connection_id={api_connection_id}")
+            try:
+                await _handle_api_stock_transition(product_id, back_in_stock)
+            except Exception as e:
+                logger.error(f"[api_service] stock transition handler error for product {product_id}: {e}")
+
         return {"success": True, "synced": synced, "message": f"Synced {synced} products"}
     except Exception as e:
         conn.last_sync_at = datetime.utcnow()
         conn.last_error = str(e)
         db.commit()
+        logger.error(f"API_SYNC_FAILED: connection_id={api_connection_id} error={e}")
         return {"success": False, "message": str(e)}
+
+
+async def _handle_api_stock_transition(product_id: int, back_in_stock: bool):
+    """
+    Mirrors the local-inventory restock/out-of-stock handling (see
+    services/inventory_service.py Section 12) for api_auto-linked products:
+      - always notify admin of the transition,
+      - on restock, ping users with paid_waiting_stock orders for this
+        product (gated on notify_users_when_restocked) and retry delivery.
+    """
+    from services.inventory_service import notify_restock_if_enabled, _get_bot_config
+    from services.bot_service import bot_manager
+    from models import Product, Order, OrderStatus
+
+    db = SessionLocal()
+    try:
+        product = db.query(Product).filter(Product.id == product_id).first()
+        if not product:
+            return
+
+        # Admin notification (independent of the user-facing notify toggle)
+        if bot_manager.is_running():
+            cfg = _get_bot_config(db)
+            admin_id = cfg.admin_telegram_id if cfg else ""
+            if admin_id:
+                icon = "🔔" if back_in_stock else "⚠️"
+                label = "đã có hàng trở lại" if back_in_stock else "đã hết hàng"
+                try:
+                    await bot_manager.send_message(
+                        admin_id,
+                        f"{icon} Sản phẩm \"{product.name}\" {label} (nguồn API).",
+                    )
+                except Exception:
+                    pass
+
+        if not back_in_stock:
+            return
+
+        await notify_restock_if_enabled(product_id, back_in_stock=True)
+
+        waiting = (
+            db.query(Order)
+            .filter(Order.product_id == product_id, Order.status == OrderStatus.paid_waiting_stock)
+            .order_by(Order.created_at.asc())
+            .all()
+        )
+        if not waiting:
+            return
+        from services.payment_service import process_paid_order
+        for order in waiting:
+            try:
+                await process_paid_order(order.id)
+            except Exception as e:
+                logger.error(f"[api_service] retry process_paid_order({order.id}) error: {e}")
+    finally:
+        db.close()
 
 
 async def test_api_connection(db: Session, api_connection_id: int) -> dict:
@@ -132,3 +222,10 @@ def stop_sync_scheduler(api_connection_id: int):
     task = _sync_tasks.pop(api_connection_id, None)
     if task and not task.done():
         task.cancel()
+
+
+def stop_all_sync_schedulers():
+    """Cancel every running sync loop — used on clean app shutdown so a
+    restart never ends up with duplicate schedulers for the same connection."""
+    for api_connection_id in list(_sync_tasks.keys()):
+        stop_sync_scheduler(api_connection_id)

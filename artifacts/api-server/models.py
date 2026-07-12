@@ -9,6 +9,7 @@ class BotStatus(str, enum.Enum):
     stopped = "stopped"
     starting = "starting"
     running = "running"
+    reconnecting = "reconnecting"
     error = "error"
 
 
@@ -161,6 +162,10 @@ class User(Base):
     first_name = Column(String(100), nullable=True)
     last_name = Column(String(100), nullable=True)
     language_code = Column(String(10), default="vi", nullable=False)
+    # True once the user has explicitly picked a language (vs. the "vi" default
+    # assigned at row-creation time). Brand-new users see a forced language
+    # picker on /start until this becomes True.
+    language_selected = Column(Boolean, default=False, nullable=False)
     total_orders = Column(Integer, default=0)
     total_spent = Column(Float, default=0.0)
     is_banned = Column(Boolean, default=False)
