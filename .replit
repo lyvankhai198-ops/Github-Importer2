@@ -27,3 +27,5 @@ packages = ["cargo", "libiconv", "libxcrypt", "openssl", "pkg-config", "rustc"]
 
 [userenv.shared]
 ADMIN_USERNAME = "admin"
+ENCRYPTION_KEY = "HQHF35_8Wqu96ZX0ScFWuM3Tp36KRVCVV2ozjs_kKc8="
+SECRET_KEY = "ec0cb72df590a5f043b71ef95ce5923358fdfa2e9c2af4a57ad6ecb03c4bd6ff"
