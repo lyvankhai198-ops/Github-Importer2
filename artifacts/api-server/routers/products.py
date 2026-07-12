@@ -252,140 +252,11 @@ async def delete_product(product_id: int, request: Request, db: Session = Depend
     return RedirectResponse(url="/products", status_code=302)
 
 
-# ── Product detail page ("kho tài khoản" management) ────────────────────────────
-
-@router.get("/products/{product_id}", response_class=HTMLResponse)
-async def product_detail(product_id: int, request: Request, db: Session = Depends(get_db)):
-    if not check_auth(request):
-        return RedirectResponse(url="/login", status_code=302)
-    product = db.query(Product).filter(Product.id == product_id).first()
-    if not product:
-        flash(request, "Sản phẩm không tồn tại!", "error")
-        return RedirectResponse(url="/products", status_code=302)
-
-    from services.inventory_service import get_inventory_counts
-    counts = get_inventory_counts(db, product_id) if product.delivery_mode == DeliveryMode.manual_stock else None
-    has_orders = db.query(Order).filter(Order.product_id == product_id).first() is not None
-    orders_count = db.query(Order).filter(Order.product_id == product_id).count()
-
-    inventory_page = 1
-    inventory_items = []
-    if product.delivery_mode == DeliveryMode.manual_stock:
-        inventory_items = (
-            db.query(InventoryItem)
-            .filter(InventoryItem.product_id == product_id, InventoryItem.status != InventoryStatus.deleted)
-            .order_by(InventoryItem.created_at.desc())
-            .limit(100)
-            .all()
-        )
-
-    flash_msg = request.session.pop("flash", None)
-    return templates.TemplateResponse(request, "product_detail.html", {
-        "product": product,
-        "counts": counts,
-        "has_orders": has_orders,
-        "orders_count": orders_count,
-        "inventory_items": inventory_items,
-        "flash": flash_msg,
-    })
-
-
-@router.post("/products/{product_id}/inventory/preview")
-async def inventory_preview(product_id: int, request: Request, raw_text: str = Form(...)):
-    """AJAX: parse pasted text and return valid/duplicate/error counts without saving."""
-    if not check_auth(request):
-        return JSONResponse({"error": "Unauthorized"}, status_code=401)
-    from services.inventory_service import parse_bulk_accounts
-    result = parse_bulk_accounts(raw_text)
-    return JSONResponse({
-        "valid_count": len(result["valid"]),
-        "duplicates": result["duplicates"],
-        "errors": result["errors"],
-        "total_lines": result["total_lines"],
-        "preview": result["valid"][:10],
-    })
-
-
-@router.post("/products/{product_id}/inventory/import")
-async def inventory_import(
-    product_id: int,
-    request: Request,
-    db: Session = Depends(get_db),
-    raw_text: str = Form(...),
-    cost_price: float = Form(0.0),
-):
-    if not check_auth(request):
-        return RedirectResponse(url="/login", status_code=302)
-    product = db.query(Product).filter(Product.id == product_id).first()
-    if not product:
-        flash(request, "Sản phẩm không tồn tại!", "error")
-        return RedirectResponse(url="/products", status_code=302)
-    if product.delivery_mode != DeliveryMode.manual_stock:
-        flash(request, "Sản phẩm này không dùng chế độ kho tài khoản!", "error")
-        return RedirectResponse(url=f"/products/{product_id}", status_code=302)
-
-    from services.inventory_service import parse_bulk_accounts, add_inventory_items, notify_restock_if_enabled, process_waiting_orders_for_product
-
-    try:
-        parsed = parse_bulk_accounts(raw_text)
-        result = add_inventory_items(db, product_id, parsed["valid"], cost_price=cost_price)
-
-        summary = (
-            f"Đã nhập {result['inserted']} tài khoản mới "
-            f"({parsed['duplicates']} trùng trong nội dung dán, "
-            f"{result['skipped_existing']} đã có sẵn trong kho, "
-            f"{parsed['errors']} dòng lỗi). "
-            f"Tồn kho hiện tại: {result['after_count']}."
-        )
-        flash(request, summary)
-
-        if result["inserted"] > 0:
-            if result["back_in_stock"]:
-                await notify_restock_if_enabled(product_id, back_in_stock=True)
-            await process_waiting_orders_for_product(product_id)
-
-    except Exception:
-        db.rollback()
-        logger.error(f"inventory_import({product_id}) failed:\n" + traceback.format_exc())
-        flash(request, "Có lỗi xảy ra khi nhập kho. Vui lòng thử lại!", "error")
-
-    return RedirectResponse(url=f"/products/{product_id}", status_code=302)
-
-
-@router.get("/products/{product_id}/inventory/export")
-async def inventory_export(product_id: int, request: Request, db: Session = Depends(get_db), status: str = "available"):
-    if not check_auth(request):
-        return RedirectResponse(url="/login", status_code=302)
-    try:
-        status_enum = InventoryStatus(status)
-    except ValueError:
-        status_enum = InventoryStatus.available
-
-    items = db.query(InventoryItem).filter(
-        InventoryItem.product_id == product_id,
-        InventoryItem.status == status_enum,
-    ).order_by(InventoryItem.created_at.asc()).all()
-
-    lines = [it.raw_value or f"{it.username or ''}|{it.password or ''}" for it in items]
-    content = "\n".join(lines)
-    product = db.query(Product).filter(Product.id == product_id).first()
-    fname = f"{(product.product_code if product else product_id)}_{status_enum.value}.txt"
-    return PlainTextResponse(content, headers={"Content-Disposition": f'attachment; filename="{fname}"'})
-
-
-@router.post("/products/{product_id}/inventory/{item_id}/delete")
-async def inventory_delete_item(product_id: int, item_id: int, request: Request, db: Session = Depends(get_db)):
-    if not check_auth(request):
-        return RedirectResponse(url="/login", status_code=302)
-    item = db.query(InventoryItem).filter(InventoryItem.id == item_id, InventoryItem.product_id == product_id).first()
-    if item and item.status == InventoryStatus.available:
-        item.status = InventoryStatus.deleted
-        db.commit()
-        flash(request, "Đã xóa tài khoản khỏi kho!")
-    elif item:
-        flash(request, "Chỉ có thể xóa tài khoản đang ở trạng thái 'available'!", "error")
-    return RedirectResponse(url=f"/products/{product_id}", status_code=302)
-
+# ── Static /products/* routes MUST be declared before the dynamic
+# /products/id/{product_id} route below, otherwise FastAPI/Starlette will
+# match the static path as a {product_id} path param first and fail with an
+# int_parsing error. Keep any new static /products/<literal> route above
+# this comment block, and any new dynamic /products/id/{...} route below it.
 
 @router.get("/products/api-sources", response_class=HTMLResponse)
 async def api_sources(request: Request, db: Session = Depends(get_db), conn_id: int = 0, page: int = 1):
@@ -497,6 +368,165 @@ async def link_api_product(
     db.commit()
     flash(request, "Liên kết nguồn thành công!")
     return RedirectResponse(url="/products/api-sources", status_code=302)
+
+
+@router.post("/products/sources/{source_id}/delete")
+async def delete_product_source(source_id: int, request: Request, db: Session = Depends(get_db)):
+    if not check_auth(request):
+        return RedirectResponse(url="/login", status_code=302)
+    source = db.query(ProductSource).filter(ProductSource.id == source_id).first()
+    if source:
+        db.delete(source)
+        db.commit()
+        flash(request, "Nguồn đã được xóa!")
+    return RedirectResponse(url="/products", status_code=302)
+
+
+@router.post("/products/sync-all")
+async def sync_all_products(request: Request, db: Session = Depends(get_db)):
+    if not check_auth(request):
+        return RedirectResponse(url="/login", status_code=302)
+    connections = db.query(ApiConnection).filter(ApiConnection.is_active == True).all()
+    for conn in connections:
+        await sync_api_products(db, conn.id)
+    flash(request, f"Đã đồng bộ {len(connections)} kết nối API!")
+    return RedirectResponse(url="/products/api-sources", status_code=302)
+
+
+# ── Product detail page ("kho tài khoản" management) — dynamic route, must
+# stay below every static /products/<literal> route declared above. ────────
+
+@router.get("/products/id/{product_id}", response_class=HTMLResponse)
+async def product_detail(product_id: int, request: Request, db: Session = Depends(get_db)):
+    if not check_auth(request):
+        return RedirectResponse(url="/login", status_code=302)
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        flash(request, "Sản phẩm không tồn tại!", "error")
+        return RedirectResponse(url="/products", status_code=302)
+
+    from services.inventory_service import get_inventory_counts
+    counts = get_inventory_counts(db, product_id) if product.delivery_mode == DeliveryMode.manual_stock else None
+    has_orders = db.query(Order).filter(Order.product_id == product_id).first() is not None
+    orders_count = db.query(Order).filter(Order.product_id == product_id).count()
+
+    inventory_page = 1
+    inventory_items = []
+    if product.delivery_mode == DeliveryMode.manual_stock:
+        inventory_items = (
+            db.query(InventoryItem)
+            .filter(InventoryItem.product_id == product_id, InventoryItem.status != InventoryStatus.deleted)
+            .order_by(InventoryItem.created_at.desc())
+            .limit(100)
+            .all()
+        )
+
+    flash_msg = request.session.pop("flash", None)
+    return templates.TemplateResponse(request, "product_detail.html", {
+        "product": product,
+        "counts": counts,
+        "has_orders": has_orders,
+        "orders_count": orders_count,
+        "inventory_items": inventory_items,
+        "flash": flash_msg,
+    })
+
+
+@router.post("/products/{product_id}/inventory/preview")
+async def inventory_preview(product_id: int, request: Request, raw_text: str = Form(...)):
+    """AJAX: parse pasted text and return valid/duplicate/error counts without saving."""
+    if not check_auth(request):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    from services.inventory_service import parse_bulk_accounts
+    result = parse_bulk_accounts(raw_text)
+    return JSONResponse({
+        "valid_count": len(result["valid"]),
+        "duplicates": result["duplicates"],
+        "errors": result["errors"],
+        "total_lines": result["total_lines"],
+        "preview": result["valid"][:10],
+    })
+
+
+@router.post("/products/{product_id}/inventory/import")
+async def inventory_import(
+    product_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    raw_text: str = Form(...),
+    cost_price: float = Form(0.0),
+):
+    if not check_auth(request):
+        return RedirectResponse(url="/login", status_code=302)
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        flash(request, "Sản phẩm không tồn tại!", "error")
+        return RedirectResponse(url="/products", status_code=302)
+    if product.delivery_mode != DeliveryMode.manual_stock:
+        flash(request, "Sản phẩm này không dùng chế độ kho tài khoản!", "error")
+        return RedirectResponse(url=f"/products/id/{product_id}", status_code=302)
+
+    from services.inventory_service import parse_bulk_accounts, add_inventory_items, notify_restock_if_enabled, process_waiting_orders_for_product
+
+    try:
+        parsed = parse_bulk_accounts(raw_text)
+        result = add_inventory_items(db, product_id, parsed["valid"], cost_price=cost_price)
+
+        summary = (
+            f"Đã nhập {result['inserted']} tài khoản mới "
+            f"({parsed['duplicates']} trùng trong nội dung dán, "
+            f"{result['skipped_existing']} đã có sẵn trong kho, "
+            f"{parsed['errors']} dòng lỗi). "
+            f"Tồn kho hiện tại: {result['after_count']}."
+        )
+        flash(request, summary)
+
+        if result["inserted"] > 0:
+            if result["back_in_stock"]:
+                await notify_restock_if_enabled(product_id, back_in_stock=True)
+            await process_waiting_orders_for_product(product_id)
+
+    except Exception:
+        db.rollback()
+        logger.error(f"inventory_import({product_id}) failed:\n" + traceback.format_exc())
+        flash(request, "Có lỗi xảy ra khi nhập kho. Vui lòng thử lại!", "error")
+
+    return RedirectResponse(url=f"/products/id/{product_id}", status_code=302)
+
+
+@router.get("/products/{product_id}/inventory/export")
+async def inventory_export(product_id: int, request: Request, db: Session = Depends(get_db), status: str = "available"):
+    if not check_auth(request):
+        return RedirectResponse(url="/login", status_code=302)
+    try:
+        status_enum = InventoryStatus(status)
+    except ValueError:
+        status_enum = InventoryStatus.available
+
+    items = db.query(InventoryItem).filter(
+        InventoryItem.product_id == product_id,
+        InventoryItem.status == status_enum,
+    ).order_by(InventoryItem.created_at.asc()).all()
+
+    lines = [it.raw_value or f"{it.username or ''}|{it.password or ''}" for it in items]
+    content = "\n".join(lines)
+    product = db.query(Product).filter(Product.id == product_id).first()
+    fname = f"{(product.product_code if product else product_id)}_{status_enum.value}.txt"
+    return PlainTextResponse(content, headers={"Content-Disposition": f'attachment; filename="{fname}"'})
+
+
+@router.post("/products/{product_id}/inventory/{item_id}/delete")
+async def inventory_delete_item(product_id: int, item_id: int, request: Request, db: Session = Depends(get_db)):
+    if not check_auth(request):
+        return RedirectResponse(url="/login", status_code=302)
+    item = db.query(InventoryItem).filter(InventoryItem.id == item_id, InventoryItem.product_id == product_id).first()
+    if item and item.status == InventoryStatus.available:
+        item.status = InventoryStatus.deleted
+        db.commit()
+        flash(request, "Đã xóa tài khoản khỏi kho!")
+    elif item:
+        flash(request, "Chỉ có thể xóa tài khoản đang ở trạng thái 'available'!", "error")
+    return RedirectResponse(url=f"/products/id/{product_id}", status_code=302)
 
 
 @router.post("/products/{product_id}/sources")

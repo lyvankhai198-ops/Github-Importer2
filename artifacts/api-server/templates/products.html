@@ -35,7 +35,7 @@
           <tr>
             <td><img src="{{ p.image_path or '/static/img/no-image.png' }}" width="40" height="40" style="object-fit:cover;border-radius:4px" onerror="this.src='/static/img/no-image.png'"></td>
             <td>
-              <a href="/products/{{ p.id }}" class="fw-semibold text-decoration-none">{{ p.name }}</a>
+              <a href="/products/id/{{ p.id }}" class="fw-semibold text-decoration-none">{{ p.name }}</a>
               <div><small class="text-muted">{{ p.product_code }}</small></div>
             </td>
             <td>{{ "{:,.0f}".format(p.sale_price).replace(",", ".") }}đ</td>
@@ -62,7 +62,7 @@
               </div>
             </td>
             <td>
-              <a href="/products/{{ p.id }}" class="btn btn-xs btn-outline-secondary me-1"><i class="bi bi-eye"></i></a>
+              <a href="/products/id/{{ p.id }}" class="btn btn-xs btn-outline-secondary me-1"><i class="bi bi-eye"></i></a>
               <button class="btn btn-xs btn-outline-primary me-1" data-bs-toggle="modal" data-bs-target="#editModal{{ p.id }}"><i class="bi bi-pencil"></i></button>
               <form action="/products/{{ p.id }}/delete" method="post" style="display:inline" onsubmit="return confirm('Xóa sản phẩm này?')">
                 <button type="submit" class="btn btn-xs btn-outline-danger"><i class="bi bi-trash"></i></button>
