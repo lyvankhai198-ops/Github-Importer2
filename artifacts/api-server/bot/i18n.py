@@ -20,7 +20,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         # ── Product list ──────────────────────────────────────────────────────
         "product_list_title": "🛍 <b>Danh sách sản phẩm:</b>",
         "product_list_empty": "Hiện không có sản phẩm nào.",
+        "product_list_refreshed": "✅ Đã cập nhật danh sách sản phẩm.",
+        "product_list_out_of_stock": "Hết hàng",
+        "product_list_accept_order": "Nhận đặt hàng",
         "btn_close": "❌ Đóng",
+        "btn_refresh": "🔄 Làm mới",
         # ── Product detail ────────────────────────────────────────────────────
         "product_in_stock": "🟢 Còn hàng ({count})",
         "product_low_stock": "🟡 Còn ít ({count})",
@@ -127,6 +131,27 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "payment_method_disabled": "❌ Phương thức thanh toán này hiện không khả dụng.",
         "order_error": "❌ Lỗi đặt hàng. Vui lòng thử lại.",
         "processing_order": "⏳ Đang xử lý đơn hàng...",
+        # ── /menu account info ────────────────────────────────────────────────
+        "menu_account_info": (
+            "👤 <b>THÔNG TIN TÀI KHOẢN</b>\n\n"
+            "🆔 Telegram ID: <code>{tg_id}</code>\n"
+            "👤 Username: {username}\n"
+            "🌐 Ngôn ngữ: {language}\n"
+            "📦 Tổng đơn: {total_orders}\n"
+            "✅ Trạng thái: {status}"
+        ),
+        "menu_btn_products":  "🛍 Sản phẩm",
+        "menu_btn_orders":    "📦 Đơn hàng",
+        "menu_btn_language":  "🌐 Ngôn ngữ",
+        "menu_btn_support":   "💬 Hỗ trợ",
+        # ── /myid ─────────────────────────────────────────────────────────────
+        "myid_response": "🆔 Telegram ID của bạn: <code>{tg_id}</code>",
+        # ── out-of-stock popup (query.answer show_alert) ──────────────────────
+        "oos_popup": "⚠️ Sản phẩm tạm hết hàng. Vui lòng liên hệ admin.\n\n✈️ Telegram: @{support}",
+        "oos_popup_no_support": "⚠️ Sản phẩm tạm hết hàng. Vui lòng quay lại sau.",
+        # ── user status labels ────────────────────────────────────────────────
+        "user_status_active": "Hoạt động",
+        "user_status_banned": "Bị khóa",
     },
 
     "en": {
@@ -144,7 +169,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         # ── Product list ──────────────────────────────────────────────────────
         "product_list_title": "🛍 <b>Product list:</b>",
         "product_list_empty": "No products available.",
+        "product_list_refreshed": "✅ Product list updated.",
+        "product_list_out_of_stock": "Out of stock",
+        "product_list_accept_order": "Pre-order",
         "btn_close": "❌ Close",
+        "btn_refresh": "🔄 Refresh",
         # ── Product detail ────────────────────────────────────────────────────
         "product_in_stock": "🟢 In stock ({count})",
         "product_low_stock": "🟡 Low stock ({count})",
@@ -251,6 +280,27 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "payment_method_disabled": "❌ This payment method is currently unavailable.",
         "order_error": "❌ Order error. Please try again.",
         "processing_order": "⏳ Processing order...",
+        # ── /menu account info ────────────────────────────────────────────────
+        "menu_account_info": (
+            "👤 <b>ACCOUNT INFORMATION</b>\n\n"
+            "🆔 Telegram ID: <code>{tg_id}</code>\n"
+            "👤 Username: {username}\n"
+            "🌐 Language: {language}\n"
+            "📦 Total orders: {total_orders}\n"
+            "✅ Status: {status}"
+        ),
+        "menu_btn_products":  "🛍 Products",
+        "menu_btn_orders":    "📦 Orders",
+        "menu_btn_language":  "🌐 Language",
+        "menu_btn_support":   "💬 Support",
+        # ── /myid ─────────────────────────────────────────────────────────────
+        "myid_response": "🆔 Your Telegram ID: <code>{tg_id}</code>",
+        # ── out-of-stock popup (query.answer show_alert) ──────────────────────
+        "oos_popup": "⚠️ This product is temporarily out of stock.\nPlease contact admin.\n\n✈️ Telegram: @{support}",
+        "oos_popup_no_support": "⚠️ This product is temporarily out of stock. Please check back later.",
+        # ── user status labels ────────────────────────────────────────────────
+        "user_status_active": "Active",
+        "user_status_banned": "Banned",
     },
 }
 

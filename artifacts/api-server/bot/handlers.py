@@ -3,7 +3,7 @@ import html
 import json
 import logging
 from datetime import datetime, timedelta
-from telegram import Update
+from telegram import Update, BotCommand, BotCommandScopeDefault, BotCommandScopeChat
 from telegram.ext import ContextTypes
 from bot.keyboards import (
     main_menu_keyboard, product_list_keyboard, product_detail_keyboard,
@@ -51,6 +51,45 @@ def _get_support_username(db) -> str:
 
 def _get_lang(db, tg_user_id) -> str:
     return get_user_lang(db, str(tg_user_id))
+
+def _get_products_per_page(db) -> int:
+    cfg = _get_config(db)
+    val = getattr(cfg, "products_per_page", None)
+    return int(val) if val and val > 0 else 15
+
+def _get_show_out_of_stock(db) -> bool:
+    cfg = _get_config(db)
+    val = getattr(cfg, "show_out_of_stock", None)
+    return val if val is not None else True
+
+
+async def _set_bot_commands(bot, lang: str = "vi", chat_id: int = None):
+    """Set Telegram Menu commands for default scope or a specific chat."""
+    commands_vi = [
+        BotCommand("menu",     "Thông tin tài khoản"),
+        BotCommand("product",  "Danh sách sản phẩm"),
+        BotCommand("orders",   "Đơn hàng của tôi"),
+        BotCommand("language", "Đổi ngôn ngữ"),
+        BotCommand("support",  "Hỗ trợ"),
+        BotCommand("myid",     "Lấy Telegram ID"),
+    ]
+    commands_en = [
+        BotCommand("menu",     "Account information"),
+        BotCommand("product",  "Product list"),
+        BotCommand("orders",   "My orders"),
+        BotCommand("language", "Change language"),
+        BotCommand("support",  "Support"),
+        BotCommand("myid",     "Get Telegram ID"),
+    ]
+    commands = commands_en if lang == "en" else commands_vi
+    try:
+        if chat_id:
+            await bot.set_my_commands(commands, scope=BotCommandScopeChat(chat_id=chat_id))
+        else:
+            await bot.set_my_commands(commands, scope=BotCommandScopeDefault())
+    except Exception as e:
+        logger.warning(f"set_my_commands failed: {e}")
+
 
 def _status_label(status_val: str, lang: str = "vi") -> str:
     labels_vi = {
@@ -143,18 +182,61 @@ async def language_menu_handler(update: Update, context: ContextTypes.DEFAULT_TY
     )
 
 
+async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handler for /menu command — shows account info + main menu."""
+    db = SessionLocal()
+    try:
+        tg_user = update.effective_user
+        user = get_or_create_user(db, str(tg_user.id), tg_user.username, tg_user.first_name, tg_user.last_name)
+        lang = _get_lang(db, tg_user.id)
+        admin_id = _get_admin_id(db)
+        is_admin = str(tg_user.id) == str(admin_id)
+        total_orders = getattr(user, "total_orders", 0) or 0
+        is_banned = getattr(user, "is_banned", False)
+        status_key = "user_status_banned" if is_banned else "user_status_active"
+        lang_display = "Tiếng Việt" if lang == "vi" else "English"
+        username_str = f"@{tg_user.username}" if tg_user.username else "—"
+        text = t(lang, "menu_account_info",
+                 tg_id=tg_user.id,
+                 username=username_str,
+                 language=lang_display,
+                 total_orders=total_orders,
+                 status=t(lang, status_key))
+        await update.message.reply_text(
+            text, parse_mode="HTML",
+            reply_markup=main_menu_keyboard(lang=lang, is_admin=is_admin),
+        )
+    finally:
+        db.close()
+
+
+async def myid_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handler for /myid command — returns user's Telegram ID."""
+    db = SessionLocal()
+    try:
+        lang = _get_lang(db, update.effective_user.id)
+    finally:
+        db.close()
+    await update.message.reply_text(
+        t(lang, "myid_response", tg_id=update.effective_user.id),
+        parse_mode="HTML",
+    )
+
+
 async def products_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db = SessionLocal()
     try:
         lang = _get_lang(db, update.effective_user.id)
-        products = get_active_products_for_bot(db)
+        show_oos = _get_show_out_of_stock(db)
+        per_page = _get_products_per_page(db)
+        products = get_active_products_for_bot(db, show_out_of_stock=show_oos)
         if not products:
             await update.message.reply_text(t(lang, "product_list_empty"))
             return
         await update.message.reply_text(
             t(lang, "product_list_title"),
             parse_mode="HTML",
-            reply_markup=product_list_keyboard(products, lang=lang),
+            reply_markup=product_list_keyboard(products, lang=lang, page=0, per_page=per_page),
         )
     finally:
         db.close()
@@ -677,8 +759,80 @@ async def _do_create_order(context, db, tg_user, product_id: int, quantity: int,
 
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
     data = query.data
+
+    # ── oos: out-of-stock product clicked → popup only, no new message ──
+    if data.startswith("oos:"):
+        db = SessionLocal()
+        try:
+            lang = _get_lang(db, update.effective_user.id)
+            support = _get_support_username(db)
+        finally:
+            db.close()
+        if support:
+            popup_text = t(lang, "oos_popup", support=support.lstrip("@"))
+        else:
+            popup_text = t(lang, "oos_popup_no_support")
+        await query.answer(text=popup_text[:200], show_alert=True)
+        return
+
+    # ── noop (pagination page indicator button) ──
+    if data == "noop":
+        await query.answer()
+        return
+
+    await query.answer()
+
+    # ── products_page ──
+    if data.startswith("products_page:"):
+        page = int(data.split(":")[1])
+        db = SessionLocal()
+        try:
+            lang = _get_lang(db, update.effective_user.id)
+            show_oos = _get_show_out_of_stock(db)
+            per_page = _get_products_per_page(db)
+            products = get_active_products_for_bot(db, show_out_of_stock=show_oos)
+            await query.message.edit_text(
+                t(lang, "product_list_title"),
+                parse_mode="HTML",
+                reply_markup=product_list_keyboard(products, lang=lang, page=page, per_page=per_page),
+            )
+        except Exception:
+            pass
+        finally:
+            db.close()
+        return
+
+    # ── refresh_products ──
+    if data.startswith("refresh_products:"):
+        page = int(data.split(":")[1])
+        db = SessionLocal()
+        try:
+            lang = _get_lang(db, update.effective_user.id)
+            # Sync all active API connections
+            from services.api_service import sync_api_products
+            from models import ApiConnection
+            connections = db.query(ApiConnection).filter(ApiConnection.is_active == True).all()
+            for conn in connections:
+                try:
+                    await sync_api_products(db, conn.id)
+                except Exception:
+                    pass
+            db.expire_all()
+            show_oos = _get_show_out_of_stock(db)
+            per_page = _get_products_per_page(db)
+            products = get_active_products_for_bot(db, show_out_of_stock=show_oos)
+            await query.message.edit_text(
+                t(lang, "product_list_title"),
+                parse_mode="HTML",
+                reply_markup=product_list_keyboard(products, lang=lang, page=page, per_page=per_page),
+            )
+            await query.answer(t(lang, "product_list_refreshed"), show_alert=False)
+        except Exception as e:
+            logger.warning(f"[refresh_products] error: {e}")
+        finally:
+            db.close()
+        return
 
     # ── set_lang ──
     if data.startswith("set_lang:"):
@@ -694,7 +848,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 db.commit()
             admin_id = _get_admin_id(db)
             is_admin = str(tg_user.id) == str(admin_id)
-            welcome = _get_welcome_message(db)
             await query.message.reply_text(
                 t(lang_code, "lang_changed"),
                 reply_markup=main_menu_keyboard(lang=lang_code, is_admin=is_admin),
@@ -703,6 +856,8 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await query.message.delete()
             except Exception:
                 pass
+            # Update Telegram Menu commands for this chat in the chosen language
+            await _set_bot_commands(context.bot, lang_code, chat_id=int(tg_user.id))
         finally:
             db.close()
         return
@@ -737,11 +892,13 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db = SessionLocal()
         try:
             lang = _get_lang(db, update.effective_user.id)
-            products = get_active_products_for_bot(db)
+            show_oos = _get_show_out_of_stock(db)
+            per_page = _get_products_per_page(db)
+            products = get_active_products_for_bot(db, show_out_of_stock=show_oos)
             await query.message.edit_text(
                 t(lang, "product_list_title"),
                 parse_mode="HTML",
-                reply_markup=product_list_keyboard(products, lang=lang),
+                reply_markup=product_list_keyboard(products, lang=lang, page=0, per_page=per_page),
             )
         finally:
             db.close()

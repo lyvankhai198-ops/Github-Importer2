@@ -81,8 +81,14 @@ async def save_bot_settings(
     db: Session = Depends(get_db),
     bot_token: str = Form(""),
     admin_telegram_id: str = Form(""),
+    shop_name: str = Form(""),
     welcome_message: str = Form(""),
     support_username: str = Form(""),
+    show_out_of_stock: str = Form(None),
+    allow_manual_order_when_out_of_stock: str = Form(None),
+    products_per_page: int = Form(15),
+    default_product_icon: str = Form("📦"),
+    default_language: str = Form("vi"),
 ):
     if not check_auth(request):
         return RedirectResponse(url="/login", status_code=302)
@@ -91,10 +97,19 @@ async def save_bot_settings(
         cfg.bot_token_encrypted = encrypt(bot_token.strip())
     if admin_telegram_id:
         cfg.admin_telegram_id = admin_telegram_id.strip()
+    if shop_name is not None:
+        cfg.shop_name = shop_name.strip()
     if welcome_message:
         cfg.welcome_message = welcome_message
-    if support_username:
+    if support_username is not None:
         cfg.support_username = support_username.strip().lstrip("@")
+    # Checkboxes: present = True, absent = False
+    cfg.show_out_of_stock = show_out_of_stock is not None
+    cfg.allow_manual_order_when_out_of_stock = allow_manual_order_when_out_of_stock is not None
+    cfg.products_per_page = max(5, min(50, products_per_page or 15))
+    cfg.default_product_icon = (default_product_icon or "📦").strip() or "📦"
+    if default_language in ("vi", "en"):
+        cfg.default_language = default_language
     cfg.updated_at = datetime.utcnow()
     db.commit()
     flash(request, "Cài đặt bot đã được lưu!")

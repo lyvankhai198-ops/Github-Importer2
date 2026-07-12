@@ -19,24 +19,55 @@ def language_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
-def product_list_keyboard(products: list, lang: str = "vi") -> InlineKeyboardMarkup:
-    """Product list with 🟢/🔴/⚠️ status emoji."""
+def product_list_keyboard(products: list, lang: str = "vi",
+                           page: int = 0, per_page: int = 15) -> InlineKeyboardMarkup:
+    """
+    Product list keyboard.
+    - In-stock: [icon] Name - price  → product:{id}
+    - Out-of-stock/unavailable: ❌ Name - Hết hàng  → oos:{id}
+    - Pagination if > per_page items.
+    - Bottom row: 🔄 Làm mới | 🏠 Trang chủ
+    """
+    total = len(products)
+    total_pages = max(1, (total + per_page - 1) // per_page)
+    page = max(0, min(page, total_pages - 1))
+    start = page * per_page
+    page_products = products[start:start + per_page]
+
     buttons = []
-    for item in products:
+    for item in page_products:
         p = item["product"]
-        stock = item.get("stock", 0)
         status = item.get("status", "in_stock")
-        if status == "unavailable":
-            emoji = "⚠️"
-        elif status == "out_of_stock" or stock <= 0:
-            emoji = "🔴"
-        elif stock > 10:
-            emoji = "🟢"
+        is_unavailable = status in ("out_of_stock", "unavailable")
+
+        if is_unavailable:
+            label = f"❌ {p.name} - {t(lang, 'product_list_out_of_stock')}"
+            cb = f"oos:{p.id}"
         else:
-            emoji = "🟡"
-        label = f"{emoji} {p.name}"
-        buttons.append([InlineKeyboardButton(label, callback_data=f"product:{p.id}")])
-    buttons.append([InlineKeyboardButton(t(lang, "btn_close"), callback_data="close")])
+            icon = (getattr(p, "telegram_icon", None) or "").strip() or "📦"
+            price_str = f"{p.sale_price:,.0f}đ"
+            label = f"{icon} {p.name} - {price_str}"
+            cb = f"product:{p.id}"
+
+        buttons.append([InlineKeyboardButton(label, callback_data=cb)])
+
+    # Pagination row (only when > 1 page)
+    if total_pages > 1:
+        nav = []
+        if page > 0:
+            nav.append(InlineKeyboardButton("⬅️", callback_data=f"products_page:{page - 1}"))
+        page_label = f"Trang {page + 1}/{total_pages}" if lang == "vi" else f"Page {page + 1}/{total_pages}"
+        nav.append(InlineKeyboardButton(page_label, callback_data="noop"))
+        if page < total_pages - 1:
+            nav.append(InlineKeyboardButton("➡️", callback_data=f"products_page:{page + 1}"))
+        buttons.append(nav)
+
+    # Refresh + Home
+    buttons.append([
+        InlineKeyboardButton(t(lang, "btn_refresh"), callback_data=f"refresh_products:{page}"),
+        InlineKeyboardButton(t(lang, "btn_home"), callback_data="home"),
+    ])
+
     return InlineKeyboardMarkup(buttons)
 
 

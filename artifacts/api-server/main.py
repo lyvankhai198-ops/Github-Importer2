@@ -72,6 +72,16 @@ def _run_migrations():
         "ALTER TABLE orders ADD COLUMN required_confirmations INTEGER",
         # User language
         "ALTER TABLE users ADD COLUMN language_code VARCHAR(10) DEFAULT 'vi'",
+        # Product bot display fields
+        "ALTER TABLE products ADD COLUMN telegram_icon VARCHAR(100)",
+        "ALTER TABLE products ADD COLUMN is_pinned BOOLEAN DEFAULT 0",
+        # TelegramBotConfig new settings
+        "ALTER TABLE telegram_bot_config ADD COLUMN shop_name VARCHAR(255)",
+        "ALTER TABLE telegram_bot_config ADD COLUMN show_out_of_stock BOOLEAN DEFAULT 1",
+        "ALTER TABLE telegram_bot_config ADD COLUMN allow_manual_order_when_out_of_stock BOOLEAN DEFAULT 0",
+        "ALTER TABLE telegram_bot_config ADD COLUMN products_per_page INTEGER DEFAULT 15",
+        "ALTER TABLE telegram_bot_config ADD COLUMN default_product_icon VARCHAR(20) DEFAULT '📦'",
+        "ALTER TABLE telegram_bot_config ADD COLUMN default_language VARCHAR(10) DEFAULT 'vi'",
     ]
     with engine.connect() as conn:
         for sql in migrations:

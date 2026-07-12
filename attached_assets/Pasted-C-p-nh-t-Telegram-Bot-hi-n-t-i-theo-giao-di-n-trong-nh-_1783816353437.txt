@@ -1,0 +1,300 @@
+Cập nhật Telegram Bot hiện tại theo giao diện trong ảnh.
+
+Không tạo project mới.
+Không xóa database.
+Giữ nguyên API nguồn, SePay, thanh toán và luồng giao hàng.
+
+MỤC TIÊU:
+
+1. Bot có bảng Menu lệnh khi bấm nút Menu của Telegram.
+2. Có lệnh xem danh sách sản phẩm.
+3. Sản phẩm hết hàng vẫn hiện trong danh sách.
+4. Bấm sản phẩm hết hàng chỉ hiện popup cảnh báo, tuyệt đối không cho mua.
+
+==================================================
+1. CẤU HÌNH BOT COMMANDS
+==================================================
+
+Khi bot khởi động, gọi set_my_commands().
+
+Menu tiếng Việt:
+
+/menu - Thông tin tài khoản
+/product - Danh sách sản phẩm
+/orders - Đơn hàng của tôi
+/language - Đổi ngôn ngữ
+/support - Hỗ trợ
+/myid - Lấy Telegram ID
+
+Nếu hệ thống vẫn có chức năng nạp ví hoặc API key thì mới thêm:
+
+/nap - Nạp số dư
+/apikey - Quản lý API Key
+
+Không thêm lệnh không tồn tại.
+
+Menu tiếng Anh:
+
+/menu - Account information
+/product - Product list
+/orders - My orders
+/language - Change language
+/support - Support
+/myid - Get Telegram ID
+
+Dùng BotCommandScopeDefault.
+
+Nếu người dùng đổi ngôn ngữ:
+- cập nhật lại command menu phù hợp cho chat đó bằng BotCommandScopeChat
+- không cần restart bot
+
+==================================================
+2. DANH SÁCH SẢN PHẨM
+==================================================
+
+Khi user dùng:
+
+/product
+
+hoặc bấm:
+
+🛍 Sản phẩm
+
+Bot hiển thị danh sách nút sản phẩm.
+
+Sản phẩm còn hàng:
+
+[icon sản phẩm] Tên sản phẩm - 10.000đ
+
+Sản phẩm hết hàng:
+
+❌ Tên sản phẩm - Hết hàng
+
+Không ẩn sản phẩm hết hàng.
+
+Sắp xếp:
+
+1. Sản phẩm còn hàng trước
+2. Sản phẩm hết hàng sau
+3. Trong từng nhóm sắp xếp theo:
+   - pinned DESC
+   - sold_count DESC
+   - name ASC
+
+==================================================
+3. BIỂU TƯỢNG SẢN PHẨM
+==================================================
+
+Nếu sản phẩm có emoji/icon riêng thì dùng icon đó.
+
+Ví dụ:
+
+Canva → 🟣 hoặc emoji admin cấu hình
+Gemini → ✨
+CapCut → biểu tượng riêng
+Grok → biểu tượng riêng
+Cursor → biểu tượng riêng
+
+Thêm cột:
+
+products.telegram_icon TEXT
+
+Nếu trống:
+- dùng 📦 mặc định
+
+Sản phẩm hết hàng luôn ưu tiên ❌ ở đầu.
+
+==================================================
+4. CALLBACK SẢN PHẨM CÒN HÀNG
+==================================================
+
+Khi bấm sản phẩm còn hàng:
+
+- kiểm tra lại tồn kho nguồn theo thời gian thực
+- nếu stock > 0:
+  mở trang chi tiết sản phẩm
+- nếu stock vừa về 0:
+  không mở chi tiết mua
+  chuyển sang cảnh báo hết hàng
+
+Không tin dữ liệu tồn kho từ lúc render danh sách.
+
+==================================================
+5. CALLBACK SẢN PHẨM HẾT HÀNG
+==================================================
+
+Khi bấm nút sản phẩm hết hàng:
+
+Dùng:
+
+await query.answer(
+    text="⚠️ Sản phẩm tạm hết hàng. Vui lòng liên hệ admin.\n\n✈️ Telegram: @username_admin",
+    show_alert=True
+)
+
+Không gửi thêm tin nhắn mới.
+Không mở trang chi tiết.
+Không tạo đơn.
+Không tạo QR.
+Không chuyển sang bước nhập số lượng.
+
+Lấy username admin từ settings:
+
+support_username
+
+Không hard-code nếu đã có trong web.
+
+English:
+
+⚠️ This product is temporarily out of stock.
+Please contact admin.
+
+✈️ Telegram: @username_admin
+
+==================================================
+6. NÚT LÀM MỚI
+==================================================
+
+Cuối danh sách sản phẩm có nút:
+
+🔄 Làm mới
+
+Khi bấm:
+
+- đồng bộ lại tất cả API nguồn đang hoạt động
+- cập nhật tồn kho
+- edit chính tin nhắn danh sách hiện tại
+- không gửi thêm danh sách mới
+- báo:
+  ✅ Đã cập nhật danh sách sản phẩm.
+
+English:
+
+🔄 Refresh
+
+==================================================
+7. PHÂN TRANG
+==================================================
+
+Nếu có trên 15 sản phẩm:
+
+- phân trang
+- mỗi trang tối đa 15 sản phẩm
+
+Nút cuối:
+
+⬅️ Trang trước
+Trang 1/3
+➡️ Trang sau
+
+Dòng cuối:
+
+🔄 Làm mới
+🏠 Trang chủ
+
+Giữ nguyên trang hiện tại sau khi làm mới.
+
+==================================================
+8. TRANG CHỦ
+==================================================
+
+Lệnh:
+
+/menu
+
+hiển thị thông tin tài khoản và menu chính.
+
+Ví dụ:
+
+👤 THÔNG TIN TÀI KHOẢN
+
+Telegram ID:
+Username:
+Ngôn ngữ:
+Tổng đơn:
+Trạng thái:
+
+Menu:
+
+🛍 Sản phẩm
+📦 Đơn hàng
+🌐 Ngôn ngữ
+💬 Hỗ trợ
+
+==================================================
+9. TRẠNG THÁI HẾT HÀNG
+==================================================
+
+Một sản phẩm API được coi là hết hàng nếu:
+
+- tất cả nguồn liên kết có stock <= 0
+- hoặc tất cả nguồn bị inactive
+- hoặc external_status không phải active
+- hoặc API trả hết hàng
+
+Không dùng sản phẩm thủ công để giả là còn hàng.
+
+Nếu sản phẩm có chế độ manual fallback:
+- dùng 🟡 và ghi:
+  Nhận đặt hàng
+- chỉ khi setting allow_manual_order = true
+
+Nếu không bật manual fallback:
+- bắt buộc hiện ❌ Hết hàng
+
+==================================================
+10. WEB CÀI ĐẶT
+==================================================
+
+Trong Cài đặt web thêm:
+
+- Username hỗ trợ
+- Có hiển thị sản phẩm hết hàng không
+- Có cho nhận đơn thủ công khi API hết hàng không
+- Số sản phẩm mỗi trang
+- Icon mặc định
+- Ngôn ngữ mặc định
+
+Mặc định:
+
+show_out_of_stock = true
+allow_manual_order_when_out_of_stock = false
+products_per_page = 15
+
+==================================================
+11. TEST BẮT BUỘC
+==================================================
+
+Test:
+
+1. Bot mở Menu Telegram thấy:
+   /menu
+   /product
+   /orders
+   /language
+   /support
+   /myid
+
+2. /product hiển thị sản phẩm còn và hết hàng.
+
+3. Sản phẩm hết hàng có:
+   ❌ Tên sản phẩm - Hết hàng
+
+4. Bấm sản phẩm hết hàng:
+   - hiện popup cảnh báo
+   - không gửi tin mới
+   - không hiện Mua ngay
+   - không tạo order
+   - không tạo QR
+
+5. Sản phẩm đang còn hàng nhưng vừa hết:
+   - callback kiểm tra lại
+   - hiện popup hết hàng
+
+6. Bấm Làm mới:
+   - cập nhật tồn kho
+   - edit danh sách cũ
+   - không spam tin nhắn
+
+7. Chuyển English:
+   - menu command và popup đổi sang tiếng Anh

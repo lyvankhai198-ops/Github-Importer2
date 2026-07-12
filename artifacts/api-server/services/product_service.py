@@ -52,17 +52,38 @@ def get_product_stock_status(product_id: int, db: Session) -> dict:
     return {"stock": total_stock, "status": "in_stock"}
 
 
-def get_active_products_for_bot(db: Session) -> list:
-    """Returns list of {product, stock, status} for the bot product list."""
+def get_active_products_for_bot(db: Session, show_out_of_stock: bool = True) -> list:
+    """
+    Returns sorted list of {product, stock, status} for the bot product list.
+    Sort order:
+      1. in_stock / unavailable (can browse) before out_of_stock
+      2. Within each group: is_pinned DESC, sold_count DESC, name ASC
+    If show_out_of_stock is False, out_of_stock products are excluded.
+    """
     products = db.query(Product).filter(Product.is_active == True).all()
     result = []
     for p in products:
         info = get_product_stock_status(p.id, db)
+        status = info["status"]
+        if not show_out_of_stock and status == "out_of_stock":
+            continue
         result.append({
             "product": p,
             "stock": info["stock"],
-            "status": info["status"],
+            "status": status,
         })
+
+    def _sort_key(item):
+        p = item["product"]
+        status = item["status"]
+        # Group: 0 = available/unavailable (shown first), 1 = out_of_stock
+        group = 1 if status == "out_of_stock" else 0
+        pinned = 0 if getattr(p, "is_pinned", False) else 1   # pinned=True → 0 sorts first
+        sold = -(p.sold_count or 0)                            # higher sold_count first
+        name = p.name.lower()
+        return (group, pinned, sold, name)
+
+    result.sort(key=_sort_key)
     return result
 
 

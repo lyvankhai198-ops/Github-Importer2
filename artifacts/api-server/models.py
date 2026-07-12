@@ -88,10 +88,17 @@ class TelegramBotConfig(Base):
     admin_telegram_id = Column(String(100), nullable=True)
     welcome_message = Column(Text, nullable=True)
     support_username = Column(String(100), nullable=True)
+    shop_name = Column(String(255), nullable=True)
     is_enabled = Column(Boolean, default=False)
     bot_status = Column(SAEnum(BotStatus), default=BotStatus.stopped)
     bot_username = Column(String(100), nullable=True)
     bot_name = Column(String(255), nullable=True)
+    # Product list display settings
+    show_out_of_stock = Column(Boolean, default=True)
+    allow_manual_order_when_out_of_stock = Column(Boolean, default=False)
+    products_per_page = Column(Integer, default=15)
+    default_product_icon = Column(String(20), default="📦")
+    default_language = Column(String(10), default="vi")
     created_at = Column(DateTime, default=now)
     updated_at = Column(DateTime, default=now, onupdate=now)
 
@@ -165,6 +172,8 @@ class Product(Base):
     source_type = Column(SAEnum(SourceType), default=SourceType.manual)
     delivery_mode = Column(SAEnum(DeliveryMode), default=DeliveryMode.manual)
     is_active = Column(Boolean, default=True)
+    is_pinned = Column(Boolean, default=False)             # pinned products sort first
+    telegram_icon = Column(String(100), nullable=True)     # emoji/icon shown in bot list
     sold_count = Column(Integer, default=0)
     created_at = Column(DateTime, default=now)
     updated_at = Column(DateTime, default=now, onupdate=now)
