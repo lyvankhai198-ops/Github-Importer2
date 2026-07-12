@@ -205,6 +205,11 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="AI Center Web Bot Manager", lifespan=lifespan)
 
+
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
+
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY, max_age=86400 * 30)
 app.add_middleware(GZipMiddleware)
 
