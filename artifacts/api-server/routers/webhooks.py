@@ -40,12 +40,17 @@ async def sepay_webhook(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
+    print("=== SEPAY WEBHOOK RECEIVED ===")
+    print(request.headers)
+    body_bytes = await request.body()
+    print(body_bytes)
+
     if not _verify_sepay_auth(request, db):
         logger.warning("[webhook/sepay] auth failed")
         return JSONResponse({"success": False, "message": "Unauthorized"}, status_code=401)
 
     try:
-        raw = await request.json()
+        raw = json.loads(body_bytes)
     except Exception:
         return JSONResponse({"success": False, "message": "Invalid JSON"}, status_code=400)
 
