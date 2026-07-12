@@ -52,7 +52,7 @@
             <td><small>{{ o.telegram_user_id }}</small></td>
             <td>{{ o.product.name if o.product else '—' }}</td>
             <td>{{ o.quantity }}</td>
-            <td>{{ "{:,.0f}".format(o.total_price) }}đ</td>
+            <td>{{ "{:,.0f}".format(o.total_price).replace(",", ".") }}đ</td>
             <td>
               {% set sv = o.status.value if o.status.value is defined else o.status %}
               {% if sv == 'completed' %}<span class="badge bg-success">✅ Hoàn thành</span>

@@ -28,19 +28,33 @@
     <div class="table-responsive">
       <table class="table table-hover mb-0">
         <thead>
-          <tr><th>Ảnh</th><th>Tên / Mã</th><th>Giá bán</th><th>Nguồn</th><th>Giao hàng</th><th>Đã bán</th><th>Trạng thái</th><th>Hành động</th></tr>
+          <tr><th>Ảnh</th><th>Tên / Mã</th><th>Giá bán</th><th>Nguồn</th><th>Giao hàng</th><th>Tồn kho</th><th>Đã bán</th><th>Trạng thái</th><th>Hành động</th></tr>
         </thead>
         <tbody>
           {% for p in products %}
           <tr>
             <td><img src="{{ p.image_path or '/static/img/no-image.png' }}" width="40" height="40" style="object-fit:cover;border-radius:4px" onerror="this.src='/static/img/no-image.png'"></td>
             <td>
-              <div class="fw-semibold">{{ p.name }}</div>
-              <small class="text-muted">{{ p.product_code }}</small>
+              <a href="/products/{{ p.id }}" class="fw-semibold text-decoration-none">{{ p.name }}</a>
+              <div><small class="text-muted">{{ p.product_code }}</small></div>
             </td>
-            <td>{{ "{:,.0f}".format(p.sale_price) }}đ</td>
+            <td>{{ "{:,.0f}".format(p.sale_price).replace(",", ".") }}đ</td>
             <td><span class="badge {% if p.source_type.value == 'api' %}bg-info{% else %}bg-secondary{% endif %}">{{ p.source_type.value }}</span></td>
-            <td><span class="badge {% if p.delivery_mode.value == 'api_auto' %}bg-success{% else %}bg-warning text-dark{% endif %}">{{ p.delivery_mode.value }}</span></td>
+            <td>
+              {% if p.delivery_mode.value == 'api_auto' %}<span class="badge bg-success">Tự động API</span>
+              {% elif p.delivery_mode.value == 'manual_stock' %}<span class="badge bg-primary">Kho tài khoản</span>
+              {% else %}<span class="badge bg-warning text-dark">Thủ công (Admin)</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if p.delivery_mode.value == 'manual_stock' %}
+                <span class="badge {% if p.stock_available and p.stock_available > 0 %}bg-success{% else %}bg-danger{% endif %}">{{ p.stock_available or 0 }}</span>
+              {% elif p.delivery_mode.value == 'api_auto' %}
+                <span class="text-muted">—</span>
+              {% else %}
+                <span class="badge bg-secondary">∞</span>
+              {% endif %}
+            </td>
             <td>{{ p.sold_count }}</td>
             <td>
               <div class="form-check form-switch">
@@ -48,6 +62,7 @@
               </div>
             </td>
             <td>
+              <a href="/products/{{ p.id }}" class="btn btn-xs btn-outline-secondary me-1"><i class="bi bi-eye"></i></a>
               <button class="btn btn-xs btn-outline-primary me-1" data-bs-toggle="modal" data-bs-target="#editModal{{ p.id }}"><i class="bi bi-pencil"></i></button>
               <form action="/products/{{ p.id }}/delete" method="post" style="display:inline" onsubmit="return confirm('Xóa sản phẩm này?')">
                 <button type="submit" class="btn btn-xs btn-outline-danger"><i class="bi bi-trash"></i></button>
@@ -64,20 +79,30 @@
                     <div class="row g-3">
                       <div class="col-md-6"><label class="form-label">Tên sản phẩm *</label><input type="text" name="name" class="form-control" value="{{ p.name }}" required></div>
                       <div class="col-md-6"><label class="form-label">Mã sản phẩm *</label><input type="text" name="product_code" class="form-control" value="{{ p.product_code }}" required></div>
-                      <div class="col-md-6"><label class="form-label">Giá bán</label><input type="number" name="sale_price" class="form-control" value="{{ p.sale_price }}" step="0.01"></div>
+                      <div class="col-md-6"><label class="form-label">Giá bán (đ)</label><input type="number" name="sale_price" class="form-control" value="{{ p.sale_price|int }}" step="1" min="0"></div>
+                      <div class="col-md-6"><label class="form-label">Số lượng tối thiểu</label><input type="number" name="min_quantity" class="form-control" value="{{ p.min_quantity or 1 }}" step="1" min="1"></div>
                       <div class="col-md-6"><label class="form-label">Chế độ giao hàng</label>
                         <select name="delivery_mode" class="form-select">
-                          <option value="manual" {% if p.delivery_mode.value=='manual' %}selected{% endif %}>Thủ công</option>
+                          <option value="manual_admin" {% if p.delivery_mode.value in ['manual', 'manual_admin'] %}selected{% endif %}>Thủ công (Admin giao tay)</option>
+                          <option value="manual_stock" {% if p.delivery_mode.value=='manual_stock' %}selected{% endif %}>Kho tài khoản (tự động)</option>
                           <option value="api_auto" {% if p.delivery_mode.value=='api_auto' %}selected{% endif %}>Tự động API</option>
                         </select>
                       </div>
+                      <div class="col-md-6"><label class="form-label">Icon Telegram (emoji)</label><input type="text" name="telegram_icon" class="form-control" value="{{ p.telegram_icon or '' }}" placeholder="📦"></div>
                       <div class="col-12"><label class="form-label">Mô tả</label><textarea name="description" class="form-control" rows="3">{{ p.description or '' }}</textarea></div>
+                      <div class="col-12"><label class="form-label">Mô tả (English)</label><textarea name="description_en" class="form-control" rows="2">{{ p.description_en or '' }}</textarea></div>
                       <div class="col-md-6"><label class="form-label">Ảnh sản phẩm</label><input type="file" name="image" class="form-control" accept="image/*"></div>
-                      <div class="col-md-6"><label class="form-label">Trạng thái</label>
+                      <div class="col-md-3"><label class="form-label">Trạng thái</label>
                         <select name="is_active" class="form-select">
                           <option value="true" {% if p.is_active %}selected{% endif %}>Đang bán</option>
                           <option value="false" {% if not p.is_active %}selected{% endif %}>Tạm ngưng</option>
                         </select>
+                      </div>
+                      <div class="col-md-3 d-flex align-items-end">
+                        <div class="form-check">
+                          <input class="form-check-input" type="checkbox" name="allow_manual_order" value="1" id="allowManual{{ p.id }}" {% if p.allow_manual_order %}checked{% endif %}>
+                          <label class="form-check-label" for="allowManual{{ p.id }}">Nhận đơn khi hết hàng</label>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -87,7 +112,7 @@
             </div>
           </div>
           {% else %}
-          <tr><td colspan="8" class="text-center text-muted py-4">Chưa có sản phẩm nào</td></tr>
+          <tr><td colspan="9" class="text-center text-muted py-4">Chưa có sản phẩm nào</td></tr>
           {% endfor %}
         </tbody>
       </table>
@@ -113,20 +138,30 @@
           <div class="row g-3">
             <div class="col-md-6"><label class="form-label">Tên sản phẩm *</label><input type="text" name="name" class="form-control" required></div>
             <div class="col-md-6"><label class="form-label">Mã sản phẩm *</label><input type="text" name="product_code" class="form-control" required></div>
-            <div class="col-md-6"><label class="form-label">Giá bán</label><input type="number" name="sale_price" class="form-control" value="0" step="0.01"></div>
+            <div class="col-md-6"><label class="form-label">Giá bán (đ)</label><input type="number" name="sale_price" class="form-control" value="0" step="1" min="0"></div>
+            <div class="col-md-6"><label class="form-label">Số lượng tối thiểu</label><input type="number" name="min_quantity" class="form-control" value="1" step="1" min="1"></div>
             <div class="col-md-6"><label class="form-label">Chế độ giao hàng</label>
               <select name="delivery_mode" class="form-select">
-                <option value="manual">Thủ công</option>
+                <option value="manual_admin">Thủ công (Admin giao tay)</option>
+                <option value="manual_stock">Kho tài khoản (tự động)</option>
                 <option value="api_auto">Tự động API</option>
               </select>
             </div>
+            <div class="col-md-6"><label class="form-label">Icon Telegram (emoji)</label><input type="text" name="telegram_icon" class="form-control" placeholder="📦"></div>
             <div class="col-12"><label class="form-label">Mô tả</label><textarea name="description" class="form-control" rows="3"></textarea></div>
+            <div class="col-12"><label class="form-label">Mô tả (English)</label><textarea name="description_en" class="form-control" rows="2"></textarea></div>
             <div class="col-md-6"><label class="form-label">Ảnh sản phẩm</label><input type="file" name="image" class="form-control" accept="image/*" id="imageUpload"></div>
-            <div class="col-md-6"><label class="form-label">Trạng thái</label>
+            <div class="col-md-3"><label class="form-label">Trạng thái</label>
               <select name="is_active" class="form-select">
                 <option value="true">Đang bán</option>
                 <option value="false">Tạm ngưng</option>
               </select>
+            </div>
+            <div class="col-md-3 d-flex align-items-end">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="allow_manual_order" value="1" id="allowManualAdd">
+                <label class="form-check-label" for="allowManualAdd">Nhận đơn khi hết hàng</label>
+              </div>
             </div>
             <div class="col-12"><img id="imagePreview" src="" style="max-height:100px;display:none" class="rounded"></div>
           </div>

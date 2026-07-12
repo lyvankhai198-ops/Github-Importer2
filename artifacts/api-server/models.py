@@ -18,8 +18,18 @@ class SourceType(str, enum.Enum):
 
 
 class DeliveryMode(str, enum.Enum):
-    manual = "manual"
+    manual = "manual"              # legacy value — treated as manual_admin everywhere
+    manual_admin = "manual_admin"  # no local inventory; admin delivers manually
+    manual_stock = "manual_stock"  # local inventory ("kho tài khoản"); auto-delivered
     api_auto = "api_auto"
+
+
+class InventoryStatus(str, enum.Enum):
+    available = "available"
+    reserved = "reserved"
+    sold = "sold"
+    faulty = "faulty"
+    deleted = "deleted"
 
 
 class AuthType(str, enum.Enum):
@@ -44,6 +54,7 @@ class OrderStatus(str, enum.Enum):
     cancelled = "cancelled"
     paid_waiting_stock = "paid_waiting_stock"  # paid but source ran out of stock
     waiting_manual_verification = "waiting_manual_verification"  # waiting admin approval (Binance manual)
+    delivery_failed = "delivery_failed"        # paid, stock reserved, but Telegram delivery failed
 
 
 class PaymentStatus(str, enum.Enum):
@@ -99,6 +110,9 @@ class TelegramBotConfig(Base):
     products_per_page = Column(Integer, default=15)
     default_product_icon = Column(String(20), default="📦")
     default_language = Column(String(10), default="vi")
+    # Local inventory ("kho tài khoản") settings
+    notify_users_when_restocked = Column(Boolean, default=False)
+    allow_partial_delivery = Column(Boolean, default=False)
     created_at = Column(DateTime, default=now)
     updated_at = Column(DateTime, default=now, onupdate=now)
 
@@ -174,12 +188,44 @@ class Product(Base):
     is_active = Column(Boolean, default=True)
     is_pinned = Column(Boolean, default=False)             # pinned products sort first
     telegram_icon = Column(String(100), nullable=True)     # emoji/icon shown in bot list
+    allow_manual_order = Column(Boolean, default=False)     # allow ordering while out of stock (manual_admin-style)
     sold_count = Column(Integer, default=0)
     created_at = Column(DateTime, default=now)
     updated_at = Column(DateTime, default=now, onupdate=now)
 
     sources = relationship("ProductSource", back_populates="product", cascade="all, delete-orphan")
     orders = relationship("Order", back_populates="product")
+    inventory_items = relationship("InventoryItem", back_populates="product", cascade="all, delete-orphan")
+
+
+class InventoryItem(Base):
+    """
+    One row per individual stock credential ("kho tài khoản") for manual_stock products.
+    Passwords/raw values must NEVER be written to ActivityLog or general logs.
+    """
+    __tablename__ = "inventory_items"
+    id = Column(Integer, primary_key=True, index=True)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
+    username = Column(String(500), nullable=True)
+    password = Column(String(500), nullable=True)
+    raw_value = Column(Text, nullable=True)     # full original line, used for delivery + dedupe
+    email = Column(String(255), nullable=True)
+    expiry = Column(String(100), nullable=True)
+    note = Column(Text, nullable=True)
+    cost_price = Column(Float, nullable=True, default=0.0)
+    status = Column(SAEnum(InventoryStatus), default=InventoryStatus.available, nullable=False)
+    reserved_order_id = Column(Integer, ForeignKey("orders.id"), nullable=True)
+    sold_order_id = Column(Integer, ForeignKey("orders.id"), nullable=True)
+    created_at = Column(DateTime, default=now)
+    updated_at = Column(DateTime, default=now, onupdate=now)
+    reserved_at = Column(DateTime, nullable=True)
+    sold_at = Column(DateTime, nullable=True)
+
+    product = relationship("Product", back_populates="inventory_items")
+
+    __table_args__ = (
+        # Speeds up the hot-path "count available for product" / "pick N available" queries
+    )
 
 
 class ApiConnection(Base):

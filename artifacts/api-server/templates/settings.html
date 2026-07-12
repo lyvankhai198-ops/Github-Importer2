@@ -79,6 +79,18 @@
                     <label class="form-check-label" for="allowManual">Nhận đặt hàng khi hết hàng</label>
                   </div>
                 </div>
+                <div class="col-sm-6">
+                  <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" name="notify_users_when_restocked" id="notifyRestock" {{ 'checked' if cfg.notify_users_when_restocked else '' }}>
+                    <label class="form-check-label" for="notifyRestock">Báo khách khi kho có hàng trở lại (chỉ khách đang chờ)</label>
+                  </div>
+                </div>
+                <div class="col-sm-6">
+                  <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" name="allow_partial_delivery" id="allowPartial" {{ 'checked' if cfg.allow_partial_delivery else '' }}>
+                    <label class="form-check-label" for="allowPartial">Cho phép giao một phần khi thiếu hàng (kho tài khoản)</label>
+                  </div>
+                </div>
                 <div class="col-sm-4">
                   <label class="form-label">Sản phẩm mỗi trang</label>
                   <input type="number" name="products_per_page" class="form-control" value="{{ cfg.products_per_page or 15 }}" min="5" max="50">

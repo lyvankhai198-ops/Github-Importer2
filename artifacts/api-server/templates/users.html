@@ -17,7 +17,7 @@
       <div class="card-body border-top">
         <div class="row g-2 text-center">
           <div class="col-6"><div class="fw-bold">{{ detail_user.total_orders }}</div><small class="text-muted">Tổng đơn</small></div>
-          <div class="col-6"><div class="fw-bold">{{ "{:,.0f}".format(detail_user.total_spent or 0) }}đ</div><small class="text-muted">Đã chi</small></div>
+          <div class="col-6"><div class="fw-bold">{{ "{:,.0f}".format(detail_user.total_spent or 0).replace(",", ".") }}đ</div><small class="text-muted">Đã chi</small></div>
         </div>
         {% if detail_user.last_active_at %}<div class="text-muted small mt-2">Hoạt động: {{ detail_user.last_active_at.strftime('%d/%m/%Y %H:%M') }}</div>{% endif %}
         <div class="text-muted small">Tham gia: {{ detail_user.created_at.strftime('%d/%m/%Y') }}</div>
@@ -45,7 +45,7 @@
               <tr>
                 <td><a href="/orders/{{ o.id }}">{{ o.order_code }}</a></td>
                 <td>{{ o.product.name if o.product else '—' }}</td>
-                <td>{{ "{:,.0f}".format(o.total_price) }}đ</td>
+                <td>{{ "{:,.0f}".format(o.total_price).replace(",", ".") }}đ</td>
                 <td><span class="badge bg-secondary">{{ o.status.value if o.status.value is defined else o.status }}</span></td>
                 <td><small>{{ o.created_at.strftime('%d/%m/%Y') }}</small></td>
               </tr>
@@ -91,7 +91,7 @@
             <td>{{ '@' + u.username if u.username else '—' }}</td>
             <td>{{ u.first_name or '' }} {{ u.last_name or '' }}</td>
             <td>{{ u.total_orders }}</td>
-            <td>{{ "{:,.0f}".format(u.total_spent or 0) }}đ</td>
+            <td>{{ "{:,.0f}".format(u.total_spent or 0).replace(",", ".") }}đ</td>
             <td><small>{{ u.created_at.strftime('%d/%m/%Y') }}</small></td>
             <td><small>{{ u.last_active_at.strftime('%d/%m %H:%M') if u.last_active_at else '—' }}</small></td>
             <td>{% if u.is_banned %}<span class="badge bg-danger">Bị cấm</span>{% else %}<span class="badge bg-success">Active</span>{% endif %}</td>

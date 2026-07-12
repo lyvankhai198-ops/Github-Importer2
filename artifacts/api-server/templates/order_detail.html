@@ -65,22 +65,22 @@
           </div>
           <div class="info-cell">
             <label>Đơn giá bán</label>
-            <div>{{ "{:,.0f}".format(order.unit_price) }}đ</div>
+            <div>{{ "{:,.0f}".format(order.unit_price).replace(",", ".") }}đ</div>
           </div>
           <div class="info-cell">
             <label>Giá nguồn</label>
-            <div>{{ "{:,.0f}".format(order.source_unit_price) if order.source_unit_price else "—" }}đ</div>
+            <div>{{ "{:,.0f}".format(order.source_unit_price).replace(",", ".") if order.source_unit_price else "—" }}đ</div>
           </div>
           <div class="info-cell">
             <label>Tổng tiền</label>
-            <div class="fw-bold text-primary fs-5">{{ "{:,.0f}".format(order.total_price) }}đ</div>
+            <div class="fw-bold text-primary fs-5">{{ "{:,.0f}".format(order.total_price).replace(",", ".") }}đ</div>
           </div>
           {% if order.source_unit_price %}
           <div class="info-cell">
             <label>Lợi nhuận</label>
             {% set profit = (order.unit_price - order.source_unit_price) * order.quantity %}
             <div class="{% if profit >= 0 %}profit-positive{% else %}profit-negative{% endif %}">
-              {{ "{:,.0f}".format(profit) }}đ
+              {{ "{:,.0f}".format(profit).replace(",", ".") }}đ
             </div>
           </div>
           {% endif %}
@@ -131,19 +131,19 @@
           </div>
           <div class="info-cell">
             <label>Cần thanh toán</label>
-            <div class="fw-semibold">{{ "{:,.0f}".format(order.expected_amount or order.total_price) }}đ</div>
+            <div class="fw-semibold">{{ "{:,.0f}".format(order.expected_amount or order.total_price).replace(",", ".") }}đ</div>
           </div>
           <div class="info-cell">
             <label>Đã nhận</label>
             <div class="fw-semibold {% if (order.paid_amount or 0) >= (order.expected_amount or order.total_price) %}text-success{% else %}text-warning{% endif %}">
-              {{ "{:,.0f}".format(order.paid_amount or 0) }}đ
+              {{ "{:,.0f}".format(order.paid_amount or 0).replace(",", ".") }}đ
             </div>
           </div>
           {% if (order.paid_amount or 0) < (order.expected_amount or order.total_price) %}
           <div class="info-cell">
             <label>Còn thiếu</label>
             <div class="text-danger fw-semibold">
-              {{ "{:,.0f}".format((order.expected_amount or order.total_price) - (order.paid_amount or 0)) }}đ
+              {{ "{:,.0f}".format((order.expected_amount or order.total_price) - (order.paid_amount or 0)).replace(",", ".") }}đ
             </div>
           </div>
           {% endif %}
@@ -180,7 +180,7 @@
               {% for tx in order.payment_transactions %}
               <tr>
                 <td><code>{{ tx.external_transaction_id[:16] }}{% if tx.external_transaction_id|length > 16 %}…{% endif %}</code></td>
-                <td class="text-success fw-semibold">+{{ "{:,.0f}".format(tx.amount_in) }}đ</td>
+                <td class="text-success fw-semibold">+{{ "{:,.0f}".format(tx.amount_in).replace(",", ".") }}đ</td>
                 <td>{{ (tx.transfer_content or '')[:40] }}</td>
                 <td>
                   <span class="badge {% if tx.match_status == 'matched' %}bg-success{% elif tx.match_status == 'partial' %}bg-warning text-dark{% elif tx.match_status == 'late_payment' %}bg-danger{% else %}bg-secondary{% endif %}">

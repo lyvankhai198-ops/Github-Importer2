@@ -25,6 +25,7 @@ from datetime import datetime, timedelta
 from urllib.parse import quote
 from sqlalchemy.orm import Session
 
+from services.normalize import format_vnd
 from models import (
     Order, OrderStatus, PaymentStatus, PaymentTransaction,
     SepayConfig, TelegramBotConfig, User,
@@ -402,7 +403,7 @@ def process_webhook_transaction(db: Session, raw: dict) -> dict:
             order.payment_status = PaymentStatus.paid
             order.paid_at = datetime.utcnow()
             surplus = new_paid - expected
-            order.notes = (order.notes or "") + f"\nThừa {surplus:,.0f}đ — chờ hoàn tiền."
+            order.notes = (order.notes or "") + f"\nThừa {format_vnd(surplus)}đ — chờ hoàn tiền."
             tx.match_status = "matched"
             action = "paid"
 
@@ -465,7 +466,16 @@ async def process_paid_order(order_id: int):
 
         product = db.query(Product).filter(Product.id == order.product_id).first()
 
-        # Manual delivery product → admin handles it
+        # manual_stock → deliver automatically from local inventory ("kho tài khoản")
+        if product and product.delivery_mode == DeliveryMode.manual_stock:
+            from services.inventory_service import deliver_from_local_inventory
+            # deliver_from_local_inventory manages its own _processing_paid guard;
+            # release it here so that inner guard doesn't self-block.
+            _processing_paid.discard(order_id)
+            await deliver_from_local_inventory(order_id)
+            return
+
+        # manual_admin (and legacy "manual") → admin handles delivery by hand
         if not product or product.delivery_mode != DeliveryMode.api_auto:
             order.status = OrderStatus.pending_manual
             db.commit()
@@ -658,7 +668,7 @@ async def _notify_paid_waiting_stock(order: Order, db: Session):
                     f"📋 Đơn: <code>{order.order_code}</code>\n"
                     f"📦 Sản phẩm: {html.escape(product_name)}\n"
                     f"👤 User: <code>{order.telegram_user_id}</code>\n"
-                    f"💰 Đã nhận: {(order.paid_amount or 0):,.0f}đ\n\n"
+                    f"💰 Đã nhận: {format_vnd((order.paid_amount or 0))}đ\n\n"
                     "Cần giao thủ công, đổi nguồn hoặc hoàn tiền."
                 ),
                 parse_mode="HTML",

@@ -82,6 +82,32 @@ def _run_migrations():
         "ALTER TABLE telegram_bot_config ADD COLUMN products_per_page INTEGER DEFAULT 15",
         "ALTER TABLE telegram_bot_config ADD COLUMN default_product_icon VARCHAR(20) DEFAULT '📦'",
         "ALTER TABLE telegram_bot_config ADD COLUMN default_language VARCHAR(10) DEFAULT 'vi'",
+        # Local inventory ("kho tài khoản") support
+        "ALTER TABLE products ADD COLUMN allow_manual_order BOOLEAN DEFAULT 0",
+        "ALTER TABLE telegram_bot_config ADD COLUMN notify_users_when_restocked BOOLEAN DEFAULT 0",
+        "ALTER TABLE telegram_bot_config ADD COLUMN allow_partial_delivery BOOLEAN DEFAULT 0",
+        """CREATE TABLE IF NOT EXISTS inventory_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            product_id INTEGER NOT NULL,
+            username VARCHAR(500),
+            password VARCHAR(500),
+            raw_value TEXT,
+            email VARCHAR(255),
+            expiry VARCHAR(100),
+            note TEXT,
+            cost_price FLOAT DEFAULT 0.0,
+            status VARCHAR(20) NOT NULL DEFAULT 'available',
+            reserved_order_id INTEGER,
+            sold_order_id INTEGER,
+            created_at DATETIME,
+            updated_at DATETIME,
+            reserved_at DATETIME,
+            sold_at DATETIME,
+            FOREIGN KEY(product_id) REFERENCES products(id),
+            FOREIGN KEY(reserved_order_id) REFERENCES orders(id),
+            FOREIGN KEY(sold_order_id) REFERENCES orders(id)
+        )""",
+        "CREATE INDEX IF NOT EXISTS ix_inventory_items_product_status ON inventory_items (product_id, status)",
     ]
     with engine.connect() as conn:
         for sql in migrations:
@@ -90,6 +116,15 @@ def _run_migrations():
                 conn.commit()
             except Exception:
                 pass  # column / index already exists
+
+        # Backward-compat: existing products stored with the old plain "manual"
+        # delivery_mode become "manual_admin" (no inventory, admin delivers by hand).
+        # This keeps their behavior identical to before this feature was added.
+        try:
+            conn.execute(text("UPDATE products SET delivery_mode = 'manual_admin' WHERE delivery_mode = 'manual'"))
+            conn.commit()
+        except Exception:
+            pass
 
 
 def _seed_payment_methods():

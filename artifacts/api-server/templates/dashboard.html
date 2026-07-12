@@ -51,14 +51,14 @@
   <div class="col-6 col-md-3">
     <div class="stat-card">
       <div class="stat-icon text-warning"><i class="bi bi-currency-dollar"></i></div>
-      <div class="stat-value">{{ "{:,.0f}".format(revenue_today) }}đ</div>
+      <div class="stat-value">{{ "{:,.0f}".format(revenue_today).replace(",", ".") }}đ</div>
       <div class="stat-label">Doanh thu hôm nay</div>
     </div>
   </div>
   <div class="col-6 col-md-3">
     <div class="stat-card">
       <div class="stat-icon text-danger"><i class="bi bi-graph-up"></i></div>
-      <div class="stat-value">{{ "{:,.0f}".format(revenue_total) }}đ</div>
+      <div class="stat-value">{{ "{:,.0f}".format(revenue_total).replace(",", ".") }}đ</div>
       <div class="stat-label">Tổng doanh thu</div>
     </div>
   </div>
@@ -111,7 +111,7 @@
                 <td><a href="/orders/{{ o.id }}">{{ o.order_code }}</a></td>
                 <td>{{ o.telegram_user_id }}</td>
                 <td>{{ o.product.name if o.product else '—' }}</td>
-                <td>{{ "{:,.0f}".format(o.total_price) }}đ</td>
+                <td>{{ "{:,.0f}".format(o.total_price).replace(",", ".") }}đ</td>
                 <td><span class="badge status-badge-{{ o.status.value if o.status.value is defined else o.status }}">{{ o.status.value if o.status.value is defined else o.status }}</span></td>
                 <td>{{ o.created_at.strftime('%d/%m %H:%M') }}</td>
               </tr>

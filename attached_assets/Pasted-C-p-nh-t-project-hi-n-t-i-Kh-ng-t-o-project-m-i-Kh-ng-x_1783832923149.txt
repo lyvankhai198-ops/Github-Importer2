@@ -1,0 +1,538 @@
+Cập nhật project hiện tại.
+
+Không tạo project mới.
+Không xóa database, đơn hàng, API nguồn, cấu hình bot hoặc thanh toán hiện có.
+
+MỤC TIÊU:
+
+1. Sửa lỗi không chỉnh sửa được sản phẩm.
+2. Thêm sản phẩm thủ công không cần API nguồn.
+3. Cho phép nhập kho tài khoản dạng tk|mk.
+4. Khi khách mua sản phẩm thủ công và kho còn hàng:
+   - thanh toán xong
+   - bot tự lấy tài khoản trong kho
+   - giao ngay cho khách
+5. Khi admin thêm hàng vào kho:
+   - cập nhật tồn kho ngay
+   - bot cập nhật trạng thái sản phẩm
+   - gửi thông báo cho admin
+   - tùy chọn thông báo cho người dùng đang chờ hàng
+
+==================================================
+1. SỬA LỖI CHỈNH SỬA SẢN PHẨM
+==================================================
+
+Hiện trạng:
+- Modal sửa sản phẩm trên mobile bị lệch và bị che.
+- Bấm “Lưu thay đổi” không cập nhật hoặc có thể không gửi đúng form.
+- Giá bán đang hiển thị dạng 5000,0.
+- Có thể route update không nhận đúng product_id.
+
+Yêu cầu:
+
+Tạo route:
+
+GET /products/{product_id}/edit
+POST /products/{product_id}/edit
+
+Hoặc dùng PUT/PATCH nếu project hiện tại đã dùng JavaScript API.
+
+Phải cập nhật được:
+
+- name
+- product_code
+- sale_price
+- description
+- description_en
+- image
+- telegram_icon
+- delivery_mode
+- is_active
+- allow_manual_order
+- min_quantity
+
+Validate:
+
+- product_id phải tồn tại
+- tên không được trống
+- mã sản phẩm không được trùng với sản phẩm khác
+- giá bán >= 0
+- min_quantity >= 1
+
+Khi thành công:
+- commit database
+- redirect hoặc trả JSON success
+- hiện:
+  ✅ Đã cập nhật sản phẩm thành công.
+- bot đọc được dữ liệu mới ngay, không cần restart
+
+Khi lỗi:
+- rollback
+- trả thông báo lỗi thật
+- không dùng except: pass
+- log traceback đầy đủ
+
+==================================================
+2. SỬA MODAL MOBILE
+==================================================
+
+Trên màn hình dưới 768px:
+
+- modal phải position: fixed
+- inset: 0
+- width: 100%
+- height: 100%
+- max-width: none
+- margin: 0
+- overflow-y: auto
+- z-index đủ cao
+- overlay phủ toàn màn hình
+- form không bị lệch trái
+- nút lưu luôn nhìn thấy
+
+CSS:
+
+@media (max-width: 767px) {
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9998;
+  }
+
+  .modal-dialog {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    max-width: none;
+    height: 100%;
+    margin: 0;
+    z-index: 9999;
+  }
+
+  .modal-content {
+    min-height: 100%;
+    border-radius: 0;
+    overflow-y: auto;
+    padding: 16px 16px 120px;
+  }
+
+  .modal-footer {
+    position: sticky;
+    bottom: 0;
+    background: inherit;
+    padding: 12px 0;
+  }
+}
+
+==================================================
+3. GIÁ BÁN DẠNG VND
+==================================================
+
+Không hiển thị:
+
+5000,0
+
+Phải hiển thị:
+
+5.000đ
+
+Trong input:
+- dùng số nguyên
+- step=1
+- không dùng decimal nếu tiền tệ là VND
+
+Database có thể giữ Numeric nhưng khi đọc phải convert int.
+
+==================================================
+4. THÊM SẢN PHẨM THỦ CÔNG
+==================================================
+
+Trang Sản phẩm thêm nút:
+
+➕ Thêm sản phẩm thủ công
+
+Form gồm:
+
+- Tên sản phẩm
+- Mã sản phẩm
+- Mô tả tiếng Việt
+- Mô tả tiếng Anh
+- Giá bán
+- Giá nhập mặc định
+- Số lượng tối thiểu
+- Ảnh sản phẩm
+- Icon Telegram
+- Trạng thái
+- Chế độ giao hàng
+
+Chế độ giao hàng:
+
+manual_stock
+manual_admin
+api_auto
+
+Ý nghĩa:
+
+manual_stock:
+- có kho tài khoản thủ công
+- sau thanh toán bot tự giao từ kho
+
+manual_admin:
+- không cần kho
+- sau thanh toán chuyển chờ admin giao
+
+api_auto:
+- mua từ API nguồn
+
+Không bắt buộc chọn API nguồn nếu là manual_stock hoặc manual_admin.
+
+==================================================
+5. DATABASE KHO TÀI KHOẢN
+==================================================
+
+Tạo bảng inventory_items nếu chưa có:
+
+- id
+- product_id
+- username
+- password
+- raw_value
+- email
+- expiry
+- note
+- cost_price
+- status
+- reserved_order_id
+- sold_order_id
+- imported_at
+- reserved_at
+- sold_at
+- created_at
+- updated_at
+
+status:
+
+available
+reserved
+sold
+faulty
+deleted
+
+Tạo index:
+
+product_id + status
+
+Không ghi password vào activity log.
+
+==================================================
+6. THÊM HÀNG VÀO KHO
+==================================================
+
+Trong mỗi sản phẩm thủ công có nút:
+
+📥 Thêm hàng vào kho
+
+Modal giống ảnh nhưng gọn hơn.
+
+Các trường:
+
+- Giá nhập
+- Tiền tệ
+- Dữ liệu tài khoản
+- Tùy chọn giữ nguyên chuỗi
+
+Hỗ trợ các định dạng:
+
+email|password
+username|password
+email password
+username password
+email|password|expiry|note
+mỗi dòng một tài khoản
+
+Ví dụ:
+
+mail1@gmail.com|pass1
+mail2@gmail.com|pass2
+
+Parser:
+
+- trim khoảng trắng
+- bỏ dòng trống
+- kiểm tra trùng raw_value trong cùng sản phẩm
+- preview số dòng hợp lệ
+- báo:
+  hợp lệ
+  trùng
+  lỗi
+
+Nút:
+
+📥 Thêm vào kho
+
+==================================================
+7. CẬP NHẬT TỒN KHO
+==================================================
+
+Tồn kho sản phẩm manual_stock:
+
+count inventory_items
+where product_id = X
+and status = available
+
+Không lưu tồn kho thủ công bằng số riêng gây lệch dữ liệu.
+
+Bot và web phải luôn tính tồn từ inventory_items.
+
+Khi thêm kho:
+- sản phẩm từ 0 lên >0 phải đổi từ hết hàng sang còn hàng
+- bot thấy thay đổi ở lần tải tiếp theo
+- không cần restart bot
+
+==================================================
+8. TỰ ĐỘNG GIAO TÀI KHOẢN TỪ KHO
+==================================================
+
+Khi đơn đã thanh toán và product.delivery_mode = manual_stock:
+
+Gọi:
+
+deliver_from_local_inventory(order_id)
+
+Quy trình transaction:
+
+1. Khóa order.
+2. Kiểm tra order đã paid.
+3. Kiểm tra chưa giao.
+4. Lấy đúng quantity bản ghi available.
+5. Khóa các bản ghi kho đã chọn.
+6. Chuyển status = reserved.
+7. Gán reserved_order_id.
+8. Commit reservation.
+9. Tạo nội dung giao hàng.
+10. Gửi Telegram cho khách.
+11. Nếu gửi thành công:
+    - status kho = sold
+    - sold_order_id = order.id
+    - sold_at = now
+    - order = completed
+12. Nếu gửi thất bại:
+    - trả kho về available
+    - order = delivery_failed
+    - báo admin
+
+Không được lấy cùng một tài khoản cho hai đơn.
+
+Với SQLite:
+- dùng BEGIN IMMEDIATE
+- xử lý transaction cẩn thận
+
+==================================================
+9. KHI KHO KHÔNG ĐỦ SAU THANH TOÁN
+==================================================
+
+Nếu khách đã thanh toán nhưng kho không đủ:
+
+- không giao thiếu
+- order status = paid_waiting_stock
+- giữ nguyên payment_status = paid
+- báo khách:
+
+✅ Đã nhận thanh toán.
+
+⚠️ Kho hiện chưa đủ số lượng.
+Đơn của bạn đang chờ admin bổ sung hàng.
+
+- báo admin:
+  đơn nào
+  sản phẩm nào
+  thiếu bao nhiêu
+
+Khi admin thêm đủ hàng:
+- hệ thống tự kiểm tra đơn paid_waiting_stock
+- tự giao theo thứ tự cũ nhất trước
+
+==================================================
+10. THÔNG BÁO KHI THÊM HÀNG
+==================================================
+
+Sau khi admin nhập kho thành công, web hiển thị:
+
+✅ NHẬP KHO THÀNH CÔNG
+
+Sản phẩm: {product_name}
+Đã thêm: {added_count}
+Trùng: {duplicate_count}
+Lỗi: {error_count}
+Tồn kho mới: {available_stock}
+
+Gửi Telegram cho admin:
+
+📥 ĐÃ THÊM HÀNG VÀO KHO
+
+Sản phẩm: {product_name}
+Đã thêm: {added_count}
+Tồn kho hiện tại: {available_stock}
+
+Nếu trước đó sản phẩm hết hàng và nay có hàng:
+
+🟢 Sản phẩm đã có hàng trở lại.
+
+==================================================
+11. TỰ XỬ LÝ ĐƠN ĐANG CHỜ HÀNG
+==================================================
+
+Sau khi thêm kho:
+
+- tìm orders:
+  status = paid_waiting_stock
+  product_id = sản phẩm vừa nhập
+- sắp xếp created_at ASC
+- giao đơn cũ nhất trước
+- chỉ giao khi đủ nguyên số lượng của đơn
+- không chia một phần trừ khi admin bật partial_delivery
+
+Sau mỗi đơn giao:
+- cập nhật kho
+- cập nhật order
+- gửi tài khoản cho khách
+
+Thông báo admin:
+
+✅ Đã tự giao X đơn đang chờ hàng.
+
+==================================================
+12. THÔNG BÁO CHO NGƯỜI DÙNG KHI CÓ HÀNG
+==================================================
+
+Thêm setting:
+
+notify_users_when_restocked
+
+Nếu bật:
+
+Gửi cho user có đơn paid_waiting_stock:
+
+🟢 Sản phẩm đã được bổ sung hàng.
+Hệ thống đang xử lý đơn của bạn.
+
+Không broadcast cho tất cả người dùng mặc định.
+
+==================================================
+13. GIAO TÀI KHOẢN TRÊN BOT
+==================================================
+
+Nội dung:
+
+✅ MUA HÀNG THÀNH CÔNG
+
+Mã đơn: <code>{order_code}</code>
+Sản phẩm: {product_name}
+Số lượng: {quantity}
+
+📦 TÀI KHOẢN CỦA BẠN
+
+<code>email|password</code>
+
+Nếu nhiều tài khoản:
+- mỗi dòng một tài khoản
+- trên 10 tài khoản tạo file TXT
+
+Không gửi JSON.
+Không gửi giá nhập.
+Không gửi note nội bộ.
+
+==================================================
+14. TRẠNG THÁI SẢN PHẨM TRÊN BOT
+==================================================
+
+manual_stock:
+
+- available stock > 0:
+  🟢 Tên sản phẩm - giá
+
+- available stock = 0:
+  ❌ Tên sản phẩm - Hết hàng
+
+manual_admin:
+
+- nếu đang nhận đơn:
+  🟡 Tên sản phẩm - Nhận đặt hàng
+
+api_auto:
+
+- lấy trạng thái theo API nguồn
+
+==================================================
+15. TRANG CHI TIẾT SẢN PHẨM WEB
+==================================================
+
+Hiển thị:
+
+- Tên
+- Mã
+- Giá bán
+- Giá nhập trung bình
+- Chế độ giao
+- Tồn khả dụng
+- Đã bán
+- Đang giữ
+- Hàng lỗi
+- Trạng thái
+
+Nút:
+
+✏️ Sửa
+📥 Thêm hàng
+📋 Xem kho
+📤 Xuất kho TXT
+🗑 Xóa sản phẩm
+
+Không cho xóa sản phẩm nếu có đơn.
+Chỉ cho ẩn.
+
+==================================================
+16. TEST BẮT BUỘC
+==================================================
+
+Test:
+
+1. Mở modal sửa trên iPhone:
+   - không lệch
+   - bấm Lưu được
+
+2. Sửa tên và giá:
+   - web cập nhật
+   - bot thấy ngay
+
+3. Tạo sản phẩm manual_stock.
+
+4. Khi kho = 0:
+   - bot hiện hết hàng
+   - không cho mua
+
+5. Nhập 3 tài khoản:
+   - web báo thêm 3
+   - tồn kho thành 3
+   - admin nhận thông báo
+
+6. Khách mua 1:
+   - thanh toán
+   - bot lấy đúng 1 tài khoản
+   - tài khoản chuyển sold
+   - tồn còn 2
+
+7. Hai khách mua đồng thời:
+   - không giao trùng tài khoản
+
+8. Khách trả tiền khi kho thiếu:
+   - order paid_waiting_stock
+
+9. Admin thêm hàng:
+   - tự giao đơn chờ
+   - khách nhận tài khoản
+   - admin nhận thông báo
+
+10. Giá VND:
+   - hiển thị 5.000đ
+   - không còn 5000,0

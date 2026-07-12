@@ -1,5 +1,6 @@
 from telegram import ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
 from bot.i18n import t
+from services.normalize import format_vnd
 
 
 def main_menu_keyboard(lang: str = "vi", is_admin: bool = False) -> ReplyKeyboardMarkup:
@@ -43,9 +44,14 @@ def product_list_keyboard(products: list, lang: str = "vi",
         if is_unavailable:
             label = f"❌ {p.name} - {t(lang, 'product_list_out_of_stock')}"
             cb = f"oos:{p.id}"
+        elif status == "accepting_orders":
+            icon = (getattr(p, "telegram_icon", None) or "").strip() or "📦"
+            price_str = f"{format_vnd(p.sale_price)}đ"
+            label = f"🟡 {icon} {p.name} - {price_str} ({t(lang, 'product_list_accept_order')})"
+            cb = f"product:{p.id}"
         else:
             icon = (getattr(p, "telegram_icon", None) or "").strip() or "📦"
-            price_str = f"{p.sale_price:,.0f}đ"
+            price_str = f"{format_vnd(p.sale_price)}đ"
             label = f"{icon} {p.name} - {price_str}"
             cb = f"product:{p.id}"
 

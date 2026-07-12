@@ -6,3 +6,5 @@
 - [Migrations approach](migrations-approach.md) — SQLite-safe ALTER TABLE migrations in _run_migrations() in main.py; each wrapped in try/except to skip already-existing columns
 - [paid_waiting_stock status](paid-waiting-stock.md) — distinct OrderStatus value for "paid but source ran out at fulfillment time"; triggers admin alert + user notif; never says "chưa thanh toán"
 - [process_paid_order idempotent](process-paid-order.md) — shared by all payment methods; gate on order.status + payment_status; _processing_paid set prevents concurrent re-entry
+- [VND price formatting](vnd-price-formatting.md) — Python's `{:,.0f}` uses comma not dot; every VND display needs `.replace(",", ".")` or `format_vnd()`
+- [Local inventory manual_stock](inventory-manual-stock.md) — live-computed stock, BEGIN IMMEDIATE reservation prevents double-allocation, manual_admin/legacy "manual" never stock-gated

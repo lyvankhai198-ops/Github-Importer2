@@ -3,7 +3,7 @@ import html
 import logging
 from models import Order
 from services.order_service import get_delivery_items
-from services.normalize import format_delivery_message
+from services.normalize import format_delivery_message, format_vnd
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +26,7 @@ async def notify_admin_new_order(bot, order: Order, admin_telegram_id: str):
             f"👤 User: <code>{order.telegram_user_id}</code>\n"
             f"📦 Sản phẩm: {html.escape(product_name)}\n"
             f"🔢 Số lượng: {order.quantity}\n"
-            f"💰 Tổng tiền: {order.total_price:,.0f}đ\n"
+            f"💰 Tổng tiền: {format_vnd(order.total_price)}đ\n"
             f"📅 Thời gian: {order.created_at.strftime('%d/%m/%Y %H:%M')}"
         )
         await bot.send_message(chat_id=int(admin_telegram_id), text=text, parse_mode="HTML")
@@ -136,7 +136,7 @@ async def notify_admin_new_payment_pending(bot, order: Order, admin_telegram_id:
             f"👤 User: <code>{order.telegram_user_id}</code>\n"
             f"📦 Sản phẩm: {html.escape(product_name)}\n"
             f"🔢 Số lượng: {order.quantity}\n"
-            f"💰 Cần thanh toán: <b>{order.total_price:,.0f}đ</b>\n"
+            f"💰 Cần thanh toán: <b>{format_vnd(order.total_price)}đ</b>\n"
             f"🔑 Mã TT: <code>{order.payment_code or '—'}</code>\n"
             f"⏰ Hết hạn: {expires}"
         )
@@ -157,9 +157,9 @@ async def notify_admin_payment_partial(bot, order: Order, admin_telegram_id: str
             f"📋 Đơn: <code>{order.order_code}</code>\n"
             f"📦 Sản phẩm: {html.escape(product_name)}\n"
             f"👤 User: <code>{order.telegram_user_id}</code>\n"
-            f"✅ Đã nhận: {paid:,.0f}đ\n"
-            f"❌ Còn thiếu: {remaining:,.0f}đ\n"
-            f"💰 Tổng cần: {expected:,.0f}đ"
+            f"✅ Đã nhận: {format_vnd(paid)}đ\n"
+            f"❌ Còn thiếu: {format_vnd(remaining)}đ\n"
+            f"💰 Tổng cần: {format_vnd(expected)}đ"
         )
         await bot.send_message(chat_id=int(admin_telegram_id), text=text, parse_mode="HTML")
     except Exception as e:
@@ -177,7 +177,7 @@ async def notify_admin_payment_received(bot, order: Order, admin_telegram_id: st
             f"💳 <b>Đã nhận thanh toán đủ!</b>\n\n"
             f"📋 Đơn: <code>{order.order_code}</code>\n"
             f"📦 Sản phẩm: {html.escape(product_name)}\n"
-            f"💰 Số tiền: {(order.paid_amount or 0):,.0f}đ\n"
+            f"💰 Số tiền: {format_vnd((order.paid_amount or 0))}đ\n"
             f"💳 Phương thức: {method}\n"
             f"⏰ Lúc: {paid_at}\n"
             f"🔄 Đang lấy hàng từ nguồn..."
@@ -198,9 +198,9 @@ async def notify_admin_payment_overpaid(bot, order: Order, admin_telegram_id: st
             f"📋 Đơn: <code>{order.order_code}</code>\n"
             f"📦 Sản phẩm: {html.escape(product_name)}\n"
             f"👤 User: <code>{order.telegram_user_id}</code>\n"
-            f"✅ Đã nhận: {(order.paid_amount or 0):,.0f}đ\n"
-            f"💰 Cần trả: {(order.expected_amount or order.total_price):,.0f}đ\n"
-            f"⬆️ Thừa: {surplus:,.0f}đ\n\n"
+            f"✅ Đã nhận: {format_vnd((order.paid_amount or 0))}đ\n"
+            f"💰 Cần trả: {format_vnd((order.expected_amount or order.total_price))}đ\n"
+            f"⬆️ Thừa: {format_vnd(surplus)}đ\n\n"
             "Đơn đang được xử lý tự động. Cần hoàn tiền thừa."
         )
         await bot.send_message(chat_id=int(admin_telegram_id), text=text, parse_mode="HTML")
@@ -218,7 +218,7 @@ async def notify_admin_late_payment(bot, order: Order, admin_telegram_id: str):
             f"📋 Đơn: <code>{order.order_code}</code>\n"
             f"📦 Sản phẩm: {html.escape(product_name)}\n"
             f"👤 User: <code>{order.telegram_user_id}</code>\n"
-            f"💰 Số tiền nhận: {(order.paid_amount or 0):,.0f}đ\n\n"
+            f"💰 Số tiền nhận: {format_vnd((order.paid_amount or 0))}đ\n\n"
             "Đơn đã hết hạn — cần xử lý thủ công."
         )
         await bot.send_message(chat_id=int(admin_telegram_id), text=text, parse_mode="HTML")
@@ -237,7 +237,7 @@ async def notify_admin_api_failed_after_payment(bot, order: Order, admin_telegra
             f"📋 Đơn: <code>{order.order_code}</code>\n"
             f"📦 Sản phẩm: {html.escape(product_name)}\n"
             f"👤 User: <code>{order.telegram_user_id}</code>\n"
-            f"💰 Đã nhận: {(order.paid_amount or 0):,.0f}đ\n"
+            f"💰 Đã nhận: {format_vnd((order.paid_amount or 0))}đ\n"
             + (f"❌ Lỗi: {html.escape(reason[:200])}\n" if reason else "") +
             "\n⚠️ Khách đang chờ — cần giao hàng thủ công NGAY!"
         )
@@ -257,7 +257,7 @@ async def notify_admin_payment_success(bot, order: Order, admin_telegram_id: str
             f"📦 Sản phẩm: {html.escape(product_name)}\n"
             f"👤 User: <code>{order.telegram_user_id}</code>\n"
             f"🔢 Số lượng: {order.quantity}\n"
-            f"💰 Doanh thu: {order.total_price:,.0f}đ"
+            f"💰 Doanh thu: {format_vnd(order.total_price)}đ"
         )
         await bot.send_message(chat_id=int(admin_telegram_id), text=text, parse_mode="HTML")
     except Exception as e:
@@ -301,7 +301,7 @@ async def notify_admin_paid_waiting_stock(bot, order: Order, admin_telegram_id: 
                 f"📋 Đơn: <code>{order.order_code}</code>\n"
                 f"📦 Sản phẩm: {html.escape(product_name)}\n"
                 f"👤 User: <code>{order.telegram_user_id}</code>\n"
-                f"💰 Đã nhận: {(order.paid_amount or 0):,.0f}đ\n\n"
+                f"💰 Đã nhận: {format_vnd((order.paid_amount or 0))}đ\n\n"
                 "Cần giao thủ công, đổi nguồn hoặc hoàn tiền NGAY."
             ),
             parse_mode="HTML",
@@ -371,16 +371,16 @@ async def notify_user_payment_partial(bot, chat_id: str, order: Order,
             text = (
                 f"⚠️ <b>Incomplete payment</b>\n\n"
                 f"Order: <code>{order.order_code}</code>\n"
-                f"✅ Received: <b>{paid:,.0f} VND</b>\n"
-                f"❌ Still needed: <b>{remaining:,.0f} VND</b>\n\n"
+                f"✅ Received: <b>{format_vnd(paid)} VND</b>\n"
+                f"❌ Still needed: <b>{format_vnd(remaining)} VND</b>\n\n"
                 "Please transfer the remaining amount with the same transfer note."
             )
         else:
             text = (
                 f"⚠️ <b>Thanh toán chưa đủ</b>\n\n"
                 f"Mã đơn: <code>{order.order_code}</code>\n"
-                f"✅ Đã nhận: <b>{paid:,.0f}đ</b>\n"
-                f"❌ Còn thiếu: <b>{remaining:,.0f}đ</b>\n\n"
+                f"✅ Đã nhận: <b>{format_vnd(paid)}đ</b>\n"
+                f"❌ Còn thiếu: <b>{format_vnd(remaining)}đ</b>\n\n"
                 "Vui lòng chuyển thêm đúng số tiền còn thiếu với cùng nội dung chuyển khoản."
             )
         from bot.keyboards import payment_keyboard

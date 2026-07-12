@@ -17,7 +17,7 @@ from services.product_service import (
     get_active_products_for_bot, get_product_detail, get_product_stock_status,
 )
 from services.order_service import create_order, get_or_create_user, get_order_by_id, get_delivery_items
-from services.normalize import format_delivery_message, format_partial_delivery_message
+from services.normalize import format_delivery_message, format_partial_delivery_message, format_vnd
 from services.payment_service import (
     generate_vietqr_url, is_sepay_enabled, get_sepay_config,
     get_enabled_payment_methods, safe_delete_message as _safe_del,
@@ -261,7 +261,7 @@ async def orders_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for o in orders:
             sv = o.status.value if hasattr(o.status, "value") else o.status
             st = _status_label(sv, lang)
-            price_str = f"{o.total_price:,.0f}đ" if lang == "vi" else f"{o.total_price:,.0f} VND"
+            price_str = f"{format_vnd(o.total_price)}đ" if lang == "vi" else f"{format_vnd(o.total_price)} VND"
             lines.append(
                 f"• <code>{o.order_code}</code> — {st}\n"
                 f"  💰 {price_str} | {o.created_at.strftime('%d/%m/%Y')}"
@@ -343,7 +343,7 @@ async def _setup_sepay_payment(context, db, tg_user, order, lang: str, processin
         t(lang, "sepay_order_code", code=order.order_code),
         t(lang, "sepay_product", name=html.escape(product_name)),
         t(lang, "sepay_qty", qty=order.quantity),
-        t(lang, "sepay_amount", amount=f"{order.total_price:,.0f}"),
+        t(lang, "sepay_amount", amount=f"{format_vnd(order.total_price)}"),
         "",
         t(lang, "sepay_bank", bank=html.escape(sepay.bank_bin)),
         t(lang, "sepay_account_number", acc=html.escape(sepay.account_number)),
@@ -667,7 +667,7 @@ async def _do_create_order(context, db, tg_user, product_id: int, quantity: int,
     # Final stock check before creating order
     stock_info = get_product_stock_status(product_id, db)
     from models import DeliveryMode
-    if product.delivery_mode == DeliveryMode.api_auto:
+    if product.delivery_mode in (DeliveryMode.api_auto, DeliveryMode.manual_stock):
         if stock_info["status"] == "out_of_stock":
             try:
                 await processing_msg.edit_text(t(lang, "product_out_of_stock_recheck"))
@@ -731,7 +731,7 @@ async def _do_create_order(context, db, tg_user, product_id: int, quantity: int,
 
     # Build payment method selection message
     product_name = product.name
-    total_str = f"{total:,.0f}"
+    total_str = f"{format_vnd(total)}"
     text = t(lang, "choose_payment_title",
              order_code=order.order_code,
              product=html.escape(product_name),
@@ -938,7 +938,10 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             status = stock_info["status"]
 
             # Determine stock text
-            if status == "unavailable":
+            if p.delivery_mode != DeliveryMode.manual_stock and p.delivery_mode != DeliveryMode.api_auto:
+                # manual_admin (and legacy "manual") — no local inventory tracked
+                stock_text = f"🟡 {t(lang, 'product_list_accept_order')}"
+            elif status == "unavailable":
                 stock_text = t(lang, "product_unavailable")
             elif status == "out_of_stock":
                 stock_text = t(lang, "product_out_of_stock")
@@ -955,7 +958,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     break
 
             lines = [f"📦 <b>{html.escape(p.name)}</b>\n"]
-            lines.append(t(lang, "product_price", price=f"{p.sale_price:,.0f}"))
+            lines.append(t(lang, "product_price", price=f"{format_vnd(p.sale_price)}"))
             lines.append(stock_text)
             lines.append(t(lang, "product_min_qty", qty=min_qty))
             if p.duration:
@@ -1041,7 +1044,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             stock_info = get_product_stock_status(product_id, db)
             from models import DeliveryMode, Product as Prod
             product = db.query(Prod).filter(Prod.id == product_id).first()
-            if product and product.delivery_mode == DeliveryMode.api_auto:
+            if product and product.delivery_mode in (DeliveryMode.api_auto, DeliveryMode.manual_stock):
                 if stock_info["status"] == "out_of_stock":
                     await query.answer(t(lang, "product_out_of_stock_recheck"), show_alert=True)
                     return
@@ -1206,7 +1209,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 t(lang, "sepay_order_code", code=order.order_code),
                 t(lang, "sepay_product", name=html.escape(product_name)),
                 t(lang, "sepay_qty", qty=order.quantity),
-                t(lang, "sepay_amount", amount=f"{order.total_price:,.0f}"),
+                t(lang, "sepay_amount", amount=f"{format_vnd(order.total_price)}"),
                 "", t(lang, "sepay_bank", bank=html.escape(sepay.bank_bin)),
                 t(lang, "sepay_account_number", acc=html.escape(sepay.account_number)),
                 t(lang, "sepay_account_name", name=html.escape(sepay.account_name)),
@@ -1274,7 +1277,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 expected = order.expected_amount or order.total_price
                 remaining = expected - paid
                 await query.answer(
-                    t(lang, "payment_partial", paid=f"{paid:,.0f}", remaining=f"{remaining:,.0f}"),
+                    t(lang, "payment_partial", paid=f"{format_vnd(paid)}", remaining=f"{format_vnd(remaining)}"),
                     show_alert=True,
                 )
             elif ps in ("paid", "overpaid"):
@@ -1314,7 +1317,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"Mã nguồn: <code>{ext_code}</code>\n"
                 f"Sản phẩm: {html.escape(product_name)}\n"
                 f"Số lượng: {order.quantity}\n"
-                f"Tổng tiền: {order.total_price:,.0f}đ\n"
+                f"Tổng tiền: {format_vnd(order.total_price)}đ\n"
                 f"Trạng thái: {_status_label(sv, lang)}\n"
                 f"Thời gian: {order.created_at.strftime('%d/%m/%Y %H:%M')}"
             )
@@ -1434,7 +1437,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 return
 
-            if p.delivery_mode == DeliveryMode.api_auto:
+            if p.delivery_mode in (DeliveryMode.api_auto, DeliveryMode.manual_stock):
                 if stock_info["status"] == "out_of_stock":
                     await update.message.reply_text(t(lang, "product_out_of_stock_recheck"))
                     context.user_data.clear()

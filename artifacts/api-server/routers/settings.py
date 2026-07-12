@@ -86,6 +86,8 @@ async def save_bot_settings(
     support_username: str = Form(""),
     show_out_of_stock: str = Form(None),
     allow_manual_order_when_out_of_stock: str = Form(None),
+    notify_users_when_restocked: str = Form(None),
+    allow_partial_delivery: str = Form(None),
     products_per_page: int = Form(15),
     default_product_icon: str = Form("📦"),
     default_language: str = Form("vi"),
@@ -106,6 +108,8 @@ async def save_bot_settings(
     # Checkboxes: present = True, absent = False
     cfg.show_out_of_stock = show_out_of_stock is not None
     cfg.allow_manual_order_when_out_of_stock = allow_manual_order_when_out_of_stock is not None
+    cfg.notify_users_when_restocked = notify_users_when_restocked is not None
+    cfg.allow_partial_delivery = allow_partial_delivery is not None
     cfg.products_per_page = max(5, min(50, products_per_page or 15))
     cfg.default_product_icon = (default_product_icon or "📦").strip() or "📦"
     if default_language in ("vi", "en"):

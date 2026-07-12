@@ -6,15 +6,24 @@ from models import Product, ProductSource, ApiProduct
 def get_product_stock_status(product_id: int, db: Session) -> dict:
     """
     Returns {"stock": N, "status": "in_stock"|"out_of_stock"|"unavailable"} for a product.
-    - api_auto products: aggregated across all active sources with recent sync.
-    - manual products: always "in_stock" (stock = -1 sentinel).
+    - api_auto: aggregated across all active sources with recent sync.
+    - manual_stock: computed live from inventory_items (never a stored counter).
+    - manual_admin (and legacy "manual"): unlimited / always accepting orders.
     """
     from models import DeliveryMode
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
         return {"stock": 0, "status": "unavailable"}
 
+    if product.delivery_mode == DeliveryMode.manual_stock:
+        from services.inventory_service import get_available_count
+        stock = get_available_count(db, product_id)
+        if stock <= 0:
+            return {"stock": 0, "status": "out_of_stock"}
+        return {"stock": stock, "status": "in_stock"}
+
     if product.delivery_mode != DeliveryMode.api_auto:
+        # manual_admin / legacy manual — unlimited, always "accepting orders"
         return {"stock": 999, "status": "in_stock"}
 
     sources = db.query(ProductSource).filter(
@@ -60,6 +69,7 @@ def get_active_products_for_bot(db: Session, show_out_of_stock: bool = True) -> 
       2. Within each group: is_pinned DESC, sold_count DESC, name ASC
     If show_out_of_stock is False, out_of_stock products are excluded.
     """
+    from models import DeliveryMode
     products = db.query(Product).filter(Product.is_active == True).all()
     result = []
     for p in products:
@@ -67,6 +77,10 @@ def get_active_products_for_bot(db: Session, show_out_of_stock: bool = True) -> 
         status = info["status"]
         if not show_out_of_stock and status == "out_of_stock":
             continue
+        # manual_admin (and legacy "manual"): no local inventory tracked —
+        # always shown as "accepting orders" rather than a stock count.
+        if p.delivery_mode != DeliveryMode.manual_stock and p.delivery_mode != DeliveryMode.api_auto:
+            status = "accepting_orders"
         result.append({
             "product": p,
             "stock": info["stock"],
@@ -76,7 +90,7 @@ def get_active_products_for_bot(db: Session, show_out_of_stock: bool = True) -> 
     def _sort_key(item):
         p = item["product"]
         status = item["status"]
-        # Group: 0 = available/unavailable (shown first), 1 = out_of_stock
+        # Group: 0 = available/unavailable/accepting_orders (shown first), 1 = out_of_stock
         group = 1 if status == "out_of_stock" else 0
         pinned = 0 if getattr(p, "is_pinned", False) else 1   # pinned=True → 0 sorts first
         sold = -(p.sold_count or 0)                            # higher sold_count first

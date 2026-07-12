@@ -148,7 +148,7 @@
             <td><small>{{ ap.connection.name if ap.connection else '—' }}</small></td>
             <td><code>{{ ap.external_product_id }}</code></td>
             <td>{{ ap.external_name or '—' }}</td>
-            <td>{{ "{:,.0f}".format(ap.external_price or 0) }}đ</td>
+            <td>{{ "{:,.0f}".format(ap.external_price or 0).replace(",", ".") }}đ</td>
             <td>
               {% if ap.external_stock and ap.external_stock > 10 %}
                 <span class="badge bg-success">{{ ap.external_stock }}</span>
@@ -198,7 +198,7 @@
     <div class="source-meta">
       <div>
         <div class="label">Giá nguồn</div>
-        <div class="value">{{ "{:,.0f}".format(ap.external_price or 0) }}đ</div>
+        <div class="value">{{ "{:,.0f}".format(ap.external_price or 0).replace(",", ".") }}đ</div>
       </div>
       <div>
         <div class="label">Tồn kho</div>
@@ -255,7 +255,7 @@
       <form action="/products/api-sources/{{ ap.id }}/create-product" method="post">
         <div class="modal-body">
           <p class="mb-1">Tạo từ: <strong>{{ ap.external_name or ap.external_product_id }}</strong></p>
-          <p class="mb-3 text-muted small">Giá nguồn: {{ "{:,.0f}".format(ap.external_price or 0) }}đ</p>
+          <p class="mb-3 text-muted small">Giá nguồn: {{ "{:,.0f}".format(ap.external_price or 0).replace(",", ".") }}đ</p>
           <div class="mb-3">
             <label class="form-label fw-semibold">Giá bán</label>
             <input type="number"

@@ -4,6 +4,18 @@ normalize.py — Chuẩn hóa dữ liệu từ các API nguồn khác nhau.
 import html
 
 
+def format_vnd(value) -> str:
+    """
+    Format a number as Vietnamese-style VND: integer, dot as thousands
+    separator (e.g. 5000 -> "5.000"). Never includes decimals or a comma.
+    Caller appends the "đ" suffix.
+    """
+    try:
+        return f"{float(value or 0):,.0f}".replace(",", ".")
+    except (TypeError, ValueError):
+        return "0"
+
+
 def normalize_product_data(raw_item: dict) -> dict:
     """
     Map các tên field khác nhau từ API nguồn về chuẩn nội bộ.
@@ -145,7 +157,7 @@ def format_delivery_message(order, items: list, product_name: str) -> tuple:
         f"Mã đơn: <code>{order.order_code}</code>\n"
         f"Sản phẩm: {html.escape(product_name)}\n"
         f"Số lượng: {order.quantity}\n"
-        f"Tổng tiền: {order.total_price:,.0f}đ\n\n"
+        f"Tổng tiền: {format_vnd(order.total_price)}đ\n\n"
         f"📦 <b>TÀI KHOẢN CỦA BẠN</b>\n"
     )
 
