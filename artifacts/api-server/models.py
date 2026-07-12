@@ -34,14 +34,16 @@ class ApiType(str, enum.Enum):
 
 class OrderStatus(str, enum.Enum):
     pending_manual = "pending_manual"
-    pending_payment = "pending_payment"    # waiting for customer payment
+    pending_payment = "pending_payment"        # waiting for customer payment
     processing_api = "processing_api"
     completed = "completed"
     partial_delivery = "partial_delivery"
     failed = "failed"
-    api_failed = "api_failed"              # paid but API source failed
-    payment_expired = "payment_expired"    # payment window expired
+    api_failed = "api_failed"                  # paid but API source failed
+    payment_expired = "payment_expired"        # payment window expired
     cancelled = "cancelled"
+    paid_waiting_stock = "paid_waiting_stock"  # paid but source ran out of stock
+    waiting_manual_verification = "waiting_manual_verification"  # waiting admin approval (Binance manual)
 
 
 class PaymentStatus(str, enum.Enum):
@@ -51,6 +53,9 @@ class PaymentStatus(str, enum.Enum):
     overpaid = "overpaid"
     expired = "expired"
     failed = "failed"
+    detected = "detected"      # crypto tx found, not enough confirmations yet
+    confirming = "confirming"  # confirmations accumulating
+    late_payment = "late_payment"  # received after expiry
 
 
 def now():
@@ -111,6 +116,22 @@ class SepayConfig(Base):
     updated_at = Column(DateTime, default=now, onupdate=now)
 
 
+class PaymentMethod(Base):
+    """
+    Configurable payment methods: sepay, binance_pay, usdt_bep20, usdt_trc20.
+    config_encrypted stores a JSON blob (Fernet-encrypted) with method-specific keys.
+    """
+    __tablename__ = "payment_methods"
+    id = Column(Integer, primary_key=True, index=True)
+    method_code = Column(String(50), unique=True, nullable=False)   # sepay|binance_pay|usdt_bep20|usdt_trc20
+    display_name_vi = Column(String(100), nullable=False)
+    display_name_en = Column(String(100), nullable=False)
+    is_active = Column(Boolean, default=False)
+    config_encrypted = Column(Text, nullable=True)   # JSON, Fernet-encrypted — NEVER logged
+    created_at = Column(DateTime, default=now)
+    updated_at = Column(DateTime, default=now, onupdate=now)
+
+
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
@@ -118,6 +139,7 @@ class User(Base):
     username = Column(String(100), nullable=True)
     first_name = Column(String(100), nullable=True)
     last_name = Column(String(100), nullable=True)
+    language_code = Column(String(10), default="vi", nullable=False)
     total_orders = Column(Integer, default=0)
     total_spent = Column(Float, default=0.0)
     is_banned = Column(Boolean, default=False)
@@ -134,6 +156,7 @@ class Product(Base):
     product_code = Column(String(100), unique=True, nullable=False)
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
+    description_en = Column(Text, nullable=True)   # English description (optional)
     image_path = Column(String(500), nullable=True)
     sale_price = Column(Float, default=0.0)
     min_quantity = Column(Integer, default=1)
@@ -229,21 +252,32 @@ class Order(Base):
     partial_count = Column(Integer, nullable=True)
     status = Column(SAEnum(OrderStatus), default=OrderStatus.pending_manual)
     notes = Column(Text, nullable=True)
-    # ── Payment fields (all nullable — existing orders unaffected) ────────────
+    # ── Payment fields ────────────────────────────────────────────────────────
     payment_status = Column(SAEnum(PaymentStatus), nullable=True)
-    payment_method = Column(String(50), nullable=True, default="bank_transfer")
-    payment_code = Column(String(50), nullable=True, index=True)
+    payment_method = Column(String(50), nullable=True)            # bank_transfer|binance_pay|usdt_bep20|usdt_trc20
+    payment_code = Column(String(50), nullable=True, index=True)  # SePay transfer content code
     expected_amount = Column(Float, nullable=True)
     paid_amount = Column(Float, nullable=True, default=0.0)
     payment_expires_at = Column(DateTime, nullable=True)
     paid_at = Column(DateTime, nullable=True)
     payment_transaction_id = Column(String(255), nullable=True)
     payment_raw_data = Column(Text, nullable=True)
-    payment_message_id = Column(Integer, nullable=True)       # Telegram message_id of QR/payment msg
-    payment_chat_id = Column(Integer, nullable=True)          # Telegram chat_id (user's chat)
-    payment_message_type = Column(String(20), nullable=True)  # "photo" | "text"
-    product_message_id = Column(Integer, nullable=True)       # Product detail message sent by bot
-    quantity_prompt_message_id = Column(Integer, nullable=True)  # "Nhập số lượng" prompt by bot
+    payment_message_id = Column(Integer, nullable=True)
+    payment_chat_id = Column(Integer, nullable=True)
+    payment_message_type = Column(String(20), nullable=True)      # "photo" | "text"
+    product_message_id = Column(Integer, nullable=True)
+    quantity_prompt_message_id = Column(Integer, nullable=True)
+    # ── Crypto payment fields ─────────────────────────────────────────────────
+    payment_currency = Column(String(20), nullable=True)          # VND | USDT
+    exchange_rate = Column(Float, nullable=True)                   # VND/USDT rate at order time
+    expected_crypto_amount = Column(Float, nullable=True)          # exact USDT amount (with unique offset)
+    received_crypto_amount = Column(Float, nullable=True)
+    payment_address = Column(String(200), nullable=True)           # wallet address shown to user
+    payment_memo = Column(String(100), nullable=True)              # memo/tag if required
+    payment_txid = Column(String(200), nullable=True)              # blockchain tx hash
+    payment_network = Column(String(50), nullable=True)            # BEP20 | TRC20 | BINANCE
+    confirmations = Column(Integer, nullable=True, default=0)
+    required_confirmations = Column(Integer, nullable=True)
     # ─────────────────────────────────────────────────────────────────────────
     created_at = Column(DateTime, default=now)
     updated_at = Column(DateTime, default=now, onupdate=now)
@@ -255,6 +289,10 @@ class Order(Base):
     payment_transactions = relationship(
         "PaymentTransaction", back_populates="matched_order",
         foreign_keys="PaymentTransaction.matched_order_id",
+    )
+    crypto_transactions = relationship(
+        "CryptoTransaction", back_populates="matched_order",
+        foreign_keys="CryptoTransaction.matched_order_id",
     )
 
 
@@ -272,7 +310,7 @@ class PaymentTransaction(Base):
     amount_out = Column(Float, default=0.0)
     reference_code = Column(String(255), nullable=True)
     matched_order_id = Column(Integer, ForeignKey("orders.id"), nullable=True)
-    match_status = Column(String(50), nullable=True)  # matched/partial/unmatched/late_payment
+    match_status = Column(String(50), nullable=True)
     raw_json = Column(Text, nullable=True)
     created_at = Column(DateTime, default=now)
 
@@ -281,6 +319,38 @@ class PaymentTransaction(Base):
 
     __table_args__ = (
         UniqueConstraint("provider", "external_transaction_id", name="uq_payment_tx"),
+    )
+
+
+class CryptoTransaction(Base):
+    """
+    On-chain USDT transfers (BEP20 or TRC20) detected by the background monitor.
+    Unique on (network, txid, log_index) to prevent double-processing.
+    """
+    __tablename__ = "crypto_transactions"
+    id = Column(Integer, primary_key=True, index=True)
+    network = Column(String(20), nullable=False)            # BEP20 | TRC20
+    token_symbol = Column(String(20), nullable=True)        # USDT
+    token_contract = Column(String(100), nullable=True)
+    txid = Column(String(200), nullable=False)
+    log_index = Column(Integer, nullable=True, default=0)
+    from_address = Column(String(200), nullable=True)
+    to_address = Column(String(200), nullable=True)
+    amount = Column(Float, nullable=True)
+    block_number = Column(Integer, nullable=True)
+    confirmations = Column(Integer, nullable=True, default=0)
+    matched_order_id = Column(Integer, ForeignKey("orders.id"), nullable=True)
+    status = Column(String(30), nullable=True)  # detected|confirming|confirmed|unmatched|duplicate
+    raw_json = Column(Text, nullable=True)
+    detected_at = Column(DateTime, nullable=True)
+    confirmed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=now)
+
+    matched_order = relationship("Order", back_populates="crypto_transactions",
+                                  foreign_keys=[matched_order_id])
+
+    __table_args__ = (
+        UniqueConstraint("network", "txid", "log_index", name="uq_crypto_tx"),
     )
 
 

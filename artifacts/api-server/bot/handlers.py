@@ -1,26 +1,34 @@
 import io
 import html
+import json
 import logging
 from datetime import datetime, timedelta
 from telegram import Update
 from telegram.ext import ContextTypes
 from bot.keyboards import (
     main_menu_keyboard, product_list_keyboard, product_detail_keyboard,
-    confirm_order_keyboard, post_delivery_keyboard, partial_delivery_keyboard,
-    payment_keyboard,
+    out_of_stock_keyboard, payment_keyboard, post_delivery_keyboard,
+    partial_delivery_keyboard, language_keyboard, payment_method_keyboard,
+    binance_manual_keyboard, binance_merchant_keyboard, crypto_payment_keyboard,
+    confirm_order_keyboard,
 )
-from services.product_service import get_active_products_for_bot, get_product_detail
+from bot.i18n import t, get_user_lang
+from services.product_service import (
+    get_active_products_for_bot, get_product_detail, get_product_stock_status,
+)
 from services.order_service import create_order, get_or_create_user, get_order_by_id, get_delivery_items
 from services.normalize import format_delivery_message, format_partial_delivery_message
 from services.payment_service import (
-    create_pending_payment_order, generate_vietqr_url, is_sepay_enabled, get_sepay_config,
+    generate_vietqr_url, is_sepay_enabled, get_sepay_config,
+    get_enabled_payment_methods, safe_delete_message as _safe_del,
+    create_pending_payment_order, create_crypto_payment_order, create_binance_order,
+    generate_payment_code,
 )
-from models import Order, TelegramBotConfig, OrderStatus, PaymentStatus
+from models import Order, TelegramBotConfig, OrderStatus, PaymentStatus, User
 from database import SessionLocal
 
 logger = logging.getLogger(__name__)
 
-# Idempotency: track callback queries currently being processed
 _processing_callbacks: set = set()
 
 
@@ -29,24 +37,23 @@ _processing_callbacks: set = set()
 def _get_config(db) -> TelegramBotConfig:
     return db.query(TelegramBotConfig).first()
 
-
 def _get_admin_id(db) -> str:
     cfg = _get_config(db)
     return cfg.admin_telegram_id if cfg else ""
-
 
 def _get_welcome_message(db) -> str:
     cfg = _get_config(db)
     return cfg.welcome_message if cfg and cfg.welcome_message else "Chào mừng bạn đến với cửa hàng!"
 
-
 def _get_support_username(db) -> str:
     cfg = _get_config(db)
     return cfg.support_username if cfg and cfg.support_username else ""
 
+def _get_lang(db, tg_user_id) -> str:
+    return get_user_lang(db, str(tg_user_id))
 
-def _status_label(status_val: str) -> str:
-    return {
+def _status_label(status_val: str, lang: str = "vi") -> str:
+    labels_vi = {
         "pending_manual": "⏳ Chờ xử lý",
         "pending_payment": "💳 Chờ thanh toán",
         "processing_api": "🔄 Đang xử lý",
@@ -56,18 +63,48 @@ def _status_label(status_val: str) -> str:
         "api_failed": "🚨 Lỗi sau thanh toán",
         "payment_expired": "⏰ Hết hạn TT",
         "cancelled": "🚫 Đã huỷ",
-    }.get(status_val, status_val)
+        "paid_waiting_stock": "⏳ Chờ hàng",
+        "waiting_manual_verification": "⏳ Chờ xác nhận",
+    }
+    labels_en = {
+        "pending_manual": "⏳ Pending",
+        "pending_payment": "💳 Awaiting payment",
+        "processing_api": "🔄 Processing",
+        "completed": "✅ Completed",
+        "partial_delivery": "⚠️ Partial delivery",
+        "failed": "❌ Failed",
+        "api_failed": "🚨 API error after payment",
+        "payment_expired": "⏰ Expired",
+        "cancelled": "🚫 Cancelled",
+        "paid_waiting_stock": "⏳ Waiting for stock",
+        "waiting_manual_verification": "⏳ Awaiting admin approval",
+    }
+    labels = labels_en if lang == "en" else labels_vi
+    return labels.get(status_val, status_val)
 
-
-def _payment_status_label(ps: str) -> str:
-    return {
+def _payment_status_label(ps: str, lang: str = "vi") -> str:
+    labels_vi = {
         "pending": "⏳ Chờ thanh toán",
         "partial": "⚠️ Thanh toán thiếu",
         "paid": "✅ Đã thanh toán đủ",
         "overpaid": "💰 Thanh toán thừa",
         "expired": "⏰ Hết hạn",
         "failed": "❌ Thất bại",
-    }.get(ps or "", ps or "—")
+        "detected": "🔍 Đã phát hiện giao dịch",
+        "confirming": "⏳ Đang xác nhận",
+    }
+    labels_en = {
+        "pending": "⏳ Awaiting payment",
+        "partial": "⚠️ Partial payment",
+        "paid": "✅ Paid",
+        "overpaid": "💰 Overpaid",
+        "expired": "⏰ Expired",
+        "failed": "❌ Failed",
+        "detected": "🔍 Transaction detected",
+        "confirming": "⏳ Confirming",
+    }
+    labels = labels_en if lang == "en" else labels_vi
+    return labels.get(ps or "", ps or "—")
 
 
 # ── Command handlers ──────────────────────────────────────────────────────────
@@ -76,26 +113,48 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db = SessionLocal()
     try:
         tg_user = update.effective_user
-        get_or_create_user(db, str(tg_user.id), tg_user.username, tg_user.first_name, tg_user.last_name)
+        user = get_or_create_user(db, str(tg_user.id), tg_user.username, tg_user.first_name, tg_user.last_name)
+        lang = get_user_lang(db, str(tg_user.id))
+
+        # First-time users: show language selection
+        if not user or not getattr(user, "language_code", None):
+            await update.message.reply_text(
+                t("vi", "choose_lang"),
+                reply_markup=language_keyboard(),
+            )
+            return
+
         admin_id = _get_admin_id(db)
         is_admin = str(tg_user.id) == str(admin_id)
         welcome = _get_welcome_message(db)
-        await update.message.reply_text(welcome, reply_markup=main_menu_keyboard(is_admin=is_admin))
+        await update.message.reply_text(
+            welcome,
+            reply_markup=main_menu_keyboard(lang=lang, is_admin=is_admin),
+        )
     finally:
         db.close()
+
+
+async def language_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handler for 🌐 Ngôn ngữ / Language menu button."""
+    await update.message.reply_text(
+        t("vi", "choose_lang"),
+        reply_markup=language_keyboard(),
+    )
 
 
 async def products_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db = SessionLocal()
     try:
+        lang = _get_lang(db, update.effective_user.id)
         products = get_active_products_for_bot(db)
         if not products:
-            await update.message.reply_text("Hiện không có sản phẩm nào.")
+            await update.message.reply_text(t(lang, "product_list_empty"))
             return
         await update.message.reply_text(
-            "🛍 <b>Danh sách sản phẩm:</b>",
+            t(lang, "product_list_title"),
             parse_mode="HTML",
-            reply_markup=product_list_keyboard(products),
+            reply_markup=product_list_keyboard(products, lang=lang),
         )
     finally:
         db.close()
@@ -104,6 +163,7 @@ async def products_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def orders_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db = SessionLocal()
     try:
+        lang = _get_lang(db, update.effective_user.id)
         tg_user = update.effective_user
         orders = (
             db.query(Order)
@@ -113,15 +173,16 @@ async def orders_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             .all()
         )
         if not orders:
-            await update.message.reply_text("Bạn chưa có đơn hàng nào.")
+            await update.message.reply_text(t(lang, "orders_empty"))
             return
-        lines = ["📦 <b>Đơn hàng gần đây:</b>\n"]
+        lines = [t(lang, "orders_title")]
         for o in orders:
             sv = o.status.value if hasattr(o.status, "value") else o.status
-            st = _status_label(sv)
+            st = _status_label(sv, lang)
+            price_str = f"{o.total_price:,.0f}đ" if lang == "vi" else f"{o.total_price:,.0f} VND"
             lines.append(
                 f"• <code>{o.order_code}</code> — {st}\n"
-                f"  💰 {o.total_price:,.0f}đ | {o.created_at.strftime('%d/%m/%Y')}"
+                f"  💰 {price_str} | {o.created_at.strftime('%d/%m/%Y')}"
             )
         await update.message.reply_text("\n".join(lines), parse_mode="HTML")
     finally:
@@ -131,11 +192,12 @@ async def orders_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def support_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db = SessionLocal()
     try:
+        lang = _get_lang(db, update.effective_user.id)
         support = _get_support_username(db)
         if support:
-            await update.message.reply_text(f"💬 Liên hệ hỗ trợ: @{support}")
+            await update.message.reply_text(t(lang, "support_contact", username=support))
         else:
-            await update.message.reply_text("💬 Vui lòng liên hệ quản trị viên để được hỗ trợ.")
+            await update.message.reply_text(t(lang, "support_contact_admin"))
     finally:
         db.close()
 
@@ -144,56 +206,42 @@ async def admin_panel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     await update.message.reply_text("🌐 Truy cập trang quản trị tại địa chỉ máy chủ của bạn.")
 
 
-# ── Shared order creation helper ──────────────────────────────────────────────
+# ── Payment setup helpers ─────────────────────────────────────────────────────
 
-async def _do_create_order(context, db, tg_user, product_id: int, quantity: int, processing_msg):
-    """
-    Create a pending_payment SePay order, send VietQR to the user.
-    Called from both the confirm_order: callback and message_handler (waiting_quantity).
-    """
-    from models import SepayConfig
+async def _setup_sepay_payment(context, db, tg_user, order, lang: str, processing_msg=None):
+    """Set up SePay bank transfer for an existing order. Sends QR to user."""
     cfg = db.query(TelegramBotConfig).first()
     support = cfg.support_username if cfg else ""
     admin_id = cfg.admin_telegram_id if cfg else ""
     shop_name = getattr(cfg, "shop_name", "") or "" if cfg else ""
-
-    sepay = db.query(SepayConfig).first()
+    sepay = db.query(__import__("models", fromlist=["SepayConfig"]).SepayConfig).first()
 
     if not sepay or not sepay.is_enabled:
-        try:
-            await processing_msg.edit_text("❌ Hệ thống thanh toán chưa được cấu hình.")
-        except Exception:
-            pass
-        return
-
-    if not sepay.account_number or not sepay.bank_bin or not sepay.account_name:
-        if admin_id:
+        if processing_msg:
             try:
-                await context.bot.send_message(
-                    chat_id=int(admin_id),
-                    text="⚠️ Thiếu cấu hình ngân hàng để tạo QR (account_number / bank_bin / account_name).",
-                )
+                await processing_msg.edit_text(t(lang, "payment_not_configured"))
             except Exception:
                 pass
-        try:
-            await processing_msg.edit_text(
-                "❌ Hệ thống thanh toán chưa được cấu hình đầy đủ. Vui lòng liên hệ hỗ trợ."
-            )
-        except Exception:
-            pass
-        return
+        return False
 
-    # Create order
-    order = create_pending_payment_order(db, str(tg_user.id), product_id, quantity)
+    if not sepay.account_number or not sepay.bank_bin or not sepay.account_name:
+        if processing_msg:
+            try:
+                await processing_msg.edit_text(t(lang, "payment_not_configured"))
+            except Exception:
+                pass
+        return False
 
-    # Persist context message IDs on the order
-    order.payment_chat_id = tg_user.id
-    order.product_message_id = context.user_data.get("product_message_id")
-    order.quantity_prompt_message_id = context.user_data.get("quantity_prompt_message_id")
-    order.payment_message_type = "photo"
+    # Generate payment code if not already set
+    if not order.payment_code:
+        prefix = sepay.payment_prefix or "AIC"
+        order.payment_code = generate_payment_code(order.order_code, prefix)
+
+    order.payment_method = "bank_transfer"
+    order.payment_currency = "VND"
     db.commit()
 
-    product_name = order.product.name if order.product else str(product_id)
+    product_name = order.product.name if order.product else str(order.product_id)
     expiry_dt = order.payment_expires_at
     expiry_str = expiry_dt.strftime("%H:%M %d/%m/%Y") if expiry_dt else "—"
     timeout = sepay.payment_timeout_minutes or 15
@@ -207,36 +255,35 @@ async def _do_create_order(context, db, tg_user, product_id: int, quantity: int,
         shop_name=shop_name,
     )
 
-    caption = (
-        f"💳 <b>THANH TOÁN ĐƠN HÀNG</b>\n\n"
-        f"Mã đơn: <code>{order.order_code}</code>\n"
-        f"Sản phẩm: {html.escape(product_name)}\n"
-        f"Số lượng: {order.quantity}\n"
-        f"Số tiền: <b>{order.total_price:,.0f}đ</b>\n\n"
-        f"🏦 Ngân hàng: <b>{html.escape(sepay.bank_bin)}</b>\n"
-        f"Số tài khoản: <code>{html.escape(sepay.account_number)}</code>\n"
-        f"Chủ TK: {html.escape(sepay.account_name)}\n"
-        f"Nội dung CK: <code>{html.escape(order.payment_code)}</code>\n\n"
-        f"⏰ Hết hạn: {expiry_str} ({timeout} phút)"
-    )
+    caption_lines = [
+        t(lang, "sepay_payment_title"),
+        "",
+        t(lang, "sepay_order_code", code=order.order_code),
+        t(lang, "sepay_product", name=html.escape(product_name)),
+        t(lang, "sepay_qty", qty=order.quantity),
+        t(lang, "sepay_amount", amount=f"{order.total_price:,.0f}"),
+        "",
+        t(lang, "sepay_bank", bank=html.escape(sepay.bank_bin)),
+        t(lang, "sepay_account_number", acc=html.escape(sepay.account_number)),
+        t(lang, "sepay_account_name", name=html.escape(sepay.account_name)),
+        t(lang, "sepay_content", code=html.escape(order.payment_code)),
+        "",
+        t(lang, "sepay_expiry", time=expiry_str, min=timeout),
+    ]
+    caption = "\n".join(caption_lines)
+    kbd = payment_keyboard(order.id, support, lang=lang)
 
-    kbd = payment_keyboard(order.id, support)
+    if processing_msg:
+        try:
+            await processing_msg.delete()
+        except Exception:
+            pass
 
-    # Delete processing placeholder
-    try:
-        await processing_msg.delete()
-    except Exception:
-        pass
-
-    # Try sending QR as photo — URL direct first, then download fallback
     sent_msg = None
     try:
         sent_msg = await context.bot.send_photo(
-            chat_id=tg_user.id,
-            photo=qr_url,
-            caption=caption,
-            parse_mode="HTML",
-            reply_markup=kbd,
+            chat_id=tg_user.id, photo=qr_url, caption=caption,
+            parse_mode="HTML", reply_markup=kbd,
         )
         order.payment_message_type = "photo"
     except Exception:
@@ -249,42 +296,381 @@ async def _do_create_order(context, db, tg_user, product_id: int, quantity: int,
                 resp = await c.get(qr_url)
             if resp.status_code == 200:
                 sent_msg = await context.bot.send_photo(
-                    chat_id=tg_user.id,
-                    photo=io.BytesIO(resp.content),
-                    caption=caption,
-                    parse_mode="HTML",
-                    reply_markup=kbd,
+                    chat_id=tg_user.id, photo=io.BytesIO(resp.content),
+                    caption=caption, parse_mode="HTML", reply_markup=kbd,
                 )
                 order.payment_message_type = "photo"
         except Exception:
             pass
 
     if not sent_msg:
-        # Final fallback: text-only with "Tạo lại QR" button
         text_only = caption + f'\n\n🔗 <a href="{qr_url}">Mở QR VietQR</a>'
         try:
             sent_msg = await context.bot.send_message(
-                chat_id=tg_user.id,
-                text=text_only,
-                parse_mode="HTML",
-                reply_markup=payment_keyboard(order.id, support, show_regen_qr=True),
+                chat_id=tg_user.id, text=text_only, parse_mode="HTML",
+                reply_markup=payment_keyboard(order.id, support, lang=lang, show_regen_qr=True),
                 disable_web_page_preview=True,
             )
             order.payment_message_type = "text"
         except Exception as e:
             logger.error(f"[order] could not send payment message for {order.order_code}: {e}")
-            if admin_id:
-                try:
-                    await context.bot.send_message(
-                        chat_id=int(admin_id),
-                        text=f"⚠️ Không thể gửi QR cho đơn {order.order_code} (user {tg_user.id}).",
-                    )
-                except Exception:
-                    pass
+            return False
 
     if sent_msg:
         order.payment_message_id = sent_msg.message_id
+        order.payment_chat_id = tg_user.id
         db.commit()
+    return True
+
+
+async def _setup_binance_payment(context, db, tg_user, order, lang: str, processing_msg=None):
+    """Set up Binance Pay for an existing order."""
+    from services.binance_service import get_binance_config, create_binance_merchant_order
+    from services.exchange_rate_service import calculate_crypto_amount, generate_unique_crypto_amount
+
+    cfg_bot = db.query(TelegramBotConfig).first()
+    support = cfg_bot.support_username if cfg_bot else ""
+    admin_id = cfg_bot.admin_telegram_id if cfg_bot else ""
+
+    bnb_cfg = get_binance_config(db)
+    if not bnb_cfg:
+        if processing_msg:
+            try:
+                await processing_msg.edit_text(t(lang, "payment_method_disabled"))
+            except Exception:
+                pass
+        return False
+
+    base_usdt, rate = await calculate_crypto_amount(db, order.total_price)
+    unique_usdt = generate_unique_crypto_amount(db, base_usdt, "BINANCE")
+    mode = bnb_cfg.get("mode", "manual")
+    timeout = int(bnb_cfg.get("timeout_minutes") or 30)
+
+    order.payment_method = "binance_pay"
+    order.payment_currency = "USDT"
+    order.exchange_rate = rate
+    order.expected_crypto_amount = unique_usdt
+    order.payment_network = "BINANCE"
+    order.payment_chat_id = tg_user.id
+
+    if processing_msg:
+        try:
+            await processing_msg.delete()
+        except Exception:
+            pass
+
+    product_name = order.product.name if order.product else str(order.product_id)
+
+    if mode == "manual":
+        pay_id = bnb_cfg.get("pay_id") or "—"
+        recipient = bnb_cfg.get("recipient_name") or "—"
+        order.status = OrderStatus.waiting_manual_verification
+        db.commit()
+
+        text = "\n".join([
+            t(lang, "binance_manual_title"),
+            "",
+            t(lang, "binance_pay_id", pay_id=pay_id),
+            t(lang, "binance_recipient", name=recipient),
+            t(lang, "binance_amount", amount=f"{unique_usdt:.4f}"),
+            t(lang, "binance_order_code", code=order.order_code),
+            "",
+            t(lang, "binance_instruction"),
+        ])
+        qr_path = bnb_cfg.get("qr_image_path") or ""
+        kbd = binance_manual_keyboard(order.id, support, lang=lang)
+
+        sent_msg = None
+        if qr_path:
+            try:
+                sent_msg = await context.bot.send_photo(
+                    chat_id=tg_user.id, photo=open(qr_path, "rb"),
+                    caption=text, parse_mode="HTML", reply_markup=kbd,
+                )
+                order.payment_message_type = "photo"
+            except Exception:
+                pass
+        if not sent_msg:
+            try:
+                sent_msg = await context.bot.send_message(
+                    chat_id=tg_user.id, text=text, parse_mode="HTML",
+                    reply_markup=kbd,
+                )
+                order.payment_message_type = "text"
+            except Exception as e:
+                logger.error(f"[binance_manual] send error: {e}")
+                return False
+
+        # Notify admin about manual verification needed
+        if admin_id:
+            try:
+                await context.bot.send_message(
+                    chat_id=int(admin_id),
+                    text=(
+                        f"🟡 <b>Binance Pay – chờ xác nhận thủ công!</b>\n\n"
+                        f"📋 Đơn: <code>{order.order_code}</code>\n"
+                        f"👤 User: <code>{tg_user.id}</code>\n"
+                        f"📦 Sản phẩm: {html.escape(product_name)}\n"
+                        f"💰 Số tiền: <b>{unique_usdt:.4f} USDT</b>\n\n"
+                        f"Dùng lệnh admin để xác nhận hoặc từ chối."
+                    ),
+                    parse_mode="HTML",
+                )
+            except Exception:
+                pass
+
+    else:  # Merchant API
+        api_key = bnb_cfg.get("api_key") or ""
+        secret_key = bnb_cfg.get("secret_key") or ""
+        result = await create_binance_merchant_order(
+            api_key=api_key, secret_key=secret_key,
+            merchant_trade_no=order.order_code,
+            amount_usdt=unique_usdt,
+            description=product_name,
+            timeout_minutes=timeout,
+        )
+        if not result.get("success"):
+            msg = result.get("message", "Binance API error")
+            logger.error(f"[binance_merchant] create order failed: {msg}")
+            if processing_msg:
+                try:
+                    await processing_msg.edit_text(t(lang, "order_error"))
+                except Exception:
+                    pass
+            return False
+
+        data = result.get("data", {})
+        prepay_id = data.get("prepayId") or ""
+        checkout_url = data.get("checkoutUrl") or data.get("universalUrl") or ""
+        order.payment_txid = prepay_id
+        order.payment_address = checkout_url
+        db.commit()
+
+        text = "\n".join([
+            f"🟡 <b>BINANCE PAY</b>",
+            "",
+            f"Amount: <b>{unique_usdt:.4f} USDT</b>",
+            f"Order: <code>{order.order_code}</code>",
+            "",
+            "Open Binance Pay to complete payment.",
+        ])
+        kbd = binance_merchant_keyboard(order.id, checkout_url, support, lang=lang)
+        try:
+            sent_msg = await context.bot.send_message(
+                chat_id=tg_user.id, text=text, parse_mode="HTML", reply_markup=kbd,
+            )
+            order.payment_message_type = "text"
+            order.payment_message_id = sent_msg.message_id
+            db.commit()
+        except Exception as e:
+            logger.error(f"[binance_merchant] send message error: {e}")
+            return False
+
+    if sent_msg if mode == "manual" else True:
+        if mode == "manual" and 'sent_msg' in dir() and sent_msg:
+            order.payment_message_id = sent_msg.message_id
+        db.commit()
+    return True
+
+
+async def _setup_crypto_payment(context, db, tg_user, order, lang: str,
+                                 method: str, processing_msg=None):
+    """Set up BEP20 or TRC20 USDT payment for an existing order."""
+    from models import PaymentMethod
+    from crypto import decrypt
+    from services.exchange_rate_service import calculate_crypto_amount, generate_unique_crypto_amount
+
+    cfg_bot = db.query(TelegramBotConfig).first()
+    support = cfg_bot.support_username if cfg_bot else ""
+
+    pm = db.query(PaymentMethod).filter(
+        PaymentMethod.method_code == method,
+        PaymentMethod.is_active == True,
+    ).first()
+    if not pm or not pm.config_encrypted:
+        if processing_msg:
+            try:
+                await processing_msg.edit_text(t(lang, "payment_method_disabled"))
+            except Exception:
+                pass
+        return False
+
+    try:
+        pm_cfg = json.loads(decrypt(pm.config_encrypted) or "{}")
+    except Exception:
+        pm_cfg = {}
+
+    wallet = (pm_cfg.get("wallet_address") or "").strip()
+    if not wallet:
+        if processing_msg:
+            try:
+                await processing_msg.edit_text(t(lang, "payment_method_disabled"))
+            except Exception:
+                pass
+        return False
+
+    network = "BEP20" if method == "usdt_bep20" else "TRC20"
+    required_conf = int(pm_cfg.get("required_confirmations") or (12 if network == "BEP20" else 20))
+    timeout = int(pm_cfg.get("timeout_minutes") or 60)
+
+    base_usdt, rate = await calculate_crypto_amount(db, order.total_price)
+    unique_usdt = generate_unique_crypto_amount(db, base_usdt, network)
+
+    order.payment_method = method
+    order.payment_currency = "USDT"
+    order.exchange_rate = rate
+    order.expected_crypto_amount = unique_usdt
+    order.payment_address = wallet
+    order.payment_network = network
+    order.required_confirmations = required_conf
+    order.confirmations = 0
+    order.payment_chat_id = tg_user.id
+    db.commit()
+
+    if method == "usdt_bep20":
+        title = t(lang, "usdt_bep20_title")
+        network_line = t(lang, "usdt_bep20_network")
+        token_line = t(lang, "usdt_bep20_token")
+        addr_line = t(lang, "usdt_bep20_address", address=wallet)
+        amount_line = t(lang, "usdt_bep20_amount", amount=f"{unique_usdt:.4f}")
+        warning_line = t(lang, "usdt_bep20_warning")
+        order_line = t(lang, "usdt_bep20_order", code=order.order_code)
+    else:
+        title = t(lang, "usdt_trc20_title")
+        network_line = t(lang, "usdt_trc20_network")
+        token_line = t(lang, "usdt_trc20_token")
+        addr_line = t(lang, "usdt_trc20_address", address=wallet)
+        amount_line = t(lang, "usdt_trc20_amount", amount=f"{unique_usdt:.4f}")
+        warning_line = t(lang, "usdt_trc20_warning")
+        order_line = t(lang, "usdt_trc20_order", code=order.order_code)
+
+    text = "\n".join([title, "", network_line, token_line, "", addr_line, "", amount_line, "", warning_line, "", order_line])
+    kbd = crypto_payment_keyboard(order.id, support, lang=lang)
+
+    if processing_msg:
+        try:
+            await processing_msg.delete()
+        except Exception:
+            pass
+
+    try:
+        sent_msg = await context.bot.send_message(
+            chat_id=tg_user.id, text=text, parse_mode="HTML", reply_markup=kbd,
+        )
+        order.payment_message_id = sent_msg.message_id
+        order.payment_message_type = "text"
+        db.commit()
+    except Exception as e:
+        logger.error(f"[crypto] send payment message error: {e}")
+        return False
+
+    return True
+
+
+async def _do_create_order(context, db, tg_user, product_id: int, quantity: int, processing_msg):
+    """
+    Create a pending_payment order (no method yet) and show payment method selection.
+    """
+    lang = _get_lang(db, tg_user.id)
+    product = db.query(__import__("models", fromlist=["Product"]).Product).filter(
+        __import__("models", fromlist=["Product"]).Product.id == product_id
+    ).first()
+    if not product:
+        try:
+            await processing_msg.edit_text(t(lang, "product_not_found"))
+        except Exception:
+            pass
+        return
+
+    # Final stock check before creating order
+    stock_info = get_product_stock_status(product_id, db)
+    from models import DeliveryMode
+    if product.delivery_mode == DeliveryMode.api_auto:
+        if stock_info["status"] == "out_of_stock":
+            try:
+                await processing_msg.edit_text(t(lang, "product_out_of_stock_recheck"))
+            except Exception:
+                pass
+            return
+        if stock_info["status"] != "unavailable" and stock_info["stock"] > 0 and quantity > stock_info["stock"]:
+            try:
+                await processing_msg.edit_text(
+                    t(lang, "qty_exceeds_stock", stock=stock_info["stock"], qty=quantity)
+                )
+            except Exception:
+                pass
+            return
+
+    # Get enabled payment methods
+    enabled_methods = get_enabled_payment_methods(db)
+    if not enabled_methods:
+        try:
+            await processing_msg.edit_text(t(lang, "payment_not_configured"))
+        except Exception:
+            pass
+        return
+
+    # Create order (method to be set after user selects)
+    cfg_bot = db.query(TelegramBotConfig).first()
+    sepay = db.query(__import__("models", fromlist=["SepayConfig"]).SepayConfig).first()
+    prefix = (sepay.payment_prefix or "AIC") if sepay else "AIC"
+    timeout = (sepay.payment_timeout_minutes or 15) if sepay else 15
+
+    import uuid
+    from datetime import timedelta
+    order_code = "ORD-" + uuid.uuid4().hex[:8].upper()
+    total = product.sale_price * quantity
+
+    from models import Order, OrderStatus, PaymentStatus
+    order = Order(
+        order_code=order_code,
+        telegram_user_id=str(tg_user.id),
+        product_id=product_id,
+        quantity=quantity,
+        unit_price=product.sale_price,
+        total_price=total,
+        expected_amount=total,
+        paid_amount=0.0,
+        status=OrderStatus.pending_payment,
+        payment_status=PaymentStatus.pending,
+        payment_expires_at=datetime.utcnow() + timedelta(minutes=timeout),
+        payment_chat_id=tg_user.id,
+        product_message_id=context.user_data.get("product_message_id"),
+        quantity_prompt_message_id=context.user_data.get("quantity_prompt_message_id"),
+    )
+    db.add(order)
+    db.commit()
+    db.refresh(order)
+
+    user = db.query(User).filter(User.telegram_id == str(tg_user.id)).first()
+    if user:
+        user.last_active_at = datetime.utcnow()
+        db.commit()
+
+    # Build payment method selection message
+    product_name = product.name
+    total_str = f"{total:,.0f}"
+    text = t(lang, "choose_payment_title",
+             order_code=order.order_code,
+             product=html.escape(product_name),
+             qty=quantity,
+             total=total_str)
+    kbd = payment_method_keyboard(order.id, enabled_methods, lang=lang)
+
+    try:
+        await processing_msg.delete()
+    except Exception:
+        pass
+
+    try:
+        sent = await context.bot.send_message(
+            chat_id=tg_user.id, text=text, parse_mode="HTML", reply_markup=kbd,
+        )
+        order.payment_message_id = sent.message_id
+        order.payment_message_type = "text"
+        db.commit()
+    except Exception as e:
+        logger.error(f"[order] could not send payment method selection: {e}")
 
 
 # ── Callback query handler ────────────────────────────────────────────────────
@@ -293,6 +679,33 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     data = query.data
+
+    # ── set_lang ──
+    if data.startswith("set_lang:"):
+        lang_code = data.split(":")[1]
+        if lang_code not in ("vi", "en"):
+            return
+        db = SessionLocal()
+        try:
+            tg_user = update.effective_user
+            user = db.query(User).filter(User.telegram_id == str(tg_user.id)).first()
+            if user:
+                user.language_code = lang_code
+                db.commit()
+            admin_id = _get_admin_id(db)
+            is_admin = str(tg_user.id) == str(admin_id)
+            welcome = _get_welcome_message(db)
+            await query.message.reply_text(
+                t(lang_code, "lang_changed"),
+                reply_markup=main_menu_keyboard(lang=lang_code, is_admin=is_admin),
+            )
+            try:
+                await query.message.delete()
+            except Exception:
+                pass
+        finally:
+            db.close()
+        return
 
     # ── close ──
     if data == "close":
@@ -304,10 +717,14 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db = SessionLocal()
         try:
             tg_user = update.effective_user
+            lang = _get_lang(db, tg_user.id)
             admin_id = _get_admin_id(db)
             is_admin = str(tg_user.id) == str(admin_id)
             welcome = _get_welcome_message(db)
-            await query.message.reply_text(welcome, reply_markup=main_menu_keyboard(is_admin=is_admin))
+            await query.message.reply_text(
+                welcome,
+                reply_markup=main_menu_keyboard(lang=lang, is_admin=is_admin),
+            )
             await query.message.delete()
         except Exception:
             pass
@@ -319,11 +736,12 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "back_products":
         db = SessionLocal()
         try:
+            lang = _get_lang(db, update.effective_user.id)
             products = get_active_products_for_bot(db)
             await query.message.edit_text(
-                "🛍 <b>Danh sách sản phẩm:</b>",
+                t(lang, "product_list_title"),
                 parse_mode="HTML",
-                reply_markup=product_list_keyboard(products),
+                reply_markup=product_list_keyboard(products, lang=lang),
             )
         finally:
             db.close()
@@ -334,68 +752,107 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         product_id = int(data.split(":")[1])
         db = SessionLocal()
         try:
+            lang = _get_lang(db, update.effective_user.id)
             detail = get_product_detail(db, product_id)
             if not detail:
-                await query.message.edit_text("Sản phẩm không tồn tại.")
+                await query.message.edit_text(t(lang, "product_not_found"))
                 return
             p = detail["product"]
             sources = detail["sources"]
 
-            stock = 0
+            # Freshness check — re-sync if stale (>60s)
+            from models import DeliveryMode
+            if p.delivery_mode == DeliveryMode.api_auto:
+                for src in sources:
+                    if src.api_product and src.api_product.last_sync_at:
+                        age = datetime.utcnow() - src.api_product.last_sync_at
+                        if age > timedelta(seconds=60):
+                            from services.api_service import sync_api_products
+                            await sync_api_products(db, src.api_product.api_connection_id)
+                            db.expire_all()
+                            detail = get_product_detail(db, product_id)
+                            if detail:
+                                p = detail["product"]
+                                sources = detail["sources"]
+                            break
+
+            stock_info = get_product_stock_status(product_id, db)
+            stock = stock_info["stock"]
+            status = stock_info["status"]
+
+            # Determine stock text
+            if status == "unavailable":
+                stock_text = t(lang, "product_unavailable")
+            elif status == "out_of_stock":
+                stock_text = t(lang, "product_out_of_stock")
+            elif stock > 10:
+                stock_text = t(lang, "product_in_stock", count=stock)
+            else:
+                stock_text = t(lang, "product_low_stock", count=stock)
+
             min_qty = p.min_quantity or 1
             api_src = None
             for src in sources:
-                if src.is_active:
-                    stock += (src.last_stock or 0)
-                    if src.api_product:
-                        api_src = src.api_product
-
-            # Freshness check
-            if api_src and api_src.last_sync_at:
-                age = datetime.utcnow() - api_src.last_sync_at
-                if age > timedelta(minutes=2):
-                    from services.api_service import sync_api_products
-                    await sync_api_products(db, api_src.api_connection_id)
-                    db.expire_all()
-                    detail = get_product_detail(db, product_id)
-                    if detail:
-                        p = detail["product"]
-                        sources = detail["sources"]
-                        stock = sum((s.last_stock or 0) for s in sources if s.is_active)
-
-            if stock > 10:
-                stock_text = f"🟢 Còn hàng ({stock})"
-            elif stock > 0:
-                stock_text = f"🟡 Còn ít ({stock})"
-            else:
-                stock_text = "🔴 Hết hàng"
+                if src.is_active and src.api_product:
+                    api_src = src.api_product
+                    break
 
             lines = [f"📦 <b>{html.escape(p.name)}</b>\n"]
-            lines.append(f"💰 Giá bán: <b>{p.sale_price:,.0f}đ/tài khoản</b>")
-            lines.append(f"📊 Tồn kho nguồn: {stock}")
-            lines.append(f"🛒 Tối thiểu: {min_qty}")
+            lines.append(t(lang, "product_price", price=f"{p.sale_price:,.0f}"))
+            lines.append(stock_text)
+            lines.append(t(lang, "product_min_qty", qty=min_qty))
             if p.duration:
-                lines.append(f"⌛ Thời hạn: {html.escape(p.duration)}")
+                lines.append(t(lang, "product_duration", val=html.escape(p.duration)))
             if p.warranty:
-                lines.append(f"🛡 Bảo hành: {html.escape(p.warranty)}")
-            description = p.description or (api_src.external_description if api_src else None)
-            if description:
-                lines.append(f"\n📝 Mô tả:\n{html.escape(description)}")
-            text = "\n".join(lines)
+                lines.append(t(lang, "product_warranty", val=html.escape(p.warranty)))
 
+            # Description: use EN if lang=en and available
+            desc = None
+            if lang == "en" and getattr(p, "description_en", None):
+                desc = p.description_en
+            else:
+                desc = p.description or (api_src.external_description if api_src else None)
+            if desc:
+                lines.append(t(lang, "product_description", desc=html.escape(desc)))
+
+            text_msg = "\n".join(lines)
             image_url = p.image_path or (api_src.external_image_url if api_src else None)
-            if image_url:
-                try:
-                    if image_url.startswith("http"):
-                        import httpx as _httpx
-                        async with _httpx.AsyncClient(timeout=10) as c:
+
+            # Out-of-stock: show blocking keyboard
+            if status == "out_of_stock":
+                kb = out_of_stock_keyboard(p.id, lang=lang)
+                full_text = f"{text_msg}\n\n{t(lang, 'out_of_stock_title')}\n{t(lang, 'out_of_stock_body')}"
+                if image_url and image_url.startswith("http"):
+                    try:
+                        import httpx
+                        async with httpx.AsyncClient(timeout=10) as c:
                             resp = await c.get(image_url)
                         if resp.status_code == 200:
                             sent = await query.message.reply_photo(
                                 photo=io.BytesIO(resp.content),
-                                caption=text,
-                                parse_mode="HTML",
-                                reply_markup=product_detail_keyboard(p.id),
+                                caption=full_text[:1024], parse_mode="HTML", reply_markup=kb,
+                            )
+                            context.user_data["product_message_id"] = sent.message_id
+                            await query.message.delete()
+                            return
+                    except Exception:
+                        pass
+                await query.message.edit_text(full_text, parse_mode="HTML", reply_markup=kb)
+                context.user_data["product_message_id"] = query.message.message_id
+                return
+
+            # Normal detail — show buy button
+            kb = product_detail_keyboard(p.id, lang=lang)
+            if image_url:
+                try:
+                    if image_url.startswith("http"):
+                        import httpx
+                        async with httpx.AsyncClient(timeout=10) as c:
+                            resp = await c.get(image_url)
+                        if resp.status_code == 200:
+                            sent = await query.message.reply_photo(
+                                photo=io.BytesIO(resp.content),
+                                caption=text_msg, parse_mode="HTML", reply_markup=kb,
                             )
                             context.user_data["product_message_id"] = sent.message_id
                             await query.message.delete()
@@ -403,9 +860,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     else:
                         sent = await query.message.reply_photo(
                             photo=open(image_url, "rb"),
-                            caption=text,
-                            parse_mode="HTML",
-                            reply_markup=product_detail_keyboard(p.id),
+                            caption=text_msg, parse_mode="HTML", reply_markup=kb,
                         )
                         context.user_data["product_message_id"] = sent.message_id
                         await query.message.delete()
@@ -413,7 +868,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 except Exception:
                     pass
 
-            sent = await query.message.edit_text(text, parse_mode="HTML", reply_markup=product_detail_keyboard(p.id))
+            sent = await query.message.edit_text(text_msg, parse_mode="HTML", reply_markup=kb)
             context.user_data["product_message_id"] = query.message.message_id
         finally:
             db.close()
@@ -422,112 +877,159 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ── buy: enter quantity ──
     if data.startswith("buy:"):
         product_id = int(data.split(":")[1])
+        db = SessionLocal()
+        try:
+            lang = _get_lang(db, update.effective_user.id)
+            # Server-side stock check before allowing buy
+            stock_info = get_product_stock_status(product_id, db)
+            from models import DeliveryMode, Product as Prod
+            product = db.query(Prod).filter(Prod.id == product_id).first()
+            if product and product.delivery_mode == DeliveryMode.api_auto:
+                if stock_info["status"] == "out_of_stock":
+                    await query.answer(t(lang, "product_out_of_stock_recheck"), show_alert=True)
+                    return
+        finally:
+            db.close()
+
         context.user_data["buying_product_id"] = product_id
         context.user_data["state"] = "waiting_quantity"
         context.user_data.pop("processing_order", None)
-        prompt_msg = await query.message.reply_text("🔢 Nhập số lượng bạn muốn mua:")
+        db2 = SessionLocal()
+        try:
+            lang = _get_lang(db2, update.effective_user.id)
+        finally:
+            db2.close()
+        prompt_msg = await query.message.reply_text(t(lang, "enter_quantity"))
         context.user_data["quantity_prompt_message_id"] = prompt_msg.message_id
         return
 
-    # ── confirm order ──
-    if data.startswith("confirm_order:"):
-        cb_key = f"{update.effective_user.id}:{data}"
+    # ── pay_method: select payment method for existing order ──
+    if data.startswith("pay_method:"):
+        parts = data.split(":")
+        order_id = int(parts[1])
+        method = parts[2]
+        tg_user = update.effective_user
+
+        cb_key = f"{tg_user.id}:{data}"
         if cb_key in _processing_callbacks:
             return
         _processing_callbacks.add(cb_key)
 
-        parts = data.split(":")
-        product_id = int(parts[1])
-        quantity = int(parts[2])
-        tg_user = update.effective_user
-
         db = SessionLocal()
         try:
-            await query.message.edit_text("⏳ Đang xử lý đơn hàng...")
-            await _do_create_order(context, db, tg_user, product_id, quantity, query.message)
-            context.user_data.clear()
-        except Exception as e:
-            logger.error(f"Order creation error: {e}")
+            lang = _get_lang(db, tg_user.id)
+            order = get_order_by_id(db, order_id)
+            if not order or order.telegram_user_id != str(tg_user.id):
+                await query.answer(t(lang, "order_not_found"), show_alert=True)
+                return
+
+            sv = order.status.value if hasattr(order.status, "value") else str(order.status)
+            if sv != "pending_payment":
+                await query.answer(t(lang, "order_not_found"), show_alert=True)
+                return
+
+            # Delete the payment method selection message
             try:
-                await query.message.edit_text("❌ Lỗi đặt hàng. Vui lòng thử lại.")
+                await query.message.delete()
             except Exception:
                 pass
+
+            processing_msg = await context.bot.send_message(
+                chat_id=tg_user.id,
+                text=t(lang, "processing_order"),
+            )
+
+            if method == "bank_transfer":
+                await _setup_sepay_payment(context, db, tg_user, order, lang, processing_msg)
+            elif method == "binance_pay":
+                await _setup_binance_payment(context, db, tg_user, order, lang, processing_msg)
+            elif method in ("usdt_bep20", "usdt_trc20"):
+                await _setup_crypto_payment(context, db, tg_user, order, lang, method, processing_msg)
+            else:
+                try:
+                    await processing_msg.edit_text(t(lang, "payment_method_disabled"))
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.error(f"[pay_method] error: {e}")
         finally:
             db.close()
             _processing_callbacks.discard(cb_key)
         return
 
-    # ── cancel order (pre-payment) ──
+    # ── cancel_order (pre-payment method selection) ──
     if data == "cancel_order":
         context.user_data.clear()
-        await query.message.edit_text("❌ Đã huỷ đặt hàng.")
+        db = SessionLocal()
+        try:
+            lang = _get_lang(db, update.effective_user.id)
+        finally:
+            db.close()
+        await query.message.edit_text(t(lang, "order_cancelled"))
         return
 
-    # ── cancel pending_payment order ──
+    # ── cancel_pending ──
     if data.startswith("cancel_pending:"):
         order_id = int(data.split(":")[1])
         tg_user = update.effective_user
         db = SessionLocal()
         try:
+            lang = _get_lang(db, tg_user.id)
             order = get_order_by_id(db, order_id)
             if not order or order.telegram_user_id != str(tg_user.id):
-                await query.answer("Không tìm thấy đơn hàng.", show_alert=True)
+                await query.answer(t(lang, "order_not_found"), show_alert=True)
                 return
 
             ps = order.payment_status.value if hasattr(order.payment_status, "value") else str(order.payment_status or "")
             if ps in ("paid", "overpaid"):
-                await query.answer(
-                    "Đơn đã thanh toán — không thể hủy. Liên hệ hỗ trợ.", show_alert=True
-                )
+                await query.answer(t(lang, "order_cancel_paid"), show_alert=True)
                 return
 
             order.status = OrderStatus.cancelled
             order.updated_at = datetime.utcnow()
             db.commit()
 
-            # Delete all stored bot messages (product detail, quantity prompt, QR)
-            from services.payment_service import safe_delete_message as _safe_del
             chat_id = order.payment_chat_id or order.telegram_user_id
             await _safe_del(context.bot, chat_id, order.product_message_id)
             await _safe_del(context.bot, chat_id, order.quantity_prompt_message_id)
             await _safe_del(context.bot, chat_id, order.payment_message_id)
 
             try:
-                await context.bot.send_message(chat_id=int(chat_id), text="❌ Đã hủy đơn hàng.")
+                await context.bot.send_message(
+                    chat_id=int(chat_id), text=t(lang, "order_cancel_success")
+                )
             except Exception:
                 pass
         finally:
             db.close()
         return
 
-    # ── regenerate QR ──
+    # ── regen_qr ──
     if data.startswith("regen_qr:"):
         order_id = int(data.split(":")[1])
         tg_user = update.effective_user
         db = SessionLocal()
         try:
+            lang = _get_lang(db, tg_user.id)
             order = get_order_by_id(db, order_id)
             if not order or order.telegram_user_id != str(tg_user.id):
-                await query.answer("Không tìm thấy đơn hàng.", show_alert=True)
+                await query.answer(t(lang, "order_not_found"), show_alert=True)
                 return
 
             sv = order.status.value if hasattr(order.status, "value") else str(order.status)
             if sv != "pending_payment":
-                await query.answer("Đơn hàng không còn ở trạng thái chờ thanh toán.", show_alert=True)
+                await query.answer("Đơn không còn ở trạng thái chờ thanh toán.", show_alert=True)
                 return
 
             from models import SepayConfig
-            from services.payment_service import generate_vietqr_url as _gen_qr, safe_delete_message as _safe_del
-            cfg = db.query(TelegramBotConfig).first()
-            support = cfg.support_username if cfg else ""
-            shop_name = getattr(cfg, "shop_name", "") or "" if cfg else ""
+            cfg_bot = db.query(TelegramBotConfig).first()
+            support = cfg_bot.support_username if cfg_bot else ""
+            shop_name = getattr(cfg_bot, "shop_name", "") or "" if cfg_bot else ""
             sepay = db.query(SepayConfig).first()
-
             if not sepay or not sepay.account_number or not sepay.bank_bin:
                 await query.answer("Cấu hình ngân hàng chưa đầy đủ.", show_alert=True)
                 return
 
-            # Delete old QR message
             chat_id = order.payment_chat_id or order.telegram_user_id
             await _safe_del(context.bot, chat_id, order.payment_message_id)
             order.payment_message_id = None
@@ -535,30 +1037,28 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             product_name = order.product.name if order.product else "—"
             timeout = sepay.payment_timeout_minutes or 15
-            expiry_dt = order.payment_expires_at
-            expiry_str = expiry_dt.strftime("%H:%M %d/%m/%Y") if expiry_dt else "—"
+            expiry_str = order.payment_expires_at.strftime("%H:%M %d/%m/%Y") if order.payment_expires_at else "—"
 
-            qr_url = _gen_qr(
-                bank_bin=sepay.bank_bin,
-                account_number=sepay.account_number,
-                amount=order.total_price,
-                payment_code=order.payment_code,
-                account_name=sepay.account_name,
-                shop_name=shop_name,
+            qr_url = generate_vietqr_url(
+                bank_bin=sepay.bank_bin, account_number=sepay.account_number,
+                amount=order.total_price, payment_code=order.payment_code,
+                account_name=sepay.account_name, shop_name=shop_name,
             )
-            caption = (
-                f"💳 <b>THANH TOÁN ĐƠN HÀNG</b>\n\n"
-                f"Mã đơn: <code>{order.order_code}</code>\n"
-                f"Sản phẩm: {html.escape(product_name)}\n"
-                f"Số lượng: {order.quantity}\n"
-                f"Số tiền: <b>{order.total_price:,.0f}đ</b>\n\n"
-                f"🏦 Ngân hàng: <b>{html.escape(sepay.bank_bin)}</b>\n"
-                f"Số tài khoản: <code>{html.escape(sepay.account_number)}</code>\n"
-                f"Chủ TK: {html.escape(sepay.account_name)}\n"
-                f"Nội dung CK: <code>{html.escape(order.payment_code)}</code>\n\n"
-                f"⏰ Hết hạn: {expiry_str} ({timeout} phút)"
-            )
-            kbd = payment_keyboard(order.id, support)
+            caption_lines = [
+                t(lang, "sepay_payment_title"), "",
+                t(lang, "sepay_order_code", code=order.order_code),
+                t(lang, "sepay_product", name=html.escape(product_name)),
+                t(lang, "sepay_qty", qty=order.quantity),
+                t(lang, "sepay_amount", amount=f"{order.total_price:,.0f}"),
+                "", t(lang, "sepay_bank", bank=html.escape(sepay.bank_bin)),
+                t(lang, "sepay_account_number", acc=html.escape(sepay.account_number)),
+                t(lang, "sepay_account_name", name=html.escape(sepay.account_name)),
+                t(lang, "sepay_content", code=html.escape(order.payment_code or "")),
+                "", t(lang, "sepay_expiry", time=expiry_str, min=timeout),
+            ]
+            caption = "\n".join(caption_lines)
+            kbd = payment_keyboard(order.id, support, lang=lang)
+
             sent_msg = None
             try:
                 sent_msg = await context.bot.send_photo(
@@ -574,14 +1074,15 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         chat_id=int(chat_id),
                         text=caption + f'\n\n🔗 <a href="{qr_url}">Mở QR VietQR</a>',
                         parse_mode="HTML",
-                        reply_markup=payment_keyboard(order.id, support, show_regen_qr=True),
+                        reply_markup=payment_keyboard(order.id, support, lang=lang, show_regen_qr=True),
                         disable_web_page_preview=True,
                     )
                     order.payment_message_type = "text"
                 except Exception as e:
-                    logger.error(f"[regen_qr] could not send QR for {order.order_code}: {e}")
+                    logger.error(f"[regen_qr] send failed: {e}")
                     await query.answer("Không thể tạo QR. Vui lòng thử lại.", show_alert=True)
                     return
+
             if sent_msg:
                 order.payment_message_id = sent_msg.message_id
                 db.commit()
@@ -590,56 +1091,62 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             db.close()
         return
 
-    # ── check payment status ──
+    # ── check_payment ──
     if data.startswith("check_payment:"):
         order_id = int(data.split(":")[1])
         tg_user = update.effective_user
         db = SessionLocal()
         try:
+            lang = _get_lang(db, tg_user.id)
             order = get_order_by_id(db, order_id)
             if not order or order.telegram_user_id != str(tg_user.id):
-                await query.answer("Không tìm thấy đơn hàng.", show_alert=True)
+                await query.answer(t(lang, "order_not_found"), show_alert=True)
                 return
 
             sv = order.status.value if hasattr(order.status, "value") else str(order.status)
             ps = order.payment_status.value if hasattr(order.payment_status, "value") else str(order.payment_status or "pending")
 
             if sv == "completed":
-                await query.answer("✅ Đơn đã hoàn thành.", show_alert=True)
+                await query.answer("✅ Đơn đã hoàn thành." if lang == "vi" else "✅ Order completed.", show_alert=True)
                 return
 
             if ps == "pending":
-                await query.answer("⏳ Chưa nhận được thanh toán.", show_alert=True)
+                await query.answer(t(lang, "payment_not_received"), show_alert=True)
             elif ps == "partial":
                 paid = order.paid_amount or 0
                 expected = order.expected_amount or order.total_price
                 remaining = expected - paid
                 await query.answer(
-                    f"⚠️ Đã nhận {paid:,.0f}đ.\nCòn thiếu {remaining:,.0f}đ.",
+                    t(lang, "payment_partial", paid=f"{paid:,.0f}", remaining=f"{remaining:,.0f}"),
                     show_alert=True,
                 )
             elif ps in ("paid", "overpaid"):
+                await query.answer(t(lang, "payment_done_processing"), show_alert=True)
+            elif ps in ("detected", "confirming"):
+                confs = order.confirmations or 0
+                req = order.required_confirmations or 12
                 await query.answer(
-                    "✅ Thanh toán thành công.\nĐơn đang được lấy hàng tự động.",
+                    t(lang, "crypto_detected", current=confs, required=req),
                     show_alert=True,
                 )
             elif sv == "payment_expired":
-                await query.answer("⏰ Đơn hàng đã hết hạn thanh toán.", show_alert=True)
+                await query.answer(t(lang, "payment_expired_msg"), show_alert=True)
             else:
-                await query.answer(f"Trạng thái: {_payment_status_label(ps)}", show_alert=True)
+                await query.answer(_payment_status_label(ps, lang), show_alert=True)
         finally:
             db.close()
         return
 
-    # ── view order ──
+    # ── view_order ──
     if data.startswith("view_order:"):
         order_id = int(data.split(":")[1])
         tg_user = update.effective_user
         db = SessionLocal()
         try:
+            lang = _get_lang(db, tg_user.id)
             order = get_order_by_id(db, order_id)
             if not order or order.telegram_user_id != str(tg_user.id):
-                await query.answer("Không tìm thấy đơn hàng.", show_alert=True)
+                await query.answer(t(lang, "order_not_found"), show_alert=True)
                 return
             sv = order.status.value if hasattr(order.status, "value") else order.status
             product_name = order.product.name if order.product else "—"
@@ -651,25 +1158,25 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"Sản phẩm: {html.escape(product_name)}\n"
                 f"Số lượng: {order.quantity}\n"
                 f"Tổng tiền: {order.total_price:,.0f}đ\n"
-                f"Trạng thái: {_status_label(sv)}\n"
+                f"Trạng thái: {_status_label(sv, lang)}\n"
                 f"Thời gian: {order.created_at.strftime('%d/%m/%Y %H:%M')}"
             )
             support = _get_support_username(db)
             await query.message.reply_text(
-                text,
-                parse_mode="HTML",
-                reply_markup=post_delivery_keyboard(order_id, support),
+                text, parse_mode="HTML",
+                reply_markup=post_delivery_keyboard(order_id, support, lang=lang),
             )
         finally:
             db.close()
         return
 
-    # ── reload / re-download accounts ──
+    # ── reload_order ──
     if data.startswith("reload_order:"):
         order_id = int(data.split(":")[1])
         tg_user = update.effective_user
         db = SessionLocal()
         try:
+            lang = _get_lang(db, tg_user.id)
             order = get_order_by_id(db, order_id)
             admin_id = _get_admin_id(db)
             is_owner = order and order.telegram_user_id == str(tg_user.id)
@@ -698,20 +1205,29 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
             else:
                 await context.bot.send_message(
-                    chat_id=tg_user.id,
-                    text=text,
-                    parse_mode="HTML",
-                    reply_markup=post_delivery_keyboard(order.id, support),
+                    chat_id=tg_user.id, text=text, parse_mode="HTML",
+                    reply_markup=post_delivery_keyboard(order.id, support, lang=lang),
                 )
         finally:
             db.close()
         return
 
 
-# ── Message handler (text input) ──────────────────────────────────────────────
+# ── Message handler ────────────────────────────────────────────────────────────
 
 async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     state = context.user_data.get("state")
+    db = SessionLocal()
+    try:
+        lang = _get_lang(db, update.effective_user.id)
+    finally:
+        db.close()
+
+    # ── Language menu button ──
+    text_in = update.message.text or ""
+    if text_in in ("🌐 Ngôn ngữ", "🌐 Language"):
+        await update.message.reply_text(t("vi", "choose_lang"), reply_markup=language_keyboard())
+        return
 
     if state == "waiting_quantity":
         product_id = context.user_data.get("buying_product_id")
@@ -721,69 +1237,76 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if quantity <= 0:
                 raise ValueError
         except ValueError:
-            await update.message.reply_text("❌ Vui lòng nhập số lượng hợp lệ (số nguyên dương).")
+            await update.message.reply_text(t(lang, "qty_invalid"))
             return
 
         db = SessionLocal()
         try:
             detail = get_product_detail(db, product_id)
             if not detail:
-                await update.message.reply_text("Sản phẩm không tồn tại.")
+                await update.message.reply_text(t(lang, "product_not_found"))
                 context.user_data.clear()
                 return
 
             p = detail["product"]
             sources = detail["sources"]
+            from models import DeliveryMode
 
-            for src in sources:
-                if src.is_active and src.api_product and src.api_product.last_sync_at:
-                    age = datetime.utcnow() - src.api_product.last_sync_at
-                    if age > timedelta(minutes=2):
-                        from services.api_service import sync_api_products
-                        await sync_api_products(db, src.api_product.api_connection_id)
-                        db.expire_all()
-                        detail = get_product_detail(db, product_id)
-                        if detail:
-                            p = detail["product"]
-                            sources = detail["sources"]
-                        break
+            # Re-sync if stale (>60s)
+            if p.delivery_mode == DeliveryMode.api_auto:
+                for src in sources:
+                    if src.api_product and src.api_product.last_sync_at:
+                        age = datetime.utcnow() - src.api_product.last_sync_at
+                        if age > timedelta(seconds=60):
+                            from services.api_service import sync_api_products
+                            await sync_api_products(db, src.api_product.api_connection_id)
+                            db.expire_all()
+                            detail = get_product_detail(db, product_id)
+                            if detail:
+                                p = detail["product"]
+                                sources = detail["sources"]
+                            break
 
-            total_stock = sum((s.last_stock or 0) for s in sources if s.is_active)
+            stock_info = get_product_stock_status(product_id, db)
+            total_stock = stock_info["stock"]
             min_qty = p.min_quantity or 1
 
             if quantity < min_qty:
                 await update.message.reply_text(
-                    f"❌ Số lượng tối thiểu là <b>{min_qty}</b>.", parse_mode="HTML"
-                )
-                return
-            if total_stock > 0 and quantity > total_stock:
-                await update.message.reply_text(
-                    f"❌ Tồn kho chỉ còn <b>{total_stock}</b>.", parse_mode="HTML"
+                    t(lang, "qty_below_min", min=min_qty), parse_mode="HTML"
                 )
                 return
 
-            # Skip confirmation — go directly to payment/order creation
+            if p.delivery_mode == DeliveryMode.api_auto:
+                if stock_info["status"] == "out_of_stock":
+                    await update.message.reply_text(t(lang, "product_out_of_stock_recheck"))
+                    context.user_data.clear()
+                    return
+                if total_stock > 0 and quantity > total_stock:
+                    await update.message.reply_text(
+                        t(lang, "qty_exceeds_stock", stock=total_stock, qty=quantity),
+                        parse_mode="HTML",
+                    )
+                    return
+
             tg_user = update.effective_user
-
-            # Delete user's quantity message (best-effort)
             try:
                 await update.message.delete()
             except Exception:
                 pass
 
-            # Send a placeholder we can edit/delete inside _do_create_order
             processing_msg = await context.bot.send_message(
                 chat_id=tg_user.id,
-                text="⏳ Đang xử lý đơn hàng...",
+                text=t(lang, "processing_order"),
             )
 
             context.user_data["state"] = "processing"
             try:
                 await _do_create_order(context, db, tg_user, product_id, quantity, processing_msg)
             except Exception as e:
-                logger.error(f"Order creation error (message_handler): {e}")
+                logger.error(f"Order creation error: {e}")
                 try:
-                    await processing_msg.edit_text("❌ Lỗi đặt hàng. Vui lòng thử lại.")
+                    await processing_msg.edit_text(t(lang, "order_error"))
                 except Exception:
                     pass
             context.user_data.clear()

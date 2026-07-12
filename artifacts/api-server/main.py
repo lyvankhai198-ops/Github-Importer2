@@ -25,23 +25,24 @@ def _run_migrations():
     Each ALTER TABLE is wrapped in try/except — already-existing columns are silently skipped.
     """
     migrations = [
-        # ApiProduct new fields (from previous spec)
+        # ApiProduct new fields
         "ALTER TABLE api_products ADD COLUMN external_description TEXT",
         "ALTER TABLE api_products ADD COLUMN external_min_quantity INTEGER",
         "ALTER TABLE api_products ADD COLUMN external_max_quantity INTEGER",
         "ALTER TABLE api_products ADD COLUMN external_warranty VARCHAR(255)",
         "ALTER TABLE api_products ADD COLUMN external_duration VARCHAR(255)",
         "ALTER TABLE api_products ADD COLUMN external_image_url VARCHAR(1000)",
-        # Product new fields (from previous spec)
+        # Product new fields
         "ALTER TABLE products ADD COLUMN min_quantity INTEGER DEFAULT 1",
         "ALTER TABLE products ADD COLUMN warranty VARCHAR(255)",
         "ALTER TABLE products ADD COLUMN duration VARCHAR(255)",
-        # Order new fields (from previous spec)
+        "ALTER TABLE products ADD COLUMN description_en TEXT",
+        # Order core new fields
         "ALTER TABLE orders ADD COLUMN source_unit_price FLOAT",
         "ALTER TABLE orders ADD COLUMN external_order_code VARCHAR(255)",
         "ALTER TABLE orders ADD COLUMN delivery_items TEXT",
         "ALTER TABLE orders ADD COLUMN partial_count INTEGER",
-        # Payment fields on Order (NEW — SePay integration)
+        # Payment fields on Order (SePay)
         "ALTER TABLE orders ADD COLUMN payment_status VARCHAR(20)",
         "ALTER TABLE orders ADD COLUMN payment_method VARCHAR(50)",
         "ALTER TABLE orders ADD COLUMN payment_code VARCHAR(50)",
@@ -51,14 +52,26 @@ def _run_migrations():
         "ALTER TABLE orders ADD COLUMN paid_at DATETIME",
         "ALTER TABLE orders ADD COLUMN payment_transaction_id VARCHAR(255)",
         "ALTER TABLE orders ADD COLUMN payment_raw_data TEXT",
-        # Index for fast payment_code lookup
         "CREATE INDEX IF NOT EXISTS ix_orders_payment_code ON orders (payment_code)",
-        # QR / payment message tracking
+        # QR / message tracking
         "ALTER TABLE orders ADD COLUMN payment_message_id INTEGER",
         "ALTER TABLE orders ADD COLUMN payment_chat_id INTEGER",
         "ALTER TABLE orders ADD COLUMN payment_message_type VARCHAR(20)",
         "ALTER TABLE orders ADD COLUMN product_message_id INTEGER",
         "ALTER TABLE orders ADD COLUMN quantity_prompt_message_id INTEGER",
+        # Crypto payment fields on Order
+        "ALTER TABLE orders ADD COLUMN payment_currency VARCHAR(20)",
+        "ALTER TABLE orders ADD COLUMN exchange_rate FLOAT",
+        "ALTER TABLE orders ADD COLUMN expected_crypto_amount FLOAT",
+        "ALTER TABLE orders ADD COLUMN received_crypto_amount FLOAT",
+        "ALTER TABLE orders ADD COLUMN payment_address VARCHAR(200)",
+        "ALTER TABLE orders ADD COLUMN payment_memo VARCHAR(100)",
+        "ALTER TABLE orders ADD COLUMN payment_txid VARCHAR(200)",
+        "ALTER TABLE orders ADD COLUMN payment_network VARCHAR(50)",
+        "ALTER TABLE orders ADD COLUMN confirmations INTEGER DEFAULT 0",
+        "ALTER TABLE orders ADD COLUMN required_confirmations INTEGER",
+        # User language
+        "ALTER TABLE users ADD COLUMN language_code VARCHAR(10) DEFAULT 'vi'",
     ]
     with engine.connect() as conn:
         for sql in migrations:
@@ -69,11 +82,36 @@ def _run_migrations():
                 pass  # column / index already exists
 
 
+def _seed_payment_methods():
+    """Insert default PaymentMethod rows if not present."""
+    from models import PaymentMethod
+    db = SessionLocal()
+    try:
+        defaults = [
+            ("binance_pay",  "🟡 Binance Pay",  "🟡 Binance Pay",  False),
+            ("usdt_bep20",   "🟨 USDT BEP20",   "🟨 USDT BEP20",   False),
+            ("usdt_trc20",   "🔴 USDT TRC20",   "🔴 USDT TRC20",   False),
+        ]
+        for code, vi, en, active in defaults:
+            exists = db.query(PaymentMethod).filter(PaymentMethod.method_code == code).first()
+            if not exists:
+                db.add(PaymentMethod(
+                    method_code=code,
+                    display_name_vi=vi,
+                    display_name_en=en,
+                    is_active=active,
+                ))
+        db.commit()
+    finally:
+        db.close()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # ── Startup ───────────────────────────────────────────────────────────────
     Base.metadata.create_all(bind=engine)
     _run_migrations()
+    _seed_payment_methods()
     UPLOADS_DIR.mkdir(exist_ok=True)
 
     # Create default admin user if none exists
@@ -106,6 +144,12 @@ async def lifespan(app: FastAPI):
     from services.payment_service import expire_payment_orders_loop
     asyncio.create_task(expire_payment_orders_loop())
 
+    # Start crypto monitor workers (each independent — one crash won't affect others)
+    from services.crypto_monitor import bep20_monitor_loop, trc20_monitor_loop, binance_merchant_loop
+    asyncio.create_task(bep20_monitor_loop())
+    asyncio.create_task(trc20_monitor_loop())
+    asyncio.create_task(binance_merchant_loop())
+
     yield
 
     # ── Shutdown ──────────────────────────────────────────────────────────────
@@ -133,7 +177,7 @@ app.include_router(orders.router)
 app.include_router(api_connections.router)
 app.include_router(users.router)
 app.include_router(settings.router)
-app.include_router(webhooks.router)  # POST /webhooks/sepay
+app.include_router(webhooks.router)  # POST /webhooks/sepay, /webhooks/binance
 
 
 if __name__ == "__main__":

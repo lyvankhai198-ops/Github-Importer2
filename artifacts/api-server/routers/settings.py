@@ -359,3 +359,257 @@ async def check_sepay_endpoint(request: Request):
     if not check_auth(request):
         return JSONResponse({"success": False}, status_code=401)
     return JSONResponse({"success": True, "message": "Webhook endpoint đang hoạt động ✅"})
+
+
+# ── Payment methods (Binance Pay / BEP20 / TRC20) ────────────────────────────
+
+def _get_pm(db: Session, code: str):
+    from models import PaymentMethod
+    pm = db.query(PaymentMethod).filter(PaymentMethod.method_code == code).first()
+    if not pm:
+        from models import PaymentMethod as PM
+        pm = PM(method_code=code, display_name_vi=code, display_name_en=code, is_active=False)
+        db.add(pm)
+        db.commit()
+        db.refresh(pm)
+    return pm
+
+
+@router.get("/settings/payment-method/{code}/config")
+async def get_pm_config(request: Request, code: str, db: Session = Depends(get_db)):
+    if not check_auth(request):
+        return JSONResponse({"success": False}, status_code=401)
+    if code not in ("binance_pay", "usdt_bep20", "usdt_trc20"):
+        return JSONResponse({"success": False, "message": "Unknown method"}, status_code=400)
+    from models import PaymentMethod
+    pm = db.query(PaymentMethod).filter(PaymentMethod.method_code == code).first()
+    if not pm:
+        return JSONResponse({"success": True, "is_active": False, "config": {}})
+    cfg_raw = {}
+    if pm.config_encrypted:
+        try:
+            cfg_raw = json.loads(decrypt(pm.config_encrypted) or "{}")
+        except Exception:
+            cfg_raw = {}
+    # Mask secrets before returning
+    masked_cfg = {}
+    for k, v in cfg_raw.items():
+        if any(x in k.lower() for x in ("key", "secret", "token", "password")):
+            masked_cfg[k] = mask_key(v) if v else ""
+        else:
+            masked_cfg[k] = v
+    return JSONResponse({"success": True, "is_active": pm.is_active, "config": masked_cfg})
+
+
+@router.post("/settings/payment-method/binance")
+async def save_binance_settings(
+    request: Request,
+    db: Session = Depends(get_db),
+    is_enabled: str = Form("off"),
+    mode: str = Form("manual"),
+    pay_id: str = Form(""),
+    recipient_name: str = Form(""),
+    payment_instructions: str = Form(""),
+    merchant_id: str = Form(""),
+    api_key: str = Form(""),
+    secret_key: str = Form(""),
+    timeout_minutes: int = Form(30),
+):
+    if not check_auth(request):
+        return RedirectResponse(url="/login", status_code=302)
+
+    pm = _get_pm(db, "binance_pay")
+    pm.is_active = (is_enabled == "on")
+
+    try:
+        existing_cfg = json.loads(decrypt(pm.config_encrypted) or "{}") if pm.config_encrypted else {}
+    except Exception:
+        existing_cfg = {}
+
+    new_cfg = {
+        "mode": mode,
+        "pay_id": pay_id.strip(),
+        "recipient_name": recipient_name.strip(),
+        "payment_instructions": payment_instructions.strip(),
+        "merchant_id": merchant_id.strip(),
+        "timeout_minutes": timeout_minutes,
+    }
+    # Only update key/secret if user submitted non-masked values
+    if api_key.strip() and not api_key.strip().startswith("*"):
+        new_cfg["api_key"] = api_key.strip()
+    else:
+        new_cfg["api_key"] = existing_cfg.get("api_key", "")
+    if secret_key.strip() and not secret_key.strip().startswith("*"):
+        new_cfg["secret_key"] = secret_key.strip()
+    else:
+        new_cfg["secret_key"] = existing_cfg.get("secret_key", "")
+
+    pm.config_encrypted = encrypt(json.dumps(new_cfg, ensure_ascii=False))
+    pm.updated_at = datetime.utcnow()
+    db.commit()
+    flash(request, "Cài đặt Binance Pay đã được lưu!")
+    return RedirectResponse(url="/settings?tab=binance", status_code=302)
+
+
+@router.post("/settings/payment-method/bep20")
+async def save_bep20_settings(
+    request: Request,
+    db: Session = Depends(get_db),
+    is_enabled: str = Form("off"),
+    wallet_address: str = Form(""),
+    usdt_contract: str = Form(""),
+    bscscan_api_key: str = Form(""),
+    bsc_rpc_url: str = Form(""),
+    required_confirmations: int = Form(12),
+    poll_interval_seconds: int = Form(30),
+    timeout_minutes: int = Form(60),
+):
+    if not check_auth(request):
+        return RedirectResponse(url="/login", status_code=302)
+    pm = _get_pm(db, "usdt_bep20")
+    pm.is_active = (is_enabled == "on")
+
+    try:
+        existing = json.loads(decrypt(pm.config_encrypted) or "{}") if pm.config_encrypted else {}
+    except Exception:
+        existing = {}
+
+    if not usdt_contract.strip():
+        usdt_contract = "0x55d398326f99059fF775485246999027B3197955"  # BSC USDT
+
+    new_cfg = {
+        "wallet_address": wallet_address.strip(),
+        "usdt_contract": usdt_contract.strip().lower(),
+        "bsc_rpc_url": bsc_rpc_url.strip() or "https://bsc-dataseed.binance.org/",
+        "required_confirmations": max(1, required_confirmations),
+        "poll_interval_seconds": max(15, poll_interval_seconds),
+        "timeout_minutes": max(15, timeout_minutes),
+    }
+    if bscscan_api_key.strip() and not bscscan_api_key.strip().startswith("*"):
+        new_cfg["bscscan_api_key"] = bscscan_api_key.strip()
+    else:
+        new_cfg["bscscan_api_key"] = existing.get("bscscan_api_key", "")
+
+    pm.config_encrypted = encrypt(json.dumps(new_cfg, ensure_ascii=False))
+    pm.updated_at = datetime.utcnow()
+    db.commit()
+    flash(request, "Cài đặt USDT BEP20 đã được lưu!")
+    return RedirectResponse(url="/settings?tab=bep20", status_code=302)
+
+
+@router.post("/settings/payment-method/trc20")
+async def save_trc20_settings(
+    request: Request,
+    db: Session = Depends(get_db),
+    is_enabled: str = Form("off"),
+    wallet_address: str = Form(""),
+    usdt_contract: str = Form(""),
+    trongrid_api_key: str = Form(""),
+    required_confirmations: int = Form(20),
+    poll_interval_seconds: int = Form(30),
+    timeout_minutes: int = Form(60),
+):
+    if not check_auth(request):
+        return RedirectResponse(url="/login", status_code=302)
+    pm = _get_pm(db, "usdt_trc20")
+    pm.is_active = (is_enabled == "on")
+
+    try:
+        existing = json.loads(decrypt(pm.config_encrypted) or "{}") if pm.config_encrypted else {}
+    except Exception:
+        existing = {}
+
+    if not usdt_contract.strip():
+        usdt_contract = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"  # TRON USDT
+
+    new_cfg = {
+        "wallet_address": wallet_address.strip(),
+        "usdt_contract": usdt_contract.strip(),
+        "required_confirmations": max(1, required_confirmations),
+        "poll_interval_seconds": max(15, poll_interval_seconds),
+        "timeout_minutes": max(15, timeout_minutes),
+    }
+    if trongrid_api_key.strip() and not trongrid_api_key.strip().startswith("*"):
+        new_cfg["trongrid_api_key"] = trongrid_api_key.strip()
+    else:
+        new_cfg["trongrid_api_key"] = existing.get("trongrid_api_key", "")
+
+    pm.config_encrypted = encrypt(json.dumps(new_cfg, ensure_ascii=False))
+    pm.updated_at = datetime.utcnow()
+    db.commit()
+    flash(request, "Cài đặt USDT TRC20 đã được lưu!")
+    return RedirectResponse(url="/settings?tab=trc20", status_code=302)
+
+
+# ── Exchange rate config ──────────────────────────────────────────────────────
+
+@router.post("/settings/exchange-rate")
+async def save_exchange_rate(
+    request: Request,
+    db: Session = Depends(get_db),
+    rate_mode: str = Form("fixed"),
+    fixed_rate: float = Form(25500.0),
+    markup_percent: float = Form(2.0),
+):
+    if not check_auth(request):
+        return RedirectResponse(url="/login", status_code=302)
+    from services.exchange_rate_service import get_exchange_config
+    from models import Setting
+    cfg = {
+        "mode": rate_mode,
+        "fixed_rate": fixed_rate,
+        "markup_percent": max(0.0, markup_percent),
+    }
+    s = db.query(Setting).filter(Setting.key == "exchange_rate_config").first()
+    if not s:
+        s = Setting(key="exchange_rate_config")
+        db.add(s)
+    s.value = json.dumps(cfg)
+    db.commit()
+    flash(request, "Cài đặt tỉ giá đã được lưu!")
+    return RedirectResponse(url="/settings?tab=exchange_rate", status_code=302)
+
+
+@router.get("/api/exchange-rate")
+async def get_exchange_rate_api(request: Request, db: Session = Depends(get_db)):
+    if not check_auth(request):
+        return JSONResponse({"success": False}, status_code=401)
+    from services.exchange_rate_service import get_vnd_usdt_rate, get_exchange_config
+    cfg = get_exchange_config(db)
+    try:
+        rate = await get_vnd_usdt_rate(db)
+        return JSONResponse({"success": True, "rate": rate, "config": cfg})
+    except Exception as e:
+        return JSONResponse({"success": False, "message": str(e)})
+
+
+# ── Page update: pass payment method context ─────────────────────────────────
+# Override GET /settings to inject payment method configs
+
+_original_settings_page = settings_page.__wrapped__ if hasattr(settings_page, "__wrapped__") else None
+
+
+@router.get("/settings/payment-methods/status")
+async def get_payment_methods_status(request: Request, db: Session = Depends(get_db)):
+    if not check_auth(request):
+        return JSONResponse({"success": False}, status_code=401)
+    from models import PaymentMethod
+    pms = db.query(PaymentMethod).all()
+    result = []
+    for pm in pms:
+        cfg_raw = {}
+        if pm.config_encrypted:
+            try:
+                cfg_raw = json.loads(decrypt(pm.config_encrypted) or "{}")
+            except Exception:
+                pass
+        result.append({
+            "code": pm.method_code,
+            "name_vi": pm.display_name_vi,
+            "is_active": pm.is_active,
+            "mode": cfg_raw.get("mode"),
+            "wallet": cfg_raw.get("wallet_address", "")[:8] + "..." if cfg_raw.get("wallet_address") else "",
+        })
+    from services.exchange_rate_service import get_exchange_config
+    ex_cfg = get_exchange_config(db)
+    return JSONResponse({"methods": result, "exchange_rate_config": ex_cfg})

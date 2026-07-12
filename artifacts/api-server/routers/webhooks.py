@@ -1,6 +1,7 @@
 """
 Public webhook endpoints — no session authentication required.
-POST /webhooks/sepay  — receives SePay payment notifications.
+POST /webhooks/sepay   — receives SePay payment notifications.
+POST /webhooks/binance — receives Binance Pay Merchant webhook.
 """
 import json
 import logging
@@ -14,30 +15,14 @@ router = APIRouter()
 
 
 def _verify_sepay_auth(request: Request, db: Session) -> bool:
-    """
-    Validate SePay Authorization header: `Apikey <token>`.
-    Compares in-memory only — token value is NEVER logged.
-
-    FAIL-CLOSED security contract:
-      - SePay disabled          → False (do not process)
-      - SePay enabled, no token → False (misconfigured; reject to prevent fraud)
-      - SePay enabled, token present, header matches → True
-      - SePay enabled, token present, header wrong/missing → False
-    """
     from models import SepayConfig
     from crypto import decrypt
     cfg = db.query(SepayConfig).first()
     if not cfg or not cfg.is_enabled:
         return False
-    # SePay sends: Authorization: Apikey {WEBHOOK_SECRET}
-    # We compare against webhook_secret_encrypted (not api_token)
     stored = decrypt(cfg.webhook_secret_encrypted) if cfg.webhook_secret_encrypted else ""
-    # FAIL-CLOSED: if no webhook secret configured, reject all requests
     if not stored:
-        logger.warning(
-            "[webhook/sepay] SePay is enabled but no Webhook Secret is configured — "
-            "rejecting all requests. Configure a Webhook Secret in Settings → SePay."
-        )
+        logger.warning("[webhook/sepay] no Webhook Secret configured — rejecting")
         return False
     auth = request.headers.get("Authorization", "")
     if auth.startswith("Apikey "):
@@ -55,19 +40,8 @@ async def sepay_webhook(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
-    """
-    Receives SePay payment notification webhook.
-
-    Flow:
-      1. Authenticate via Authorization header (Apikey).
-      2. Parse JSON body.
-      3. Save + deduplicate transaction.
-      4. Return HTTP 200 immediately.
-      5. Background: match order, update payment_status, trigger fulfillment.
-    """
     if not _verify_sepay_auth(request, db):
-        logger.warning("[webhook/sepay] auth failed — check API token in settings")
-        # Return 200 to prevent SePay from retrying with a bad secret
+        logger.warning("[webhook/sepay] auth failed")
         return JSONResponse({"success": False, "message": "Unauthorized"}, status_code=401)
 
     try:
@@ -83,32 +57,107 @@ async def sepay_webhook(
         result = process_webhook_transaction(db, raw)
     except Exception as e:
         logger.error(f"[webhook/sepay] process error: {e}")
-        return JSONResponse({"success": True})  # always 200 to SePay
+        return JSONResponse({"success": True})
 
     action = result.get("action", "")
     order_id = result.get("order_id")
 
-    # Trigger fulfillment in background when payment complete
     if action in ("paid", "overpaid") and order_id:
         from services.payment_service import process_paid_order
         background_tasks.add_task(process_paid_order, order_id)
 
-    # Notify on partial payment
     if action == "partial" and order_id:
         background_tasks.add_task(
             _bg_notify_partial, order_id,
             result.get("new_paid", 0), result.get("expected", 0),
         )
 
-    # Notify admin of confirmed payment
     if action in ("paid", "overpaid") and order_id:
         background_tasks.add_task(_bg_notify_payment_received, order_id, action)
 
-    # Notify on late payment
     if action == "late_payment" and order_id:
         background_tasks.add_task(_bg_notify_late_payment, order_id)
 
     return JSONResponse({"success": True})
+
+
+@router.post("/webhooks/binance")
+async def binance_webhook(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """
+    Binance Pay Merchant webhook.
+    Verifies HMAC-SHA512 signature before processing.
+    Idempotent: calling process_paid_order twice is safe.
+    """
+    from models import PaymentMethod, Order, OrderStatus, PaymentStatus
+    from crypto import decrypt
+    from services.binance_service import verify_binance_webhook_signature
+
+    pm = db.query(PaymentMethod).filter(
+        PaymentMethod.method_code == "binance_pay",
+        PaymentMethod.is_active == True,
+    ).first()
+    if not pm or not pm.config_encrypted:
+        return JSONResponse({"returnCode": "FAIL", "returnMessage": "Not configured"}, status_code=400)
+
+    try:
+        cfg = json.loads(decrypt(pm.config_encrypted) or "{}")
+    except Exception:
+        return JSONResponse({"returnCode": "FAIL"}, status_code=400)
+
+    if cfg.get("mode") != "merchant":
+        return JSONResponse({"returnCode": "FAIL", "returnMessage": "Not merchant mode"}, status_code=400)
+
+    secret_key = cfg.get("secret_key") or ""
+    if not secret_key:
+        return JSONResponse({"returnCode": "FAIL"}, status_code=400)
+
+    # Extract signature headers
+    timestamp = request.headers.get("BinancePay-Timestamp", "")
+    nonce = request.headers.get("BinancePay-Nonce", "")
+    signature = request.headers.get("BinancePay-Signature", "")
+
+    try:
+        body_bytes = await request.body()
+        body_str = body_bytes.decode("utf-8")
+        raw = json.loads(body_str)
+    except Exception:
+        return JSONResponse({"returnCode": "FAIL"}, status_code=400)
+
+    # SECURITY: verify signature — never trust unsigned payloads
+    if not verify_binance_webhook_signature(timestamp, nonce, body_str, signature, secret_key):
+        logger.warning("[webhook/binance] signature verification failed")
+        return JSONResponse({"returnCode": "FAIL", "returnMessage": "Signature mismatch"}, status_code=401)
+
+    biz_type = raw.get("bizType") or ""
+    biz_status = raw.get("bizStatus") or ""
+    biz_id_str = raw.get("bizIdStr") or raw.get("merchantTradeNo") or ""
+
+    logger.info(f"[webhook/binance] bizType={biz_type} status={biz_status} tradeNo={biz_id_str}")
+
+    if biz_type == "PAY" and biz_status == "PAY_SUCCESS":
+        # Find order by order_code (= merchantTradeNo)
+        order = db.query(Order).filter(Order.order_code == biz_id_str).first()
+        if order and order.payment_status not in (PaymentStatus.paid, PaymentStatus.overpaid):
+            order.payment_status = PaymentStatus.paid
+            order.paid_at = __import__("datetime").datetime.utcnow()
+            # Extract USDT amount from payload
+            biz_data = {}
+            try:
+                biz_data = json.loads(raw.get("data") or "{}")
+            except Exception:
+                pass
+            paid_usdt = float(biz_data.get("openAmount") or order.expected_crypto_amount or 0)
+            order.received_crypto_amount = paid_usdt
+            order.paid_amount = paid_usdt * (order.exchange_rate or 1.0)
+            db.commit()
+            from services.payment_service import process_paid_order
+            background_tasks.add_task(process_paid_order, order.id)
+
+    return JSONResponse({"returnCode": "SUCCESS", "returnMessage": "SUCCESS"})
 
 
 # ── Background notification helpers ───────────────────────────────────────────

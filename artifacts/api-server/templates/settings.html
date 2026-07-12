@@ -10,10 +10,14 @@
 {% endblock %}
 
 {% block content %}
-<ul class="nav nav-tabs mb-4" id="settingsTabs">
+<ul class="nav nav-tabs mb-4 flex-wrap" id="settingsTabs">
   <li class="nav-item"><button class="nav-link {% if active_tab == 'shop' or not active_tab %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#tabShop">🏪 Cửa hàng</button></li>
   <li class="nav-item"><button class="nav-link {% if active_tab == 'bot' %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#tabBot">🤖 Bot Telegram</button></li>
-  <li class="nav-item"><button class="nav-link {% if active_tab == 'sepay' %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#tabSepay">💳 SePay</button></li>
+  <li class="nav-item"><button class="nav-link {% if active_tab == 'sepay' %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#tabSepay">🏦 SePay</button></li>
+  <li class="nav-item"><button class="nav-link {% if active_tab == 'binance' %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#tabBinance">🟡 Binance Pay</button></li>
+  <li class="nav-item"><button class="nav-link {% if active_tab == 'bep20' %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#tabBep20">🟨 BEP20</button></li>
+  <li class="nav-item"><button class="nav-link {% if active_tab == 'trc20' %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#tabTrc20">🔴 TRC20</button></li>
+  <li class="nav-item"><button class="nav-link {% if active_tab == 'exchange_rate' %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#tabExchangeRate">💱 Tỉ giá</button></li>
   <li class="nav-item"><button class="nav-link {% if active_tab == 'order' %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#tabOrder">📦 Đơn hàng</button></li>
   <li class="nav-item"><button class="nav-link {% if active_tab == 'api' %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#tabApi">🔗 API</button></li>
 </ul>
@@ -250,6 +254,305 @@
     </div>
   </div>
 
+  <!-- Binance Pay Tab -->
+  <div class="tab-pane fade {% if active_tab == 'binance' %}show active{% endif %}" id="tabBinance">
+    <div class="row g-3">
+      <div class="col-12 col-lg-7">
+        <div class="card mb-3">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <h6 class="mb-0">🟡 Binance Pay</h6>
+            <span class="badge" id="binanceBadge" style="background:#f0b90b;color:#000">Đang tải...</span>
+          </div>
+          <form action="/settings/payment-method/binance" method="post">
+            <div class="card-body">
+              <div class="mb-3 form-check form-switch">
+                <input class="form-check-input" type="checkbox" name="is_enabled" id="binanceEnabled">
+                <label class="form-check-label fw-semibold" for="binanceEnabled">Bật Binance Pay</label>
+              </div>
+              <div class="mb-3">
+                <label class="form-label fw-semibold">Chế độ</label>
+                <div class="d-flex gap-3">
+                  <div class="form-check">
+                    <input class="form-check-input" type="radio" name="mode" value="manual" id="modeManual" checked onchange="toggleBinanceMode()">
+                    <label class="form-check-label" for="modeManual">Thủ công (Manual Pay ID)</label>
+                  </div>
+                  <div class="form-check">
+                    <input class="form-check-input" type="radio" name="mode" value="merchant" id="modeMerchant" onchange="toggleBinanceMode()">
+                    <label class="form-check-label" for="modeMerchant">Tự động (Merchant API)</label>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Manual mode fields -->
+              <div id="binanceManualFields">
+                <div class="mb-3">
+                  <label class="form-label">Binance Pay ID</label>
+                  <input type="text" name="pay_id" id="binancePayId" class="form-control" placeholder="123456789">
+                  <small class="text-muted">Hiển thị trong Binance App → Pay → Receive</small>
+                </div>
+                <div class="mb-3">
+                  <label class="form-label">Tên người nhận</label>
+                  <input type="text" name="recipient_name" id="binanceRecipient" class="form-control" placeholder="NGUYEN VAN A">
+                </div>
+                <div class="mb-3">
+                  <label class="form-label">Hướng dẫn thanh toán (hiện cho user)</label>
+                  <textarea name="payment_instructions" class="form-control" rows="3" id="binanceInstructions" placeholder="Mở Binance App → Pay → Nhập Pay ID → Nhập đúng số tiền USDT..."></textarea>
+                </div>
+              </div>
+
+              <!-- Merchant mode fields -->
+              <div id="binanceMerchantFields" style="display:none">
+                <div class="mb-3">
+                  <label class="form-label">Merchant ID</label>
+                  <input type="text" name="merchant_id" id="binanceMerchantId" class="form-control" placeholder="Binance Merchant ID">
+                </div>
+                <div class="mb-3">
+                  <label class="form-label">API Key</label>
+                  <div class="input-group">
+                    <input type="password" name="api_key" id="binanceApiKey" class="form-control" placeholder="••••••••••••">
+                    <button type="button" class="btn btn-outline-secondary" onclick="togglePass('binanceApiKey',this)"><i class="bi bi-eye"></i></button>
+                  </div>
+                </div>
+                <div class="mb-3">
+                  <label class="form-label">Secret Key</label>
+                  <div class="input-group">
+                    <input type="password" name="secret_key" id="binanceSecretKey" class="form-control" placeholder="••••••••••••">
+                    <button type="button" class="btn btn-outline-secondary" onclick="togglePass('binanceSecretKey',this)"><i class="bi bi-eye"></i></button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="mb-3">
+                <label class="form-label">Thời gian hết hạn (phút)</label>
+                <input type="number" name="timeout_minutes" class="form-control" value="30" min="5" max="1440" style="max-width:140px">
+              </div>
+            </div>
+            <div class="card-footer"><button type="submit" class="btn btn-primary">💾 Lưu cài đặt Binance Pay</button></div>
+          </form>
+        </div>
+      </div>
+      <div class="col-12 col-lg-5">
+        <div class="card">
+          <div class="card-header"><h6 class="mb-0">ℹ️ Hướng dẫn</h6></div>
+          <div class="card-body small">
+            <p><strong>Manual Pay ID:</strong> Khách tự chuyển đúng số USDT tới Pay ID của bạn. Admin xác nhận thủ công.</p>
+            <p><strong>Merchant API:</strong> Hệ thống tự tạo lệnh thanh toán Binance Pay. Cần đăng ký Binance Pay Merchant tại <a href="https://merchant.binance.com" target="_blank">merchant.binance.com</a>.</p>
+            <div id="binanceCurrentConfig" class="mt-3"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- USDT BEP20 Tab -->
+  <div class="tab-pane fade {% if active_tab == 'bep20' %}show active{% endif %}" id="tabBep20">
+    <div class="row g-3">
+      <div class="col-12 col-lg-7">
+        <div class="card mb-3">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <h6 class="mb-0">🟨 USDT BEP20 (BSC)</h6>
+            <span class="badge" id="bep20Badge" style="background:#f0b90b;color:#000">Đang tải...</span>
+          </div>
+          <form action="/settings/payment-method/bep20" method="post">
+            <div class="card-body">
+              <div class="mb-3 form-check form-switch">
+                <input class="form-check-input" type="checkbox" name="is_enabled" id="bep20Enabled">
+                <label class="form-check-label fw-semibold" for="bep20Enabled">Bật USDT BEP20</label>
+              </div>
+              <div class="mb-3">
+                <label class="form-label">Địa chỉ ví BSC <span class="text-danger">*</span></label>
+                <input type="text" name="wallet_address" id="bep20Wallet" class="form-control font-monospace" placeholder="0x...">
+                <small class="text-muted">Nhận USDT qua mạng BNB Smart Chain (BEP20)</small>
+              </div>
+              <div class="mb-3">
+                <label class="form-label">USDT Contract Address</label>
+                <input type="text" name="usdt_contract" id="bep20Contract" class="form-control font-monospace"
+                       value="0x55d398326f99059fF775485246999027B3197955">
+                <small class="text-muted">Mặc định: USDT BEP20 chính thức</small>
+              </div>
+              <div class="mb-3">
+                <label class="form-label">BSCScan API Key</label>
+                <div class="input-group">
+                  <input type="password" name="bscscan_api_key" id="bscscanKey" class="form-control" placeholder="••••••••">
+                  <button type="button" class="btn btn-outline-secondary" onclick="togglePass('bscscanKey',this)"><i class="bi bi-eye"></i></button>
+                </div>
+                <small class="text-muted">Lấy tại <a href="https://bscscan.com/myapikey" target="_blank">bscscan.com</a> (miễn phí)</small>
+              </div>
+              <div class="mb-3">
+                <label class="form-label">BSC RPC URL (tuỳ chọn)</label>
+                <input type="text" name="bsc_rpc_url" id="bscRpc" class="form-control" value="https://bsc-dataseed.binance.org/">
+              </div>
+              <div class="row g-3">
+                <div class="col-sm-4">
+                  <label class="form-label">Xác nhận cần</label>
+                  <input type="number" name="required_confirmations" class="form-control" value="12" min="1" id="bep20Confs">
+                </div>
+                <div class="col-sm-4">
+                  <label class="form-label">Poll mỗi (giây)</label>
+                  <input type="number" name="poll_interval_seconds" class="form-control" value="30" min="15" id="bep20Poll">
+                </div>
+                <div class="col-sm-4">
+                  <label class="form-label">Hết hạn (phút)</label>
+                  <input type="number" name="timeout_minutes" class="form-control" value="60" min="15" id="bep20Timeout">
+                </div>
+              </div>
+            </div>
+            <div class="card-footer"><button type="submit" class="btn btn-primary">💾 Lưu USDT BEP20</button></div>
+          </form>
+        </div>
+      </div>
+      <div class="col-12 col-lg-5">
+        <div class="card">
+          <div class="card-header"><h6 class="mb-0">ℹ️ Hướng dẫn BEP20</h6></div>
+          <div class="card-body small">
+            <p>Hệ thống sẽ tự động theo dõi USDT đến địa chỉ ví của bạn trên BNB Smart Chain.</p>
+            <p><strong>Ghi chú quan trọng:</strong></p>
+            <ul>
+              <li>Mỗi đơn có số USDT duy nhất (offset nhỏ) để phân biệt các lệnh đồng thời</li>
+              <li>BSCScan API Key giúp quét chính xác hơn (khuyến nghị)</li>
+              <li>Nếu không có BSCScan API, worker dùng RPC fallback (giới hạn)</li>
+              <li>Cần ít nhất <strong>12 confirmations</strong> BSC ≈ ~36 giây</li>
+            </ul>
+            <div id="bep20CurrentConfig" class="mt-2"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- USDT TRC20 Tab -->
+  <div class="tab-pane fade {% if active_tab == 'trc20' %}show active{% endif %}" id="tabTrc20">
+    <div class="row g-3">
+      <div class="col-12 col-lg-7">
+        <div class="card mb-3">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <h6 class="mb-0">🔴 USDT TRC20 (TRON)</h6>
+            <span class="badge bg-secondary" id="trc20Badge">Đang tải...</span>
+          </div>
+          <form action="/settings/payment-method/trc20" method="post">
+            <div class="card-body">
+              <div class="mb-3 form-check form-switch">
+                <input class="form-check-input" type="checkbox" name="is_enabled" id="trc20Enabled">
+                <label class="form-check-label fw-semibold" for="trc20Enabled">Bật USDT TRC20</label>
+              </div>
+              <div class="mb-3">
+                <label class="form-label">Địa chỉ ví TRON <span class="text-danger">*</span></label>
+                <input type="text" name="wallet_address" id="trc20Wallet" class="form-control font-monospace" placeholder="T...">
+                <small class="text-muted">Địa chỉ TRON bắt đầu bằng T</small>
+              </div>
+              <div class="mb-3">
+                <label class="form-label">USDT Contract Address</label>
+                <input type="text" name="usdt_contract" id="trc20Contract" class="form-control font-monospace"
+                       value="TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t">
+                <small class="text-muted">Mặc định: USDT TRC20 chính thức</small>
+              </div>
+              <div class="mb-3">
+                <label class="form-label">TronGrid API Key</label>
+                <div class="input-group">
+                  <input type="password" name="trongrid_api_key" id="tronGridKey" class="form-control" placeholder="••••••••">
+                  <button type="button" class="btn btn-outline-secondary" onclick="togglePass('tronGridKey',this)"><i class="bi bi-eye"></i></button>
+                </div>
+                <small class="text-muted">Lấy tại <a href="https://www.trongrid.io" target="_blank">trongrid.io</a> (free tier đủ dùng)</small>
+              </div>
+              <div class="row g-3">
+                <div class="col-sm-4">
+                  <label class="form-label">Xác nhận cần</label>
+                  <input type="number" name="required_confirmations" class="form-control" value="20" min="1" id="trc20Confs">
+                </div>
+                <div class="col-sm-4">
+                  <label class="form-label">Poll mỗi (giây)</label>
+                  <input type="number" name="poll_interval_seconds" class="form-control" value="30" min="15" id="trc20Poll">
+                </div>
+                <div class="col-sm-4">
+                  <label class="form-label">Hết hạn (phút)</label>
+                  <input type="number" name="timeout_minutes" class="form-control" value="60" min="15" id="trc20Timeout">
+                </div>
+              </div>
+            </div>
+            <div class="card-footer"><button type="submit" class="btn btn-primary">💾 Lưu USDT TRC20</button></div>
+          </form>
+        </div>
+      </div>
+      <div class="col-12 col-lg-5">
+        <div class="card">
+          <div class="card-header"><h6 class="mb-0">ℹ️ Hướng dẫn TRC20</h6></div>
+          <div class="card-body small">
+            <p>Hệ thống sẽ tự động quét USDT đến địa chỉ ví TRON của bạn qua TronGrid API.</p>
+            <p><strong>Ghi chú quan trọng:</strong></p>
+            <ul>
+              <li>TRC20 phí giao dịch rất thấp (&lt;$1) — phổ biến ở VN</li>
+              <li>Thời gian xác nhận: 20 blocks ≈ ~60 giây</li>
+              <li>TronGrid free tier: 1000 req/day — đủ cho lưu lượng nhỏ</li>
+              <li>Nâng lên TronGrid Pro nếu có nhiều đơn đồng thời</li>
+            </ul>
+            <div id="trc20CurrentConfig" class="mt-2"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Exchange Rate Tab -->
+  <div class="tab-pane fade {% if active_tab == 'exchange_rate' %}show active{% endif %}" id="tabExchangeRate">
+    <div class="row g-3">
+      <div class="col-12 col-lg-7">
+        <div class="card mb-3">
+          <div class="card-header"><h6 class="mb-0">💱 Cài đặt tỉ giá VND/USDT</h6></div>
+          <form action="/settings/exchange-rate" method="post">
+            <div class="card-body">
+              <div class="mb-3">
+                <label class="form-label fw-semibold">Chế độ tỉ giá</label>
+                <div class="d-flex flex-column gap-2">
+                  <div class="form-check">
+                    <input class="form-check-input" type="radio" name="rate_mode" value="fixed" id="rateFixed" checked onchange="toggleRateMode()">
+                    <label class="form-check-label" for="rateFixed">Cố định (nhập tay)</label>
+                  </div>
+                  <div class="form-check">
+                    <input class="form-check-input" type="radio" name="rate_mode" value="auto_binance" id="rateAutoBinance" onchange="toggleRateMode()">
+                    <label class="form-check-label" for="rateAutoBinance">Tự động (Binance P2P)</label>
+                  </div>
+                  <div class="form-check">
+                    <input class="form-check-input" type="radio" name="rate_mode" value="auto_coingecko" id="rateAutoCoingecko" onchange="toggleRateMode()">
+                    <label class="form-check-label" for="rateAutoCoingecko">Tự động (CoinGecko)</label>
+                  </div>
+                </div>
+              </div>
+              <div id="fixedRateField" class="mb-3">
+                <label class="form-label">Tỉ giá cố định (VND / 1 USDT)</label>
+                <div class="input-group" style="max-width:260px">
+                  <input type="number" name="fixed_rate" id="fixedRateInput" class="form-control" value="25500" min="1000" step="100">
+                  <span class="input-group-text">VND/USDT</span>
+                </div>
+              </div>
+              <div class="mb-3">
+                <label class="form-label">Markup % (cộng thêm)</label>
+                <div class="input-group" style="max-width:180px">
+                  <input type="number" name="markup_percent" class="form-control" value="2" min="0" max="50" step="0.1">
+                  <span class="input-group-text">%</span>
+                </div>
+                <small class="text-muted">VD: tỉ giá 25.500 + 2% = 26.010 VND/USDT</small>
+              </div>
+            </div>
+            <div class="card-footer d-flex gap-2">
+              <button type="submit" class="btn btn-primary">💾 Lưu tỉ giá</button>
+              <button type="button" class="btn btn-outline-info" onclick="previewRate()">🔍 Xem tỉ giá hiện tại</button>
+            </div>
+          </form>
+        </div>
+      </div>
+      <div class="col-12 col-lg-5">
+        <div class="card">
+          <div class="card-header"><h6 class="mb-0">📊 Tỉ giá hiện tại</h6></div>
+          <div class="card-body">
+            <div id="ratePreview" class="text-center py-3">
+              <button class="btn btn-outline-primary" onclick="previewRate()">Xem tỉ giá</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Order Tab -->
   <div class="tab-pane fade {% if active_tab == 'order' %}show active{% endif %}" id="tabOrder">
     <div class="card">
@@ -411,5 +714,148 @@ async function sendTestWebhook() {
     div.innerHTML = `<div class="alert alert-danger py-1 small">${e}</div>`;
   }
 }
+
+// ── Binance Pay ────────────────────────────────────────────────────────────────
+function toggleBinanceMode() {
+  const mode = document.querySelector('input[name="mode"]:checked')?.value;
+  document.getElementById('binanceManualFields').style.display = mode === 'manual' ? '' : 'none';
+  document.getElementById('binanceMerchantFields').style.display = mode === 'merchant' ? '' : 'none';
+}
+
+async function loadPaymentMethodConfig(code) {
+  try {
+    const r = await fetch(`/settings/payment-method/${code}/config`);
+    const d = await r.json();
+    if (!d.success) return null;
+    return d;
+  } catch(e) { return null; }
+}
+
+// Load Binance config when tab shown
+document.querySelector('[data-bs-target="#tabBinance"]')?.addEventListener('shown.bs.tab', async () => {
+  const d = await loadPaymentMethodConfig('binance_pay');
+  if (!d) return;
+  const badge = document.getElementById('binanceBadge');
+  badge.textContent = d.is_active ? 'Đang bật' : 'Đang tắt';
+  badge.style.background = d.is_active ? '#198754' : '#6c757d';
+  badge.style.color = '#fff';
+  document.getElementById('binanceEnabled').checked = d.is_active;
+  const cfg = d.config || {};
+  if (cfg.mode) {
+    document.querySelector(`input[name="mode"][value="${cfg.mode}"]`).checked = true;
+    toggleBinanceMode();
+  }
+  if (cfg.pay_id) document.getElementById('binancePayId').value = cfg.pay_id;
+  if (cfg.recipient_name) document.getElementById('binanceRecipient').value = cfg.recipient_name;
+  if (cfg.payment_instructions) document.getElementById('binanceInstructions').value = cfg.payment_instructions;
+  if (cfg.merchant_id) document.getElementById('binanceMerchantId').value = cfg.merchant_id;
+});
+
+// Load BEP20 config when tab shown
+document.querySelector('[data-bs-target="#tabBep20"]')?.addEventListener('shown.bs.tab', async () => {
+  const d = await loadPaymentMethodConfig('usdt_bep20');
+  if (!d) return;
+  const badge = document.getElementById('bep20Badge');
+  badge.textContent = d.is_active ? 'Đang bật' : 'Đang tắt';
+  badge.style.background = d.is_active ? '#198754' : '#6c757d';
+  badge.style.color = '#fff';
+  document.getElementById('bep20Enabled').checked = d.is_active;
+  const cfg = d.config || {};
+  if (cfg.wallet_address) document.getElementById('bep20Wallet').value = cfg.wallet_address;
+  if (cfg.usdt_contract) document.getElementById('bep20Contract').value = cfg.usdt_contract;
+  if (cfg.bsc_rpc_url) document.getElementById('bscRpc').value = cfg.bsc_rpc_url;
+  if (cfg.required_confirmations) document.getElementById('bep20Confs').value = cfg.required_confirmations;
+  if (cfg.poll_interval_seconds) document.getElementById('bep20Poll').value = cfg.poll_interval_seconds;
+  if (cfg.timeout_minutes) document.getElementById('bep20Timeout').value = cfg.timeout_minutes;
+});
+
+// Load TRC20 config when tab shown
+document.querySelector('[data-bs-target="#tabTrc20"]')?.addEventListener('shown.bs.tab', async () => {
+  const d = await loadPaymentMethodConfig('usdt_trc20');
+  if (!d) return;
+  const badge = document.getElementById('trc20Badge');
+  badge.textContent = d.is_active ? 'Đang bật' : 'Đang tắt';
+  badge.className = `badge ${d.is_active ? 'bg-success' : 'bg-secondary'}`;
+  document.getElementById('trc20Enabled').checked = d.is_active;
+  const cfg = d.config || {};
+  if (cfg.wallet_address) document.getElementById('trc20Wallet').value = cfg.wallet_address;
+  if (cfg.usdt_contract) document.getElementById('trc20Contract').value = cfg.usdt_contract;
+  if (cfg.required_confirmations) document.getElementById('trc20Confs').value = cfg.required_confirmations;
+  if (cfg.poll_interval_seconds) document.getElementById('trc20Poll').value = cfg.poll_interval_seconds;
+  if (cfg.timeout_minutes) document.getElementById('trc20Timeout').value = cfg.timeout_minutes;
+});
+
+// Load exchange rate config when tab shown
+document.querySelector('[data-bs-target="#tabExchangeRate"]')?.addEventListener('shown.bs.tab', async () => {
+  const r = await fetch('/api/exchange-rate');
+  const d = await r.json().catch(() => null);
+  if (!d?.success) return;
+  const cfg = d.config || {};
+  const mode = cfg.mode || 'fixed';
+  const rateInput = document.querySelector(`input[name="rate_mode"][value="${mode}"]`);
+  if (rateInput) { rateInput.checked = true; toggleRateMode(); }
+  if (cfg.fixed_rate) document.getElementById('fixedRateInput').value = cfg.fixed_rate;
+  document.querySelector('input[name="markup_percent"]').value = cfg.markup_percent ?? 2;
+  if (d.rate) {
+    document.getElementById('ratePreview').innerHTML =
+      `<div class="display-6 text-primary fw-bold">${Number(d.rate).toLocaleString('vi-VN')} đ</div>
+       <div class="text-muted small mt-1">VND / 1 USDT (sau markup)</div>`;
+  }
+});
+
+function toggleRateMode() {
+  const mode = document.querySelector('input[name="rate_mode"]:checked')?.value;
+  document.getElementById('fixedRateField').style.display = mode === 'fixed' ? '' : 'none';
+}
+
+async function previewRate() {
+  const div = document.getElementById('ratePreview');
+  div.innerHTML = '<span class="text-muted">Đang lấy tỉ giá...</span>';
+  try {
+    const r = await fetch('/api/exchange-rate');
+    const d = await r.json();
+    if (d.success) {
+      div.innerHTML =
+        `<div class="display-6 text-primary fw-bold">${Number(d.rate).toLocaleString('vi-VN')} đ</div>
+         <div class="text-muted small mt-1">VND / 1 USDT (sau markup ${d.config?.markup_percent ?? 0}%)</div>
+         <div class="small mt-2">Chế độ: <b>${d.config?.mode || 'fixed'}</b></div>`;
+    } else {
+      div.innerHTML = `<div class="alert alert-danger small py-1">${d.message}</div>`;
+    }
+  } catch(e) {
+    div.innerHTML = `<div class="alert alert-danger small py-1">${e}</div>`;
+  }
+}
+
+// ── If active tab is a new payment tab, load its config immediately ────────────
+(async () => {
+  const tab = '{{ active_tab }}';
+  if (tab === 'binance') {
+    const d = await loadPaymentMethodConfig('binance_pay');
+    if (d) {
+      const badge = document.getElementById('binanceBadge');
+      if (badge) { badge.textContent = d.is_active ? 'Đang bật' : 'Đang tắt'; badge.style.background = d.is_active ? '#198754' : '#6c757d'; badge.style.color = '#fff'; }
+      document.getElementById('binanceEnabled').checked = d.is_active;
+      const cfg = d.config || {};
+      if (cfg.mode) { const el = document.querySelector(`input[name="mode"][value="${cfg.mode}"]`); if(el){el.checked=true; toggleBinanceMode();} }
+      if (cfg.pay_id) document.getElementById('binancePayId').value = cfg.pay_id;
+      if (cfg.recipient_name) document.getElementById('binanceRecipient').value = cfg.recipient_name;
+    }
+  } else if (tab === 'bep20') {
+    const d = await loadPaymentMethodConfig('usdt_bep20');
+    if (d) {
+      document.getElementById('bep20Enabled').checked = d.is_active;
+      const cfg = d.config || {};
+      if (cfg.wallet_address) document.getElementById('bep20Wallet').value = cfg.wallet_address;
+    }
+  } else if (tab === 'trc20') {
+    const d = await loadPaymentMethodConfig('usdt_trc20');
+    if (d) {
+      document.getElementById('trc20Enabled').checked = d.is_active;
+      const cfg = d.config || {};
+      if (cfg.wallet_address) document.getElementById('trc20Wallet').value = cfg.wallet_address;
+    }
+  }
+})();
 </script>
 {% endblock %}

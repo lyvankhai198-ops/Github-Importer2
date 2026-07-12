@@ -1,19 +1,20 @@
 """
-SePay payment service.
+Payment service — multi-method.
 
 Responsibilities:
-  - Payment code generation
-  - VietQR URL construction (public img.vietqr.io — no API key needed)
-  - Pending payment order creation
-  - Webhook transaction normalization + matching
-  - process_paid_order (idempotent, runs API purchase after confirmed payment)
+  - Payment code generation (SePay)
+  - VietQR URL construction
+  - Pending payment order creation (draft → method selection)
+  - SePay webhook transaction normalization + matching
+  - process_paid_order (idempotent — all methods share this)
   - Expiry background loop
+  - Safe message deletion helpers
 
 Security rules:
-  - api_token / webhook_secret NEVER written to logs or responses.
-  - POST /buy called at most once per order (idempotency set).
+  - api_token / webhook_secret / crypto keys NEVER written to logs.
   - process_paid_order is idempotent: checks order.status before acting.
-  - payment_status is ONLY set by webhook processing — never by user callbacks.
+  - payment_status ONLY set by webhook/worker — never by user callbacks.
+  - Crypto txid used exactly once (unique DB constraint).
 """
 import json
 import logging
@@ -56,14 +57,22 @@ def is_sepay_enabled(db: Session) -> bool:
     return bool(cfg and cfg.is_enabled)
 
 
-# ── Payment code ───────────────────────────────────────────────────────────────
+def get_enabled_payment_methods(db: Session) -> list[str]:
+    """Return list of enabled method_codes. Always includes 'bank_transfer' if SePay is enabled."""
+    from models import PaymentMethod
+    methods = []
+    if is_sepay_enabled(db):
+        methods.append("bank_transfer")
+    pm_rows = db.query(PaymentMethod).filter(PaymentMethod.is_active == True).all()
+    for pm in pm_rows:
+        if pm.method_code not in methods:
+            methods.append(pm.method_code)
+    return methods
+
+
+# ── Payment code (SePay) ───────────────────────────────────────────────────────
 
 def generate_payment_code(order_code: str, prefix: str = "AIC") -> str:
-    """
-    Generate a unique payment transfer content code.
-    Format: {PREFIX}{8 uppercase hex chars}
-    Example: AICCF4B8D1A
-    """
     import hashlib
     seed = order_code + uuid.uuid4().hex
     hex_part = hashlib.md5(seed.encode()).hexdigest()[:8].upper()
@@ -80,11 +89,6 @@ def generate_vietqr_url(
     account_name: str = "",
     shop_name: str = "",
 ) -> str:
-    """
-    Build VietQR image URL using vietqr.app.
-    All parameters are URL-encoded with urllib.parse.urlencode.
-    Sensitive fields (api_token, webhook_secret) are NEVER included here.
-    """
     from urllib.parse import urlencode
     params = {
         "acc": account_number,
@@ -101,16 +105,19 @@ def generate_vietqr_url(
     return "https://vietqr.app/img?" + urlencode(params)
 
 
-# ── Create pending payment order ───────────────────────────────────────────────
+# ── Create pending payment order (draft — method not yet selected) ─────────────
 
 def create_pending_payment_order(
     db: Session,
     telegram_user_id: str,
     product_id: int,
     quantity: int,
+    payment_method: str = "bank_transfer",
 ) -> Order:
     """
     Create an order in pending_payment state.
+    payment_method defaults to bank_transfer for backward compat;
+    the new flow passes the chosen method.
     Does NOT call API source — payment must arrive first.
     """
     from models import Product
@@ -124,7 +131,6 @@ def create_pending_payment_order(
 
     order_code = "ORD-" + uuid.uuid4().hex[:8].upper()
     total = product.sale_price * quantity
-    payment_code = generate_payment_code(order_code, prefix)
 
     order = Order(
         order_code=order_code,
@@ -137,10 +143,15 @@ def create_pending_payment_order(
         paid_amount=0.0,
         status=OrderStatus.pending_payment,
         payment_status=PaymentStatus.pending,
-        payment_method="bank_transfer",
-        payment_code=payment_code,
+        payment_method=payment_method,
+        payment_currency="VND",
         payment_expires_at=datetime.utcnow() + timedelta(minutes=timeout),
     )
+
+    if payment_method == "bank_transfer":
+        payment_code = generate_payment_code(order_code, prefix)
+        order.payment_code = payment_code
+
     db.add(order)
     db.commit()
     db.refresh(order)
@@ -154,14 +165,119 @@ def create_pending_payment_order(
     return order
 
 
-# ── Webhook transaction processing ─────────────────────────────────────────────
+def create_crypto_payment_order(
+    db: Session,
+    telegram_user_id: str,
+    product_id: int,
+    quantity: int,
+    payment_method: str,  # usdt_bep20 | usdt_trc20
+    wallet_address: str,
+    expected_crypto_amount: float,
+    exchange_rate: float,
+    required_confirmations: int,
+    network: str,
+    timeout_minutes: int = 60,
+) -> Order:
+    """Create an order for BEP20 or TRC20 USDT payment."""
+    from models import Product
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        raise ValueError("Product not found")
+
+    order_code = "ORD-" + uuid.uuid4().hex[:8].upper()
+    total = product.sale_price * quantity
+
+    order = Order(
+        order_code=order_code,
+        telegram_user_id=telegram_user_id,
+        product_id=product_id,
+        quantity=quantity,
+        unit_price=product.sale_price,
+        total_price=total,
+        expected_amount=total,
+        paid_amount=0.0,
+        status=OrderStatus.pending_payment,
+        payment_status=PaymentStatus.pending,
+        payment_method=payment_method,
+        payment_currency="USDT",
+        exchange_rate=exchange_rate,
+        expected_crypto_amount=expected_crypto_amount,
+        payment_address=wallet_address,
+        payment_network=network,
+        required_confirmations=required_confirmations,
+        confirmations=0,
+        payment_expires_at=datetime.utcnow() + timedelta(minutes=timeout_minutes),
+    )
+    db.add(order)
+    db.commit()
+    db.refresh(order)
+
+    user = db.query(User).filter(User.telegram_id == telegram_user_id).first()
+    if user:
+        user.last_active_at = datetime.utcnow()
+        db.commit()
+
+    return order
+
+
+def create_binance_order(
+    db: Session,
+    telegram_user_id: str,
+    product_id: int,
+    quantity: int,
+    expected_crypto_amount: float,
+    exchange_rate: float,
+    timeout_minutes: int = 30,
+    prepay_id: str = "",
+    checkout_url: str = "",
+    mode: str = "manual",  # "manual" | "merchant"
+) -> Order:
+    """Create an order for Binance Pay."""
+    from models import Product
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        raise ValueError("Product not found")
+
+    order_code = "ORD-" + uuid.uuid4().hex[:8].upper()
+    total = product.sale_price * quantity
+
+    order = Order(
+        order_code=order_code,
+        telegram_user_id=telegram_user_id,
+        product_id=product_id,
+        quantity=quantity,
+        unit_price=product.sale_price,
+        total_price=total,
+        expected_amount=total,
+        paid_amount=0.0,
+        status=OrderStatus.pending_payment,
+        payment_status=PaymentStatus.pending,
+        payment_method="binance_pay",
+        payment_currency="USDT",
+        exchange_rate=exchange_rate,
+        expected_crypto_amount=expected_crypto_amount,
+        payment_network="BINANCE",
+        payment_txid=prepay_id,         # prepayId stored here for merchant mode
+        payment_address=checkout_url,   # checkoutUrl stored here for merchant mode
+        payment_expires_at=datetime.utcnow() + timedelta(minutes=timeout_minutes),
+    )
+    if mode == "manual":
+        order.status = OrderStatus.waiting_manual_verification
+    db.add(order)
+    db.commit()
+    db.refresh(order)
+
+    user = db.query(User).filter(User.telegram_id == telegram_user_id).first()
+    if user:
+        user.last_active_at = datetime.utcnow()
+        db.commit()
+
+    return order
+
+
+# ── SePay Webhook transaction processing ───────────────────────────────────────
 
 def _normalize_sepay_transaction(raw: dict) -> dict:
-    """
-    Map SePay webhook fields to canonical names.
-    SePay sends: id, gateway, transactionDate, accountNumber,
-                 transferContent, transferAmount, referenceCode.
-    """
     return {
         "transaction_id": str(raw.get("id") or raw.get("transactionId") or ""),
         "gateway": raw.get("gateway", ""),
@@ -175,7 +291,6 @@ def _normalize_sepay_transaction(raw: dict) -> dict:
 
 
 def _find_payment_code(content: str, prefix: str = "AIC") -> str | None:
-    """Find payment_code (prefix + 8 hex chars) in transfer content, case-insensitive."""
     pattern = re.compile(rf"({re.escape(prefix)}[0-9A-Fa-f]{{8}})", re.IGNORECASE)
     match = pattern.search(content or "")
     return match.group(1).upper() if match else None
@@ -199,10 +314,7 @@ def _parse_tx_date(raw_date: str) -> datetime | None:
 def process_webhook_transaction(db: Session, raw: dict) -> dict:
     """
     Save and match a SePay webhook event.
-    Returns dict with action, order_id, new_paid, expected.
-
     Idempotent: duplicate tx_id → ignored via unique constraint check.
-    Only processes amount_in > 0.
     """
     tx_data = _normalize_sepay_transaction(raw)
     tx_id = tx_data["transaction_id"]
@@ -213,17 +325,14 @@ def process_webhook_transaction(db: Session, raw: dict) -> dict:
     if amount_in <= 0:
         return {"success": True, "action": "ignored_outgoing"}
 
-    # Deduplication
     existing = db.query(PaymentTransaction).filter_by(
         provider="sepay", external_transaction_id=tx_id
     ).first()
     if existing:
-        logger.info(f"[payment] duplicate tx {tx_id} ignored")
         return {"success": True, "action": "duplicate_ignored"}
 
     tx_date = _parse_tx_date(tx_data["transaction_date"])
 
-    # Build transaction record
     tx = PaymentTransaction(
         provider="sepay",
         external_transaction_id=tx_id,
@@ -238,7 +347,6 @@ def process_webhook_transaction(db: Session, raw: dict) -> dict:
         raw_json=json.dumps(raw, ensure_ascii=False)[:10000],
     )
 
-    # Find matching order via payment_code in transfer content
     sepay_cfg = get_sepay_config(db)
     prefix = (sepay_cfg.payment_prefix or "AIC") if sepay_cfg else "AIC"
     payment_code = _find_payment_code(tx_data["transfer_content"], prefix)
@@ -250,19 +358,16 @@ def process_webhook_transaction(db: Session, raw: dict) -> dict:
     if not order:
         db.add(tx)
         db.commit()
-        logger.warning(f"[payment] tx {tx_id}: no order for content='{tx_data['transfer_content']}'")
         return {"success": True, "action": "unmatched"}
 
     tx.matched_order_id = order.id
 
-    # Expired orders
     if order.status == OrderStatus.payment_expired:
         tx.match_status = "late_payment"
         db.add(tx)
         db.commit()
         return {"success": True, "action": "late_payment", "order_id": order.id}
 
-    # Already-terminal orders
     if order.status in (OrderStatus.completed, OrderStatus.cancelled,
                          OrderStatus.api_failed, OrderStatus.failed):
         tx.match_status = "late_payment"
@@ -270,7 +375,6 @@ def process_webhook_transaction(db: Session, raw: dict) -> dict:
         db.commit()
         return {"success": True, "action": "order_already_done", "order_id": order.id}
 
-    # Accumulate paid_amount
     current_paid = order.paid_amount or 0.0
     new_paid = current_paid + amount_in
     expected = order.expected_amount or order.total_price
@@ -283,12 +387,12 @@ def process_webhook_transaction(db: Session, raw: dict) -> dict:
         order.payment_status = PaymentStatus.partial
         tx.match_status = "partial"
         action = "partial"
-    elif abs(new_paid - expected) < 1:  # within 1đ tolerance
+    elif abs(new_paid - expected) < 1:
         order.payment_status = PaymentStatus.paid
         order.paid_at = datetime.utcnow()
         tx.match_status = "matched"
         action = "paid"
-    else:  # overpaid
+    else:
         if allow_overpay:
             order.payment_status = PaymentStatus.overpaid
             order.paid_at = datetime.utcnow()
@@ -317,7 +421,7 @@ def process_webhook_transaction(db: Session, raw: dict) -> dict:
     }
 
 
-# ── Process paid order (idempotent) ───────────────────────────────────────────
+# ── Process paid order (idempotent — shared by all payment methods) ────────────
 
 async def process_paid_order(order_id: int):
     """
@@ -328,12 +432,11 @@ async def process_paid_order(order_id: int):
     from database import SessionLocal
     from services.order_service import _poll_source_order, _processing_keys
     from services.normalize import normalize_delivery_items
-    from services.product_service import get_best_source
+    from services.product_service import get_best_source, get_product_sources_count
     from integrations.manager import api_manager
     from models import Product, DeliveryMode, OrderSourceAttempt
 
     if order_id in _processing_paid:
-        logger.info(f"[payment] process_paid_order {order_id} already running")
         return
     _processing_paid.add(order_id)
 
@@ -343,8 +446,8 @@ async def process_paid_order(order_id: int):
         if not order:
             return
 
-        # Gate: only process pending_payment orders
-        if order.status != OrderStatus.pending_payment:
+        # Gate: only process orders that are pending_payment or waiting_manual_verification
+        if order.status not in (OrderStatus.pending_payment, OrderStatus.waiting_manual_verification):
             logger.info(f"[payment] order {order_id} status={order.status} — skip")
             return
 
@@ -357,7 +460,7 @@ async def process_paid_order(order_id: int):
         order.status = OrderStatus.processing_api
         db.commit()
 
-        # Delete QR + old messages, send "acquiring items" interim before any API call
+        # Delete QR + old messages, send "acquiring items" interim
         await _send_payment_confirmed_interim(order, db)
 
         product = db.query(Product).filter(Product.id == order.product_id).first()
@@ -369,16 +472,25 @@ async def process_paid_order(order_id: int):
             await _notify_admin_manual_needed(order, db)
             return
 
+        # Check if any sources exist
+        sources_count = get_product_sources_count(db, order.product_id)
         source = get_best_source(db, order.product_id)
+
         if not source:
-            order.status = OrderStatus.api_failed
-            db.commit()
-            await _notify_paid_api_failed(order, db, "Không tìm thấy nguồn hàng")
+            if sources_count > 0:
+                # Sources exist but all out of stock
+                order.status = OrderStatus.paid_waiting_stock
+                db.commit()
+                await _notify_paid_waiting_stock(order, db)
+            else:
+                # No sources configured at all
+                order.status = OrderStatus.api_failed
+                db.commit()
+                await _notify_paid_api_failed(order, db, "Không tìm thấy nguồn hàng")
             return
 
         idem_key = order.order_code
         if idem_key in _processing_keys:
-            logger.warning(f"[payment] order {idem_key} already in order_service processing")
             return
         _processing_keys.add(idem_key)
 
@@ -402,16 +514,22 @@ async def process_paid_order(order_id: int):
             db.commit()
 
             if not buy_result.get("success"):
-                order.status = OrderStatus.api_failed
-                db.commit()
-                await _notify_paid_api_failed(order, db, (buy_result.get("message") or "API error")[:200])
+                # Check stock again — might have run out between check and buy
+                source_check = get_best_source(db, order.product_id)
+                if not source_check:
+                    order.status = OrderStatus.paid_waiting_stock
+                    db.commit()
+                    await _notify_paid_waiting_stock(order, db)
+                else:
+                    order.status = OrderStatus.api_failed
+                    db.commit()
+                    await _notify_paid_api_failed(order, db, (buy_result.get("message") or "API error")[:200])
                 return
 
             raw_data = buy_result.get("data", {})
             items = normalize_delivery_items(raw_data)
 
             if not items and buy_result.get("order_id"):
-                logger.info(f"[payment] polling source for {order.order_code}")
                 polled_data, items = await _poll_source_order(adapter, buy_result["order_id"])
                 if polled_data:
                     raw_data = polled_data
@@ -445,10 +563,8 @@ async def process_paid_order(order_id: int):
         finally:
             _processing_keys.discard(idem_key)
 
-        # Deliver to user
         await _deliver_to_user(order, db)
 
-        # Update product stats
         if product:
             product.sold_count = (product.sold_count or 0) + order.quantity
             db.commit()
@@ -478,7 +594,6 @@ async def _deliver_to_user(order: Order, db: Session):
         admin_id = cfg.admin_telegram_id if cfg else ""
         bot = bot_manager._application.bot
 
-        # QR + old messages already deleted by _send_payment_confirmed_interim before API call
         sv = order.status.value if hasattr(order.status, "value") else str(order.status)
 
         if sv == "completed":
@@ -516,6 +631,42 @@ async def _notify_paid_api_failed(order: Order, db: Session, reason: str = ""):
         logger.error(f"[payment] _notify_paid_api_failed error: {e}")
 
 
+async def _notify_paid_waiting_stock(order: Order, db: Session):
+    """Payment received but source ran out of stock unexpectedly."""
+    try:
+        from services.bot_service import bot_manager
+        if not bot_manager.is_running():
+            return
+        from bot.i18n import t, get_user_lang
+        cfg = db.query(TelegramBotConfig).first()
+        admin_id = cfg.admin_telegram_id if cfg else ""
+        bot = bot_manager._application.bot
+        lang = get_user_lang(db, order.telegram_user_id)
+        chat_id = order.payment_chat_id or order.telegram_user_id
+        await bot.send_message(
+            chat_id=int(chat_id),
+            text=t(lang, "paid_waiting_stock_user"),
+            parse_mode="HTML",
+        )
+        if admin_id:
+            import html
+            product_name = order.product.name if order.product else str(order.product_id)
+            await bot.send_message(
+                chat_id=int(admin_id),
+                text=(
+                    f"⚠️ <b>ĐÃ NHẬN TIỀN — NGUỒN HẾT HÀNG!</b>\n\n"
+                    f"📋 Đơn: <code>{order.order_code}</code>\n"
+                    f"📦 Sản phẩm: {html.escape(product_name)}\n"
+                    f"👤 User: <code>{order.telegram_user_id}</code>\n"
+                    f"💰 Đã nhận: {(order.paid_amount or 0):,.0f}đ\n\n"
+                    "Cần giao thủ công, đổi nguồn hoặc hoàn tiền."
+                ),
+                parse_mode="HTML",
+            )
+    except Exception as e:
+        logger.error(f"[payment] _notify_paid_waiting_stock error: {e}")
+
+
 async def _notify_admin_manual_needed(order: Order, db: Session):
     try:
         from services.bot_service import bot_manager
@@ -534,7 +685,6 @@ async def _notify_admin_manual_needed(order: Order, db: Session):
 # ── Safe message deletion ──────────────────────────────────────────────────────
 
 async def safe_delete_message(bot, chat_id, message_id):
-    """Silently delete a Telegram message — ignore not-found / no-permission errors."""
     if not message_id or not chat_id:
         return
     try:
@@ -542,13 +692,12 @@ async def safe_delete_message(bot, chat_id, message_id):
     except Exception as e:
         err = str(e).lower()
         if any(x in err for x in ("not found", "message_id_invalid", "can't be deleted",
-                                  "message to delete", "badrequest")):
+                                   "message to delete", "badrequest")):
             return
         logger.debug(f"[safe_delete] chat={chat_id} msg={message_id}: {e}")
 
 
 async def _delete_all_payment_messages(bot, order: Order, db: Session):
-    """Delete product + quantity prompt + QR messages in order; clear IDs on the order."""
     chat_id = order.payment_chat_id or order.telegram_user_id
     await safe_delete_message(bot, chat_id, order.product_message_id)
     await safe_delete_message(bot, chat_id, order.quantity_prompt_message_id)
@@ -562,18 +711,20 @@ async def _delete_all_payment_messages(bot, order: Order, db: Session):
 async def _send_payment_confirmed_interim(order: Order, db: Session):
     """
     After confirming payment: delete all stored messages and send the 'acquiring items'
-    interim message.  Must be called *before* the API buy call so all paths see a clean chat.
+    interim message. Called *before* the API buy call.
     """
     try:
         from services.bot_service import bot_manager
         if not bot_manager.is_running():
             return
+        from bot.i18n import t, get_user_lang
         bot = bot_manager._application.bot
+        lang = get_user_lang(db, order.telegram_user_id)
         await _delete_all_payment_messages(bot, order, db)
         chat_id = order.payment_chat_id or order.telegram_user_id
         await bot.send_message(
             chat_id=int(chat_id),
-            text="✅ Đã nhận thanh toán.\nĐang lấy hàng tự động từ nguồn...",
+            text=t(lang, "payment_confirmed_interim"),
         )
     except Exception as e:
         logger.error(f"[payment] _send_payment_confirmed_interim error: {e}")

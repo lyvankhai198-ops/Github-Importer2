@@ -1,0 +1,8 @@
+- [Multi-method payment arch](multi-method-payment.md) — order created first (no method), payment method shown as inline keyboard; method chosen → order updated + payment instructions sent
+- [Crypto payment uniqueness](crypto-uniqueness.md) — tiny per-order offset on USDT amount prevents ambiguous matching of concurrent BEP20/TRC20 transfers to the same wallet
+- [Binance Pay two modes](binance-modes.md) — single PaymentMethod row "binance_pay"; mode "manual"|"merchant" stored in config_encrypted JSON; manual=admin confirms, merchant=Binance API webhook
+- [Background worker isolation](background-workers.md) — bep20/trc20/binance_merchant workers run as independent asyncio tasks started in main.py lifespan; one crashing does NOT affect others
+- [i18n pattern](i18n-pattern.md) — all bot text via t(lang, "key", **kwargs) in bot/i18n.py; lang fetched from User.language_code; first-time user sees language picker before main menu
+- [Migrations approach](migrations-approach.md) — SQLite-safe ALTER TABLE migrations in _run_migrations() in main.py; each wrapped in try/except to skip already-existing columns
+- [paid_waiting_stock status](paid-waiting-stock.md) — distinct OrderStatus value for "paid but source ran out at fulfillment time"; triggers admin alert + user notif; never says "chưa thanh toán"
+- [process_paid_order idempotent](process-paid-order.md) — shared by all payment methods; gate on order.status + payment_status; _processing_paid set prevents concurrent re-entry
