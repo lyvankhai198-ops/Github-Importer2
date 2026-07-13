@@ -39,28 +39,10 @@ class _FakeAsyncClient:
         self._calls.append(("GET", url, params))
         return self._responses.pop(0)
 
-    async def post(self, url, headers=None, params=None, json=None):
+    async def post(self, url, headers=None, json=None):
         if self._raise_timeout:
             raise httpx.TimeoutException("simulated timeout")
         self._calls.append(("POST", url, json))
-        return self._responses.pop(0)
-
-    async def put(self, url, headers=None, params=None, json=None):
-        if self._raise_timeout:
-            raise httpx.TimeoutException("simulated timeout")
-        self._calls.append(("PUT", url, json))
-        return self._responses.pop(0)
-
-    async def patch(self, url, headers=None, params=None, json=None):
-        if self._raise_timeout:
-            raise httpx.TimeoutException("simulated timeout")
-        self._calls.append(("PATCH", url, json))
-        return self._responses.pop(0)
-
-    async def delete(self, url, headers=None, params=None):
-        if self._raise_timeout:
-            raise httpx.TimeoutException("simulated timeout")
-        self._calls.append(("DELETE", url, None))
         return self._responses.pop(0)
 
 

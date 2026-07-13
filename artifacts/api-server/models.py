@@ -34,12 +34,8 @@ class InventoryStatus(str, enum.Enum):
 
 
 class AuthType(str, enum.Enum):
-    none = "none"
     x_api_key = "x_api_key"
     bearer = "bearer"
-    basic_auth = "basic_auth"
-    query_param = "query_param"
-    custom_header = "custom_header"
 
 
 class ApiType(str, enum.Enum):
@@ -328,53 +324,6 @@ class ApiConnection(Base):
     last_error = Column(Text, nullable=True)
     created_at = Column(DateTime, default=now)
     updated_at = Column(DateTime, default=now, onupdate=now)
-
-    # ── Generic API engine config (see integrations/generic/) ──────────────
-    # Every field below is admin-configurable via the web UI. No supplier
-    # (CanBoSo, Zampto, or any future one) may be hardcoded into the sync /
-    # test / order code paths — only these config columns drive behavior.
-    # Auth
-    auth_header_name = Column(String(100), nullable=True)   # x_api_key / custom_header
-    auth_query_name = Column(String(100), nullable=True)     # query_param
-    auth_prefix = Column(String(50), nullable=True)          # bearer / custom_header prefix
-    username_encrypted = Column(Text, nullable=True)         # basic_auth
-    password_encrypted = Column(Text, nullable=True)         # basic_auth
-    # Endpoints + HTTP methods (relative to base_url, or absolute URLs)
-    test_endpoint = Column(String(500), nullable=True)
-    test_method = Column(String(10), nullable=True)
-    products_endpoint = Column(String(500), nullable=True)
-    products_method = Column(String(10), nullable=True)
-    order_endpoint = Column(String(500), nullable=True)
-    order_method = Column(String(10), nullable=True)
-    balance_endpoint = Column(String(500), nullable=True)
-    balance_method = Column(String(10), nullable=True)
-    order_get_endpoint = Column(String(500), nullable=True)  # e.g. /orders/{order_id}
-    order_get_method = Column(String(10), nullable=True)
-    orders_list_endpoint = Column(String(500), nullable=True)
-    orders_list_method = Column(String(10), nullable=True)
-    # Query params & body templates (JSON text, admin-edited, {{placeholder}} substitution)
-    default_query_params = Column(Text, nullable=True)
-    test_query_params = Column(Text, nullable=True)
-    products_query_params = Column(Text, nullable=True)
-    order_query_params = Column(Text, nullable=True)
-    order_body_template = Column(Text, nullable=True)
-    products_pagination = Column(Text, nullable=True)  # JSON: {enabled,page_param,limit_param,limit,start_page,max_pages}
-    # Response parsing — JSON dot-paths (blank = generic-fallback heuristics)
-    products_list_path = Column(String(255), nullable=True)
-    product_id_path = Column(String(255), nullable=True)
-    product_name_path = Column(String(255), nullable=True)
-    product_price_path = Column(String(255), nullable=True)
-    product_stock_path = Column(String(255), nullable=True)
-    product_description_path = Column(String(255), nullable=True)
-    product_category_path = Column(String(255), nullable=True)
-    product_status_path = Column(String(255), nullable=True)
-    product_extra_mapping = Column(Text, nullable=True)  # JSON: extra field->path (item_type, seller, min/max qty, image, warranty, duration, metadata...)
-    balance_value_path = Column(String(255), nullable=True)
-    balance_currency_path = Column(String(255), nullable=True)
-    order_response_id_path = Column(String(255), nullable=True)
-    order_response_status_path = Column(String(255), nullable=True)
-    order_response_items_path = Column(String(255), nullable=True)
-    order_response_message_path = Column(String(255), nullable=True)
 
     api_products = relationship("ApiProduct", back_populates="connection", cascade="all, delete-orphan")
     orders = relationship("Order", back_populates="api_connection")

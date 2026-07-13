@@ -195,47 +195,6 @@ def _run_migrations():
         "ALTER TABLE api_products ADD COLUMN external_item_type VARCHAR(20)",
         "ALTER TABLE api_products ADD COLUMN external_seller VARCHAR(255)",
         "ALTER TABLE api_products ADD COLUMN external_category VARCHAR(100)",
-        # ── Generic API connection engine (see integrations/generic/) ──────
-        # Every ApiConnection now carries its own request/response config so
-        # any supplier API can be added from the UI with zero new code.
-        "ALTER TABLE api_connections ADD COLUMN auth_header_name VARCHAR(100)",
-        "ALTER TABLE api_connections ADD COLUMN auth_query_name VARCHAR(100)",
-        "ALTER TABLE api_connections ADD COLUMN auth_prefix VARCHAR(50)",
-        "ALTER TABLE api_connections ADD COLUMN username_encrypted TEXT",
-        "ALTER TABLE api_connections ADD COLUMN password_encrypted TEXT",
-        "ALTER TABLE api_connections ADD COLUMN test_endpoint VARCHAR(500)",
-        "ALTER TABLE api_connections ADD COLUMN test_method VARCHAR(10)",
-        "ALTER TABLE api_connections ADD COLUMN products_endpoint VARCHAR(500)",
-        "ALTER TABLE api_connections ADD COLUMN products_method VARCHAR(10)",
-        "ALTER TABLE api_connections ADD COLUMN order_endpoint VARCHAR(500)",
-        "ALTER TABLE api_connections ADD COLUMN order_method VARCHAR(10)",
-        "ALTER TABLE api_connections ADD COLUMN balance_endpoint VARCHAR(500)",
-        "ALTER TABLE api_connections ADD COLUMN balance_method VARCHAR(10)",
-        "ALTER TABLE api_connections ADD COLUMN order_get_endpoint VARCHAR(500)",
-        "ALTER TABLE api_connections ADD COLUMN order_get_method VARCHAR(10)",
-        "ALTER TABLE api_connections ADD COLUMN orders_list_endpoint VARCHAR(500)",
-        "ALTER TABLE api_connections ADD COLUMN orders_list_method VARCHAR(10)",
-        "ALTER TABLE api_connections ADD COLUMN default_query_params TEXT",
-        "ALTER TABLE api_connections ADD COLUMN test_query_params TEXT",
-        "ALTER TABLE api_connections ADD COLUMN products_query_params TEXT",
-        "ALTER TABLE api_connections ADD COLUMN order_query_params TEXT",
-        "ALTER TABLE api_connections ADD COLUMN order_body_template TEXT",
-        "ALTER TABLE api_connections ADD COLUMN products_pagination TEXT",
-        "ALTER TABLE api_connections ADD COLUMN products_list_path VARCHAR(255)",
-        "ALTER TABLE api_connections ADD COLUMN product_id_path VARCHAR(255)",
-        "ALTER TABLE api_connections ADD COLUMN product_name_path VARCHAR(255)",
-        "ALTER TABLE api_connections ADD COLUMN product_price_path VARCHAR(255)",
-        "ALTER TABLE api_connections ADD COLUMN product_stock_path VARCHAR(255)",
-        "ALTER TABLE api_connections ADD COLUMN product_description_path VARCHAR(255)",
-        "ALTER TABLE api_connections ADD COLUMN product_category_path VARCHAR(255)",
-        "ALTER TABLE api_connections ADD COLUMN product_status_path VARCHAR(255)",
-        "ALTER TABLE api_connections ADD COLUMN product_extra_mapping TEXT",
-        "ALTER TABLE api_connections ADD COLUMN balance_value_path VARCHAR(255)",
-        "ALTER TABLE api_connections ADD COLUMN balance_currency_path VARCHAR(255)",
-        "ALTER TABLE api_connections ADD COLUMN order_response_id_path VARCHAR(255)",
-        "ALTER TABLE api_connections ADD COLUMN order_response_status_path VARCHAR(255)",
-        "ALTER TABLE api_connections ADD COLUMN order_response_items_path VARCHAR(255)",
-        "ALTER TABLE api_connections ADD COLUMN order_response_message_path VARCHAR(255)",
     ]
     with engine.connect() as conn:
         ran_language_selected_migration = False
@@ -302,46 +261,6 @@ def _run_migrations():
             conn.commit()
         except Exception:
             pass
-
-    # Backfill generic-engine config for connections created before this
-    # feature existed, so CanBoSo/Zampto/Custom connections keep working
-    # unchanged — never overwrites a column an admin (or an earlier backfill)
-    # has already set.
-    _backfill_generic_engine_config()
-
-
-def _backfill_generic_engine_config():
-    """
-    For every ApiConnection whose generic-engine config is still empty
-    (i.e. it predates this feature, or was created via the old minimal
-    add/edit form), apply the matching preset's config so it keeps working
-    through GenericAdapter exactly as it did under the old hardcoded
-    per-supplier adapters. Idempotent: only touches connections where
-    order_endpoint is still NULL — an admin who has since customized their
-    config is never overwritten.
-    """
-    from database import SessionLocal
-    from models import ApiConnection
-    from integrations.generic.presets import PRESETS
-
-    db = SessionLocal()
-    try:
-        connections = db.query(ApiConnection).filter(ApiConnection.order_endpoint.is_(None)).all()
-        for conn in connections:
-            preset = PRESETS.get(conn.api_type.value if hasattr(conn.api_type, "value") else conn.api_type)
-            if not preset:
-                preset = PRESETS["custom"]
-            for key, value in preset.items():
-                if key == "base_url":
-                    continue  # never override an existing connection's base_url
-                setattr(conn, key, value)
-        if connections:
-            db.commit()
-            logger.info(f"GENERIC_ENGINE_BACKFILL: migrated {len(connections)} existing connection(s) to generic config")
-    except Exception:
-        logger.exception("Generic engine config backfill failed")
-    finally:
-        db.close()
 
 
 def _seed_payment_methods():
