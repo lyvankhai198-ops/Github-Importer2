@@ -157,10 +157,17 @@ async def calculate_crypto_amount(db, vnd_amount: float) -> tuple[float, float]:
 def generate_unique_crypto_amount(db, base_amount: float, network: str) -> float:
     """
     Generate a unique USDT amount by adding a tiny offset to distinguish concurrent orders.
-    Scans pending orders on the same network for collision.
-    The offset is at most 0.0099 USDT (< 1%).
+    Scans pending orders AND pending wallet deposits on the same network for
+    collision — both share the same receiving wallet address, so an order
+    payment and a deposit must never land on the exact same amount either.
+    The offset step (0.0005) is deliberately larger than
+    crypto_monitor._DEPOSIT_AMOUNT_TOLERANCE (0.0002) — matching is a
+    "within tolerance" scan, so two candidates that differ by less than the
+    tolerance would be indistinguishable to the matcher and defeat this
+    whole uniqueness mechanism. The offset is at most 0.0495 USDT (< 1%
+    for any deposit amount this system would realistically request).
     """
-    from models import Order, OrderStatus, PaymentStatus
+    from models import Order, OrderStatus, PaymentStatus, WalletDeposit, WalletDepositStatus
     from datetime import datetime, timedelta
 
     # Find all pending crypto orders on same network in last 24h
@@ -183,12 +190,29 @@ def generate_unique_crypto_amount(db, base_amount: float, network: str) -> float
         if amt:
             existing_amounts.add(round(float(amt), 4))
 
+    deposits = (
+        db.query(WalletDeposit.amount)
+        .filter(
+            WalletDeposit.network == network,
+            WalletDeposit.status.in_([
+                WalletDepositStatus.pending.value,
+                WalletDepositStatus.detected.value,
+                WalletDepositStatus.confirming.value,
+            ]),
+            WalletDeposit.created_at >= cutoff,
+        )
+        .all()
+    )
+    for (amt,) in deposits:
+        if amt:
+            existing_amounts.add(round(float(amt), 4))
+
     candidate = round(base_amount, 4)
-    offset = 0.0001
+    offset = 0.0005
     for _ in range(99):
         if candidate not in existing_amounts:
             return candidate
         candidate = round(base_amount + offset, 4)
-        offset += 0.0001
+        offset += 0.0005
 
     return candidate

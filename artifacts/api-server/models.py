@@ -84,10 +84,14 @@ class WalletTxType(str, enum.Enum):
 
 
 class WalletDepositStatus(str, enum.Enum):
-    pending = "pending"      # awaiting admin confirmation
-    confirmed = "confirmed"  # admin confirmed, wallet credited
-    rejected = "rejected"    # admin rejected, nothing credited
-    cancelled = "cancelled"  # shopper cancelled before admin acted
+    pending = "pending"            # created, awaiting an incoming transfer/on-chain tx
+    detected = "detected"          # a matching on-chain tx was seen (crypto only)
+    confirming = "confirming"      # confirmations accumulating (crypto only)
+    credited = "credited"          # auto-verified (or admin-approved) and wallet credited — terminal
+    expired = "expired"            # deposit window passed with nothing received — terminal
+    failed = "failed"              # verification failed / admin rejected from manual_review — terminal
+    manual_review = "manual_review"  # auto-verification couldn't complete; admin must credit or fail it
+    cancelled = "cancelled"        # shopper cancelled before anything arrived — terminal
 
 
 class ApiClientStatus(str, enum.Enum):
@@ -454,12 +458,14 @@ class PaymentTransaction(Base):
     amount_out = Column(Float, default=0.0)
     reference_code = Column(String(255), nullable=True)
     matched_order_id = Column(Integer, ForeignKey("orders.id"), nullable=True)
+    matched_deposit_id = Column(Integer, ForeignKey("wallet_deposits.id"), nullable=True)
     match_status = Column(String(50), nullable=True)
     raw_json = Column(Text, nullable=True)
     created_at = Column(DateTime, default=now)
 
     matched_order = relationship("Order", back_populates="payment_transactions",
                                   foreign_keys=[matched_order_id])
+    matched_deposit = relationship("WalletDeposit", foreign_keys=[matched_deposit_id])
 
     __table_args__ = (
         UniqueConstraint("provider", "external_transaction_id", name="uq_payment_tx"),
@@ -484,6 +490,7 @@ class CryptoTransaction(Base):
     block_number = Column(Integer, nullable=True)
     confirmations = Column(Integer, nullable=True, default=0)
     matched_order_id = Column(Integer, ForeignKey("orders.id"), nullable=True)
+    matched_deposit_id = Column(Integer, ForeignKey("wallet_deposits.id"), nullable=True)
     status = Column(String(30), nullable=True)  # detected|confirming|confirmed|unmatched|duplicate
     raw_json = Column(Text, nullable=True)
     detected_at = Column(DateTime, nullable=True)
@@ -492,6 +499,7 @@ class CryptoTransaction(Base):
 
     matched_order = relationship("Order", back_populates="crypto_transactions",
                                   foreign_keys=[matched_order_id])
+    matched_deposit = relationship("WalletDeposit", foreign_keys=[matched_deposit_id])
 
     __table_args__ = (
         UniqueConstraint("network", "txid", "log_index", name="uq_crypto_tx"),
@@ -524,10 +532,11 @@ class WalletTransaction(Base):
 
 class WalletDeposit(Base):
     """
-    A shopper-initiated top-up request. Admin manually confirms/rejects from
-    the dashboard after verifying the transfer arrived (mirrors the existing
-    Binance-manual / paid_waiting_stock manual-confirm pattern) — this table
-    is intentionally NOT wired into the SePay webhook or on-chain monitor.
+    A shopper-initiated top-up request. VND deposits are auto-credited from
+    the SePay webhook (matched on reference_code in the transfer content);
+    USDT deposits are auto-credited by the same on-chain monitors / Binance
+    Pay History sweep used for order payments. Admin manual credit/reject is
+    only used as a fallback once a deposit reaches `manual_review`.
     """
     __tablename__ = "wallet_deposits"
     id = Column(Integer, primary_key=True, index=True)
@@ -541,6 +550,22 @@ class WalletDeposit(Base):
     created_at = Column(DateTime, default=now)
     confirmed_at = Column(DateTime, nullable=True)
     confirmed_by = Column(String(100), nullable=True)
+
+    # ── Auto-verification fields ────────────────────────────────────────────
+    network = Column(String(50), nullable=True)             # BEP20 | TRC20 | ERC20 | BINANCE | None (VND)
+    receiving_address = Column(String(200), nullable=True)   # wallet/bank account shown to the shopper
+    payment_content = Column(String(100), nullable=True)     # exact bank-transfer content to match (VND)
+    chat_id = Column(Integer, nullable=True)                 # telegram chat the deposit request message lives in
+    deposit_message_id = Column(Integer, nullable=True)      # instruction message id, edited/deleted on outcome
+    external_transaction_id = Column(String(255), nullable=True, index=True)
+    confirmations = Column(Integer, nullable=True, default=0)
+    required_confirmations = Column(Integer, nullable=True)
+    raw_transaction_data = Column(Text, nullable=True)
+    expires_at = Column(DateTime, nullable=True)
+    detected_at = Column(DateTime, nullable=True)
+    verified_at = Column(DateTime, nullable=True)
+    credited_at = Column(DateTime, nullable=True)
+    failed_reason = Column(Text, nullable=True)
 
     user = relationship("User", foreign_keys=[telegram_user_id])
 

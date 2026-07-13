@@ -27,7 +27,8 @@ async def wallet_deposits_list(request: Request, db: Session = Depends(get_db), 
         return RedirectResponse(url="/login", status_code=302)
 
     q = db.query(WalletDeposit)
-    if status in ("pending", "confirmed", "rejected", "cancelled"):
+    valid_statuses = {s.value for s in WalletDepositStatus}
+    if status in valid_statuses:
         q = q.filter(WalletDeposit.status == WalletDepositStatus(status))
     deposits = q.order_by(WalletDeposit.created_at.desc()).limit(200).all()
 
@@ -37,7 +38,9 @@ async def wallet_deposits_list(request: Request, db: Session = Depends(get_db), 
         if d.telegram_user_id not in user_map:
             user_map[d.telegram_user_id] = db.query(User).filter(User.telegram_id == d.telegram_user_id).first()
 
-    pending_count = db.query(WalletDeposit).filter(WalletDeposit.status == WalletDepositStatus.pending).count()
+    # Most deposits now auto-credit; manual_review is the only state that
+    # actually needs an admin action, so that's what the badge counts.
+    pending_count = db.query(WalletDeposit).filter(WalletDeposit.status == WalletDepositStatus.manual_review).count()
     flash_msg = request.session.pop("flash", None)
     return templates.TemplateResponse(request, "wallet.html", {
         
@@ -60,23 +63,28 @@ async def confirm_deposit(deposit_id: int, request: Request, db: Session = Depen
     if not deposit:
         flash(request, "Yêu cầu nạp tiền không tồn tại!", "error")
         return RedirectResponse(url="/wallet", status_code=302)
-    if deposit.status != WalletDepositStatus.pending:
-        flash(request, "Yêu cầu này đã được xử lý!", "error")
+    if deposit.status != WalletDepositStatus.manual_review:
+        flash(request, "Yêu cầu này không (còn) ở trạng thái cần admin xử lý!", "error")
         return RedirectResponse(url="/wallet", status_code=302)
 
     admin_id = request.session.get("admin_id", "admin")
     try:
         # The credit and the status flip happen in ONE atomic transaction
-        # (extra_updates), guarded by "status = 'pending'" — so a
+        # (extra_updates), guarded by "status = 'manual_review'" — so a
         # double-click or a retry after a partial failure can never credit
-        # the wallet twice for the same deposit.
+        # the wallet twice for the same deposit. Manual credit is only
+        # allowed once auto-verification has given up (manual_review) —
+        # not on a still-in-flight pending/detected/confirming deposit,
+        # which the automatic monitors are still tracking.
         wallet_service.credit_wallet(
             db, deposit.telegram_user_id, deposit.currency, deposit.amount, WalletTxType.deposit,
-            deposit_id=deposit.id, note=f"Nạp tiền — {deposit.reference_code}", actor=str(admin_id),
+            deposit_id=deposit.id, note=f"Nạp tiền (thủ công) — {deposit.reference_code}", actor=str(admin_id),
             extra_updates=[(
-                "UPDATE wallet_deposits SET status = 'confirmed', admin_note = ?, "
-                "confirmed_at = ?, confirmed_by = ? WHERE id = ? AND status = 'pending'",
-                (admin_note, datetime.utcnow().isoformat(sep=" "), str(admin_id), deposit.id),
+                "UPDATE wallet_deposits SET status = 'credited', admin_note = ?, "
+                "verified_at = ?, credited_at = ?, confirmed_at = ?, confirmed_by = ? "
+                "WHERE id = ? AND status = 'manual_review'",
+                (admin_note, datetime.utcnow().isoformat(sep=" "), datetime.utcnow().isoformat(sep=" "),
+                 datetime.utcnow().isoformat(sep=" "), str(admin_id), deposit.id),
             )],
         )
         db.refresh(deposit)
@@ -110,20 +118,20 @@ async def reject_deposit(deposit_id: int, request: Request, db: Session = Depend
 
     admin_id = request.session.get("admin_id", "admin")
 
-    # Guarded, atomic transition — the WHERE status='pending' clause means
-    # this can never flip a deposit that a concurrent /confirm already
-    # moved out of pending (no reject-after-confirm race), and a stale
-    # double-submit of /reject itself is a no-op past the first call.
+    # Guarded, atomic transition — the WHERE status='manual_review' clause
+    # means this can never flip a deposit that a concurrent /confirm or an
+    # auto-verification pass already moved out of manual_review, and a
+    # stale double-submit of /reject itself is a no-op past the first call.
     rows = db.execute(
         text(
-            "UPDATE wallet_deposits SET status = 'rejected', admin_note = :note, "
-            "confirmed_at = :ts, confirmed_by = :admin WHERE id = :id AND status = 'pending'"
+            "UPDATE wallet_deposits SET status = 'failed', admin_note = :note, failed_reason = :note, "
+            "confirmed_at = :ts, confirmed_by = :admin WHERE id = :id AND status = 'manual_review'"
         ),
         {"note": admin_note, "ts": datetime.utcnow().isoformat(sep=" "), "admin": str(admin_id), "id": deposit_id},
     )
     if rows.rowcount == 0:
         db.rollback()
-        flash(request, "Yêu cầu này đã được xử lý!", "error")
+        flash(request, "Yêu cầu này không (còn) ở trạng thái cần admin xử lý!", "error")
         return RedirectResponse(url="/wallet", status_code=302)
     db.commit()
     db.refresh(deposit)

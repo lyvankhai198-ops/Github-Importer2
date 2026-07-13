@@ -4,11 +4,15 @@
 {% block content %}
 
 <div class="card mb-3">
-  <div class="card-body d-flex align-items-center gap-2">
+  <div class="card-body d-flex align-items-center gap-2 flex-wrap">
     <span class="text-muted">Trạng thái:</span>
-    <a href="/wallet?status=pending" class="btn btn-sm {{ 'btn-warning' if status == 'pending' else 'btn-outline-warning' }}">⏳ Chờ xác nhận ({{ pending_count }})</a>
-    <a href="/wallet?status=confirmed" class="btn btn-sm {{ 'btn-success' if status == 'confirmed' else 'btn-outline-success' }}">✅ Đã xác nhận</a>
-    <a href="/wallet?status=rejected" class="btn btn-sm {{ 'btn-danger' if status == 'rejected' else 'btn-outline-danger' }}">❌ Đã từ chối</a>
+    <a href="/wallet?status=manual_review" class="btn btn-sm {{ 'btn-warning' if status == 'manual_review' else 'btn-outline-warning' }}">⚠️ Cần admin xử lý ({{ pending_count }})</a>
+    <a href="/wallet?status=pending" class="btn btn-sm {{ 'btn-secondary' if status == 'pending' else 'btn-outline-secondary' }}">🕓 Chờ giao dịch</a>
+    <a href="/wallet?status=detected" class="btn btn-sm {{ 'btn-info' if status == 'detected' else 'btn-outline-info' }}">🔎 Đã phát hiện</a>
+    <a href="/wallet?status=confirming" class="btn btn-sm {{ 'btn-info' if status == 'confirming' else 'btn-outline-info' }}">⏳ Đang xác nhận</a>
+    <a href="/wallet?status=credited" class="btn btn-sm {{ 'btn-success' if status == 'credited' else 'btn-outline-success' }}">✅ Đã cộng tiền</a>
+    <a href="/wallet?status=expired" class="btn btn-sm {{ 'btn-dark' if status == 'expired' else 'btn-outline-dark' }}">⌛ Hết hạn</a>
+    <a href="/wallet?status=failed" class="btn btn-sm {{ 'btn-danger' if status == 'failed' else 'btn-outline-danger' }}">❌ Thất bại</a>
     <a href="/wallet?status=all" class="btn btn-sm {{ 'btn-secondary' if status == 'all' else 'btn-outline-secondary' }}">Tất cả</a>
   </div>
 </div>
@@ -22,8 +26,9 @@
             <th>Mã tham chiếu</th>
             <th>User</th>
             <th>Số tiền</th>
-            <th>Phương thức</th>
+            <th>Phương thức / Network</th>
             <th>Trạng thái</th>
+            <th>Xác nhận</th>
             <th>Ngày tạo</th>
             <th>Hành động</th>
           </tr>
@@ -32,6 +37,7 @@
           {% for d in deposits %}
           {% set u = user_map.get(d.telegram_user_id) %}
           {% set cur = d.currency.value if d.currency.value is defined else d.currency %}
+          {% set st = d.status.value if d.status.value is defined else d.status %}
           <tr>
             <td><code>{{ d.reference_code }}</code></td>
             <td>
@@ -41,18 +47,23 @@
               <div class="text-muted small">{{ d.telegram_user_id }}</div>
             </td>
             <td class="fw-bold">
-              {% if cur == "VND" %}{{ "{:,.0f}".format(d.amount).replace(",", ".") }}đ{% else %}{{ "%.2f"|format(d.amount) }} USDT{% endif %}
+              {% if cur == "VND" %}{{ "{:,.0f}".format(d.amount).replace(",", ".") }}đ{% else %}{{ "%.4f"|format(d.amount) }} USDT{% endif %}
             </td>
-            <td>{{ d.method or '—' }}</td>
+            <td>{{ d.method or '—' }}{% if d.network %}<div class="text-muted small">{{ d.network }}</div>{% endif %}</td>
             <td>
-              {% if d.status.value == "pending" or d.status == "pending" %}<span class="badge bg-warning text-dark">Chờ xác nhận</span>
-              {% elif d.status.value == "confirmed" or d.status == "confirmed" %}<span class="badge bg-success">Đã xác nhận</span>
-              {% elif d.status.value == "rejected" or d.status == "rejected" %}<span class="badge bg-danger">Đã từ chối</span>
+              {% if st == "pending" %}<span class="badge bg-secondary">Chờ giao dịch</span>
+              {% elif st == "detected" %}<span class="badge bg-info text-dark">Đã phát hiện</span>
+              {% elif st == "confirming" %}<span class="badge bg-info text-dark">Đang xác nhận</span>
+              {% elif st == "credited" %}<span class="badge bg-success">Đã cộng tiền</span>
+              {% elif st == "expired" %}<span class="badge bg-dark">Hết hạn</span>
+              {% elif st == "failed" %}<span class="badge bg-danger">Thất bại</span>
+              {% elif st == "manual_review" %}<span class="badge bg-warning text-dark">Cần admin xử lý</span>
               {% else %}<span class="badge bg-secondary">Đã hủy</span>{% endif %}
             </td>
+            <td><small>{% if d.required_confirmations %}{{ d.confirmations or 0 }}/{{ d.required_confirmations }}{% else %}—{% endif %}</small></td>
             <td><small>{{ d.created_at.strftime('%d/%m/%Y %H:%M') }}</small></td>
             <td>
-              {% if d.status.value == "pending" or d.status == "pending" %}
+              {% if st == "manual_review" %}
               <div class="d-flex gap-1">
                 <form action="/wallet/{{ d.id }}/confirm" method="post" onsubmit="return confirm('Xác nhận đã nhận tiền và cộng vào ví user?')">
                   <button type="submit" class="btn btn-sm btn-success">✅ Xác nhận</button>
@@ -62,12 +73,12 @@
                 </form>
               </div>
               {% else %}
-              <small class="text-muted">{{ d.admin_note or '' }}</small>
+              <small class="text-muted">{{ d.admin_note or d.failed_reason or '' }}</small>
               {% endif %}
             </td>
           </tr>
           {% else %}
-          <tr><td colspan="7" class="text-center text-muted py-4">Không có yêu cầu nạp tiền nào</td></tr>
+          <tr><td colspan="8" class="text-center text-muted py-4">Không có yêu cầu nạp tiền nào</td></tr>
           {% endfor %}
         </tbody>
       </table>

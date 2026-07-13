@@ -448,6 +448,16 @@ async def notify_user_wallet_deposit_rejected(bot, chat_id: str, deposit, lang: 
         logger.error(f"notify_user_wallet_deposit_rejected error: {e}")
 
 
+async def notify_user_wallet_deposit_expired(bot, chat_id: str, deposit, lang: str = "vi"):
+    """User: deposit window passed with nothing received — no manual action taken."""
+    try:
+        from bot.i18n import t
+        text = t(lang, "wallet_deposit_expired_user", ref=deposit.reference_code)
+        await bot.send_message(chat_id=int(chat_id), text=text, parse_mode="HTML")
+    except Exception as e:
+        logger.error(f"notify_user_wallet_deposit_expired error: {e}")
+
+
 async def notify_user_wallet_admin_adjustment(bot, chat_id: str, currency: str, amount: float,
                                                note: str, is_credit: bool, lang: str = "vi"):
     try:

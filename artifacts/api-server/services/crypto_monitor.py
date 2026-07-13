@@ -55,9 +55,6 @@ async def _check_bep20_transfers(cfg: dict, db) -> None:
     bscscan_key = cfg.get("bscscan_api_key") or ""
     required_conf = int(cfg.get("required_confirmations") or 12)
 
-    if not wallet or not contract:
-        return
-
     from models import Order, OrderStatus, PaymentStatus, CryptoTransaction
 
     # Find pending BEP20 orders
@@ -76,19 +73,54 @@ async def _check_bep20_transfers(cfg: dict, db) -> None:
         )
         .all()
     )
-    if not pending:
+    pending_deposits = _get_pending_deposits(db, "BEP20")
+    if not wallet or not contract:
+        return
+    if not pending and not pending_deposits:
         return
 
     # Use BSCScan API to get recent token transfers
     if bscscan_key:
-        await _scan_bep20_via_bscscan(wallet, contract, bscscan_key, required_conf, pending, db)
+        await _scan_bep20_via_bscscan(wallet, contract, bscscan_key, required_conf, pending, db, pending_deposits)
     else:
-        await _scan_bep20_via_rpc(rpc_url, wallet, contract, required_conf, pending, db)
+        await _scan_bep20_via_rpc(rpc_url, wallet, contract, required_conf, pending, db, pending_deposits)
+
+
+def _get_pending_deposits(db, network: str) -> list:
+    """
+    Deposits to try matching an incoming on-chain USDT transfer against for
+    `network` — active ones (still counting confirmations) PLUS recently
+    expired/failed/cancelled ones. The latter group is included so a
+    transfer that arrives late (after the deposit's window already closed)
+    still gets linked and escalated to manual_review instead of silently
+    landing as an unmatched on-chain transaction that nobody looks at —
+    see _process_crypto_tx_for_deposits for how the two groups are handled
+    differently.
+    """
+    from models import WalletDeposit, WalletDepositStatus
+    from datetime import timedelta
+    cutoff = datetime.utcnow() - timedelta(hours=48)
+    return (
+        db.query(WalletDeposit)
+        .filter(
+            WalletDeposit.network == network,
+            WalletDeposit.status.in_([
+                WalletDepositStatus.pending.value,
+                WalletDepositStatus.detected.value,
+                WalletDepositStatus.confirming.value,
+                WalletDepositStatus.expired.value,
+                WalletDepositStatus.failed.value,
+                WalletDepositStatus.cancelled.value,
+            ]),
+            WalletDeposit.created_at >= cutoff,
+        )
+        .all()
+    )
 
 
 async def _scan_bep20_via_bscscan(
     wallet: str, contract: str, api_key: str,
-    required_conf: int, pending_orders: list, db,
+    required_conf: int, pending_orders: list, db, pending_deposits: list = None,
 ):
     try:
         import httpx
@@ -130,17 +162,99 @@ async def _scan_bep20_via_bscscan(
                 pending_orders=pending_orders,
                 raw=tx,
             )
+            await _process_crypto_tx_for_deposits(
+                db=db, network="BEP20", txid=txid, log_index=log_index,
+                amount=amount, confirmations=confs, required_confirmations=required_conf,
+                pending_deposits=pending_deposits or [],
+            )
     except Exception as e:
         logger.error(f"[bep20] bscscan scan error: {e}")
 
 
+_TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+_rpc_decimals_cache: dict = {}
+
+
+async def _rpc_call(client, rpc_url: str, method: str, params: list):
+    resp = await client.post(rpc_url, json={"jsonrpc": "2.0", "id": 1, "method": method, "params": params})
+    data = resp.json()
+    if "error" in data:
+        raise RuntimeError(str(data["error"]))
+    return data.get("result")
+
+
+async def _get_token_decimals(client, rpc_url: str, contract: str) -> int:
+    if contract in _rpc_decimals_cache:
+        return _rpc_decimals_cache[contract]
+    try:
+        result = await _rpc_call(client, rpc_url, "eth_call", [
+            {"to": contract, "data": "0x313ce567"}, "latest",
+        ])
+        decimals = int(result, 16) if result else 18
+    except Exception:
+        decimals = 18
+    _rpc_decimals_cache[contract] = decimals
+    return decimals
+
+
 async def _scan_bep20_via_rpc(
     rpc_url: str, wallet: str, contract: str,
-    required_conf: int, pending_orders: list, db,
+    required_conf: int, pending_orders: list, db, pending_deposits: list = None,
 ):
-    """Fallback: use BSC RPC to get logs. Limited without BSCScan key."""
-    # This is a simplified implementation; in production use BSCScan
-    logger.debug("[bep20] RPC fallback scan (limited — configure BSCScan API key for full coverage)")
+    """
+    Fallback path used when no BSCScan API key is configured: reads
+    ERC20/BEP20 Transfer(address,address,uint256) event logs directly from
+    the BSC JSON-RPC node instead of BSCScan's indexed API. Same matching
+    (_process_crypto_tx / _process_crypto_tx_for_deposits) as the BSCScan
+    path — this keeps deposit auto-crediting working even without a
+    BSCScan key, since operators without one would otherwise see BEP20
+    deposits silently never confirm.
+    """
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=15) as client:
+            latest_hex = await _rpc_call(client, rpc_url, "eth_blockNumber", [])
+            latest_block = int(latest_hex, 16)
+            from_block = max(0, latest_block - 3000)
+            padded_wallet = "0x" + wallet.replace("0x", "").rjust(64, "0")
+            logs = await _rpc_call(client, rpc_url, "eth_getLogs", [{
+                "fromBlock": hex(from_block),
+                "toBlock": hex(latest_block),
+                "address": contract,
+                "topics": [_TRANSFER_TOPIC, None, padded_wallet],
+            }])
+            if not logs:
+                return
+            decimals = await _get_token_decimals(client, rpc_url, contract)
+            for log in logs:
+                try:
+                    txid = log.get("transactionHash", "")
+                    block_number = int(log.get("blockNumber", "0x0"), 16)
+                    log_index = int(log.get("logIndex", "0x0"), 16)
+                    from_topic = log.get("topics", [None, None, None])[1] or "0x0"
+                    from_addr = "0x" + from_topic[-40:]
+                    raw_amount = int(log.get("data", "0x0"), 16)
+                    amount = raw_amount / (10 ** decimals)
+                    confirmations = max(0, latest_block - block_number + 1)
+                except Exception as e:
+                    logger.error(f"[bep20] rpc log decode error: {e}")
+                    continue
+
+                await _process_crypto_tx(
+                    db=db, network="BEP20", txid=txid, log_index=log_index,
+                    from_addr=from_addr, to_addr=wallet, amount=amount,
+                    block_number=block_number, confirmations=confirmations,
+                    required_confirmations=required_conf, token_symbol="USDT",
+                    token_contract=contract, pending_orders=pending_orders, raw=log,
+                )
+                await _process_crypto_tx_for_deposits(
+                    db=db, network="BEP20", txid=txid, log_index=log_index,
+                    amount=amount, confirmations=confirmations,
+                    required_confirmations=required_conf,
+                    pending_deposits=pending_deposits or [],
+                )
+    except Exception as e:
+        logger.error(f"[bep20] rpc fallback scan error: {e}")
 
 
 # ── ERC20 (Ethereum mainnet) ────────────────────────────────────────────────────
@@ -170,7 +284,8 @@ async def _check_erc20_transfers(cfg: dict, db) -> None:
         )
         .all()
     )
-    if not pending:
+    pending_deposits = _get_pending_deposits(db, "ERC20")
+    if not pending and not pending_deposits:
         return
 
     try:
@@ -213,6 +328,11 @@ async def _check_erc20_transfers(cfg: dict, db) -> None:
                 pending_orders=pending,
                 raw=tx,
             )
+            await _process_crypto_tx_for_deposits(
+                db=db, network="ERC20", txid=txid, log_index=log_index,
+                amount=amount, confirmations=confs, required_confirmations=required_conf,
+                pending_deposits=pending_deposits,
+            )
     except Exception as e:
         logger.error(f"[erc20] etherscan scan error: {e}")
 
@@ -244,7 +364,8 @@ async def _check_trc20_transfers(cfg: dict, db) -> None:
         )
         .all()
     )
-    if not pending:
+    pending_deposits = _get_pending_deposits(db, "TRC20")
+    if not pending and not pending_deposits:
         return
 
     try:
@@ -293,6 +414,11 @@ async def _check_trc20_transfers(cfg: dict, db) -> None:
                 token_contract=contract,
                 pending_orders=pending,
                 raw=tx,
+            )
+            await _process_crypto_tx_for_deposits(
+                db=db, network="TRC20", txid=txid, log_index=0,
+                amount=amount, confirmations=confs, required_confirmations=required_conf,
+                pending_deposits=pending_deposits,
             )
     except Exception as e:
         logger.error(f"[trc20] scan error: {e}")
@@ -452,6 +578,276 @@ async def _notify_user_detecting(order, db, confirmations: int, required: int):
             await bot.send_message(chat_id=int(chat_id), text=text)
     except Exception as e:
         logger.error(f"[crypto] _notify_user_detecting error: {e}")
+
+
+# ── Wallet deposit crypto matching ──────────────────────────────────────────────
+#
+# Runs right after _process_crypto_tx (order-matching) for the same tx, in
+# the same scan pass — never an extra API call. Reuses the CryptoTransaction
+# row _process_crypto_tx always creates/updates for this (network, txid,
+# log_index) as its anti-replay/dedup source of truth: a txid already spent
+# on an order can never also credit a deposit, and a deposit-matched txid
+# already recorded here can't be re-matched to a different deposit.
+
+_DEPOSIT_AMOUNT_TOLERANCE = 0.0002  # USDT — matches the order-matching tolerance
+
+
+def _rank_deposit_candidates(candidates: list) -> list:
+    """
+    `_get_pending_deposits()` deliberately mixes active deposits with
+    recently-terminal ones (see its docstring) so late transfers still get
+    escalated instead of dropped. But when an amount collides across both
+    groups (e.g. an old expired deposit happens to share its amount with a
+    brand-new pending one), a plain "first match wins" scan is
+    order-dependent and can wrongly route a live payment to the stale
+    terminal deposit. Rank active deposits (pending/detected/confirming)
+    ahead of terminal ones (expired/failed/cancelled) so a genuinely live
+    deposit is always preferred; only fall back to a terminal deposit when
+    no active one shares the amount. Within the same tier, prefer the
+    oldest (first created) so this stays deterministic.
+    """
+    from models import WalletDepositStatus
+    active = {WalletDepositStatus.pending, WalletDepositStatus.detected, WalletDepositStatus.confirming}
+
+    def sort_key(dep):
+        tier = 0 if dep.status in active else 1
+        return (tier, dep.created_at or datetime.min)
+
+    return sorted(candidates, key=sort_key)
+
+
+async def _process_crypto_tx_for_deposits(
+    db, network: str, txid: str, log_index: int, amount: float,
+    confirmations: int, required_confirmations: int, pending_deposits: list,
+):
+    if not txid or not pending_deposits:
+        return
+
+    from models import CryptoTransaction
+
+    candidates = [
+        dep for dep in pending_deposits
+        if dep.amount and abs(float(dep.amount) - amount) < _DEPOSIT_AMOUNT_TOLERANCE
+    ]
+    if not candidates:
+        return
+    matched = _rank_deposit_candidates(candidates)[0]
+
+    existing = db.query(CryptoTransaction).filter_by(
+        network=network, txid=txid, log_index=log_index
+    ).first()
+    if not existing:
+        # _process_crypto_tx always creates this row first in the same scan
+        # pass; if it's somehow missing, don't risk a racing duplicate insert.
+        return
+    if existing.matched_order_id:
+        # This txid already paid an order — never also credit a deposit with it.
+        return
+    if existing.matched_deposit_id and existing.matched_deposit_id != matched.id:
+        return
+
+    from models import WalletDepositStatus
+
+    existing.matched_deposit_id = matched.id
+    existing.confirmations = max(existing.confirmations or 0, confirmations)
+    db.commit()
+
+    if matched.status in (WalletDepositStatus.expired, WalletDepositStatus.failed,
+                           WalletDepositStatus.cancelled):
+        # The window already closed before this transfer was seen — this is
+        # real money that arrived late, so it must be escalated to a human
+        # rather than silently sitting as an "unmatched" on-chain tx or
+        # (worse) auto-credited without anyone knowing the deposit had
+        # already been closed out.
+        await _escalate_late_deposit_to_review(db, matched, txid)
+        return
+
+    if confirmations >= required_confirmations:
+        await _finalize_wallet_deposit_crypto(db, matched, existing)
+    elif confirmations > 0:
+        await _update_deposit_confirming(db, matched, confirmations, required_confirmations)
+
+
+async def _escalate_late_deposit_to_review(db, deposit, txid: str) -> None:
+    from models import WalletDepositStatus
+
+    if deposit.status == WalletDepositStatus.manual_review:
+        return
+    prev_status = deposit.status.value if hasattr(deposit.status, "value") else str(deposit.status)
+    deposit.status = WalletDepositStatus.manual_review
+    deposit.external_transaction_id = txid
+    deposit.failed_reason = (
+        f"Giao dịch on-chain khớp số tiền đến sau khi yêu cầu đã {prev_status} — cần admin kiểm tra."
+    )
+    db.commit()
+    logger.warning(
+        f"[wallet] deposit {deposit.id} late-matched by txid={txid} after status={prev_status} — escalated to manual_review"
+    )
+    try:
+        from services.bot_service import bot_manager
+        from bot.handlers import _get_admin_id
+        admin_id = _get_admin_id(db)
+        if admin_id and bot_manager.is_running():
+            from bot.notifier import notify_admin_wallet_deposit_request
+            await notify_admin_wallet_deposit_request(bot_manager._application.bot, deposit, admin_id)
+    except Exception as e:
+        logger.error(f"[wallet] late-deposit admin notify error deposit={deposit.id}: {e}")
+
+
+async def _update_deposit_confirming(db, deposit, confirmations: int, required: int):
+    from models import WalletDepositStatus
+
+    if deposit.status == WalletDepositStatus.credited:
+        return
+    was_pending = deposit.status == WalletDepositStatus.pending
+    deposit.status = WalletDepositStatus.detected if was_pending else WalletDepositStatus.confirming
+    if was_pending:
+        deposit.detected_at = datetime.utcnow()
+    deposit.confirmations = confirmations
+    deposit.required_confirmations = required
+    db.commit()
+    await _notify_deposit_progress(deposit, db, confirmations, required)
+
+
+async def _finalize_wallet_deposit_crypto(db, deposit, ctx):
+    from models import WalletDepositStatus, WalletCurrency, WalletTxType
+    from services import wallet_service
+    from services.wallet_service import AlreadyProcessedError
+
+    if deposit.status == WalletDepositStatus.credited:
+        return
+
+    now_iso = datetime.utcnow().isoformat(sep=" ")
+    try:
+        wallet_service.credit_wallet(
+            db, deposit.telegram_user_id, WalletCurrency.USDT, deposit.amount,
+            WalletTxType.deposit, deposit_id=deposit.id,
+            note=f"Auto-credited on-chain deposit ({ctx.network} txid={ctx.txid})",
+            actor="system",
+            extra_updates=[(
+                "UPDATE wallet_deposits SET status='credited', confirmations=?, "
+                "external_transaction_id=?, verified_at=?, credited_at=?, "
+                "raw_transaction_data=? "
+                "WHERE id=? AND status NOT IN ('credited','failed','expired','cancelled')",
+                (ctx.confirmations, ctx.txid, now_iso, now_iso, ctx.raw_json, deposit.id),
+            )],
+        )
+    except AlreadyProcessedError:
+        return
+
+    ctx.status = "confirmed"
+    ctx.confirmed_at = datetime.utcnow()
+    db.commit()
+    db.refresh(deposit)
+    logger.info(f"[{ctx.network}] wallet deposit {deposit.reference_code} credited via txid={ctx.txid}")
+    await _notify_deposit_credited(deposit, db)
+
+
+async def _notify_deposit_progress(deposit, db, confirmations: int, required: int):
+    try:
+        from services.bot_service import bot_manager
+        if not bot_manager.is_running():
+            return
+        from bot.i18n import t, get_user_lang
+        lang = get_user_lang(db, deposit.telegram_user_id)
+        bot = bot_manager._application.bot
+        chat_id = deposit.chat_id or deposit.telegram_user_id
+        text = t(lang, "wallet_deposit_detecting", ref=deposit.reference_code,
+                 current=confirmations, required=required)
+        await bot.send_message(chat_id=int(chat_id), text=text)
+    except Exception as e:
+        logger.error(f"[wallet] _notify_deposit_progress error: {e}")
+
+
+async def _notify_deposit_credited(deposit, db):
+    try:
+        from services.bot_service import bot_manager
+        if not bot_manager.is_running():
+            return
+        from bot.notifier import notify_user_wallet_deposit_confirmed
+        from bot.i18n import get_user_lang
+        lang = get_user_lang(db, deposit.telegram_user_id)
+        chat_id = deposit.chat_id or deposit.telegram_user_id
+        await notify_user_wallet_deposit_confirmed(bot_manager._application.bot, chat_id, deposit, lang=lang)
+    except Exception as e:
+        logger.error(f"[wallet] _notify_deposit_credited error: {e}")
+
+
+async def expire_wallet_deposits_loop():
+    """
+    Background loop: mark USDT/VND wallet deposits as expired once their
+    window passes with nothing received, and flip crypto deposits stuck in
+    detected/confirming with no further progress. Runs every 60s.
+    """
+    logger.info("[wallet] deposit expiry loop started")
+    while True:
+        try:
+            from database import SessionLocal
+            from models import WalletDeposit, WalletDepositStatus
+            db = SessionLocal()
+            try:
+                now = datetime.utcnow()
+                stale = (
+                    db.query(WalletDeposit)
+                    .filter(
+                        WalletDeposit.status.in_([
+                            WalletDepositStatus.pending.value,
+                            WalletDepositStatus.detected.value,
+                            WalletDepositStatus.confirming.value,
+                        ]),
+                        WalletDeposit.expires_at.isnot(None),
+                        WalletDeposit.expires_at < now,
+                    )
+                    .all()
+                )
+                to_expire = []
+                to_review = []
+                for dep in stale:
+                    if dep.status == WalletDepositStatus.pending:
+                        # Nothing ever arrived — safe to just expire, the
+                        # shopper can create a fresh deposit request.
+                        dep.status = WalletDepositStatus.expired
+                        to_expire.append(dep)
+                    else:
+                        # A matching transfer WAS detected but confirmations
+                        # never finished accumulating before the window
+                        # closed — money likely already moved, so this needs
+                        # a human to look at it rather than silently expiring.
+                        dep.status = WalletDepositStatus.manual_review
+                        to_review.append(dep)
+                db.commit()
+
+                from services.bot_service import bot_manager
+                if bot_manager.is_running():
+                    from bot.notifier import notify_user_wallet_deposit_expired
+                    from bot.i18n import get_user_lang
+                    for dep in to_expire:
+                        try:
+                            lang = get_user_lang(db, dep.telegram_user_id)
+                            chat_id = dep.chat_id or dep.telegram_user_id
+                            await notify_user_wallet_deposit_expired(
+                                bot_manager._application.bot, chat_id, dep, lang=lang,
+                            )
+                        except Exception as e:
+                            logger.error(f"[wallet] expiry notify error deposit={dep.id}: {e}")
+
+                if to_review:
+                    from bot.handlers import _get_admin_id
+                    admin_id = _get_admin_id(db)
+                    if admin_id and bot_manager.is_running():
+                        from bot.notifier import notify_admin_wallet_deposit_request
+                        for dep in to_review:
+                            try:
+                                await notify_admin_wallet_deposit_request(
+                                    bot_manager._application.bot, dep, admin_id,
+                                )
+                            except Exception as e:
+                                logger.error(f"[wallet] manual_review admin notify error deposit={dep.id}: {e}")
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"[wallet] expire_wallet_deposits_loop error: {e}")
+        await asyncio.sleep(60)
 
 
 # ── Binance Pay verification (via Binance API Management Pay History) ─────────
@@ -655,6 +1051,133 @@ async def verify_binance_payment(db, order, submitted_txid: str | None = None) -
     logger.info(f"[binance_pay] order {order.order_code} confirmed via Pay History txid={txid}")
     asyncio.create_task(_trigger_fulfillment(order.id))
     return {"ok": True, "reason": "confirmed"}
+
+
+# ── Binance Pay wallet-deposit sweep ────────────────────────────────────────────
+#
+# Deposits (unlike orders) never have a shopper-submitted TXID to look up —
+# there's nothing to "verify against a specific hash". Instead this mirrors
+# verify_binance_payment's checklist but scans the whole Pay History cache
+# and matches each pending deposit by receiver + coin + amount + time window.
+
+async def _sweep_binance_deposits(db, cfg: dict, pending_deposits: list):
+    from models import PaymentTransaction
+    from sqlalchemy.exc import IntegrityError
+
+    if not cfg.get("api_key") or not cfg.get("secret_key") or not cfg.get("receiver_binance_id"):
+        return
+
+    result = await _get_binance_transactions_cached(cfg)
+    if not result.get("success"):
+        return
+
+    expected_receiver = str(cfg.get("receiver_binance_id") or "")
+    coin = cfg.get("default_coin") or "USDT"
+    tolerance = _decimal(cfg.get("amount_tolerance")) or Decimal("0")
+    expiry_minutes = int(cfg.get("order_expiry_minutes") or 30)
+
+    for tx in result.get("transactions") or []:
+        order_type = (tx.get("orderType") or "").upper()
+        if order_type and order_type not in ("PAY", "C2C", "PAYMENT"):
+            continue
+        receiver_info = tx.get("receiverInfo") or {}
+        receiver_id = str(receiver_info.get("binanceId") or tx.get("receiverId") or "")
+        if not receiver_id or receiver_id != expected_receiver:
+            continue
+        amount = _extract_binance_coin_amount(tx, coin)
+        if amount is None:
+            continue
+        txid = str(tx.get("transactionId") or tx.get("orderId") or tx.get("tranId") or "")
+        if not txid:
+            continue
+
+        amount_candidates = [
+            dep for dep in pending_deposits
+            if _decimal(dep.amount) is not None and abs(amount - _decimal(dep.amount)) <= tolerance
+        ]
+        if not amount_candidates:
+            continue
+
+        tx_time_raw = tx.get("transactionTime") or tx.get("createTime") or 0
+        try:
+            tx_time = datetime.utcfromtimestamp(int(tx_time_raw) / 1000)
+        except Exception:
+            continue
+
+        dup = db.query(PaymentTransaction).filter(
+            PaymentTransaction.provider == "binance_pay",
+            PaymentTransaction.external_transaction_id == txid,
+        ).first()
+
+        # Same amount can collide across multiple candidates (e.g. a stale
+        # expired deposit sharing its amount with a brand-new pending one).
+        # Try active deposits before terminal ones (see
+        # _rank_deposit_candidates), and within a tier don't let the first
+        # candidate's failed time-window check block a later candidate that
+        # actually fits — otherwise a valid deposit could be missed
+        # entirely just because it happened to sort after a bad candidate.
+        matched = None
+        grace = timedelta(minutes=10)
+        for dep in _rank_deposit_candidates(amount_candidates):
+            if dup and (dup.matched_order_id or (dup.matched_deposit_id and dup.matched_deposit_id != dep.id)):
+                continue  # this txid already paid an order or a different deposit
+            window_end = dep.expires_at or (dep.created_at + timedelta(minutes=expiry_minutes))
+            if tx_time < (dep.created_at - timedelta(minutes=2)) or tx_time > (window_end + grace):
+                continue
+            matched = dep
+            break
+        if not matched:
+            continue
+
+        if not dup:
+            ptx = PaymentTransaction(
+                provider="binance_pay",
+                external_transaction_id=txid,
+                gateway="binance_pay",
+                transaction_date=tx_time,
+                amount_in=float(amount),
+                matched_deposit_id=matched.id,
+                match_status="deposit_matched",
+                raw_json=json.dumps(tx, ensure_ascii=False)[:5000],
+            )
+            try:
+                db.add(ptx)
+                db.commit()
+            except IntegrityError:
+                db.rollback()
+                continue
+
+        from models import WalletDepositStatus, WalletCurrency, WalletTxType
+        from services import wallet_service
+        from services.wallet_service import AlreadyProcessedError
+
+        if matched.status in (WalletDepositStatus.expired, WalletDepositStatus.failed,
+                               WalletDepositStatus.cancelled):
+            # The deposit's window already closed before this Binance Pay
+            # transfer was seen — real customer money that must be escalated
+            # to a human, never silently skipped as "already done".
+            await _escalate_late_deposit_to_review(db, matched, txid)
+            continue
+
+        now_iso = datetime.utcnow().isoformat(sep=" ")
+        try:
+            wallet_service.credit_wallet(
+                db, matched.telegram_user_id, WalletCurrency.USDT, matched.amount,
+                WalletTxType.deposit, deposit_id=matched.id,
+                note=f"Auto-credited Binance Pay deposit (txid={txid})",
+                actor="system",
+                extra_updates=[(
+                    "UPDATE wallet_deposits SET status='credited', external_transaction_id=?, "
+                    "verified_at=?, credited_at=? "
+                    "WHERE id=? AND status NOT IN ('credited','failed','expired','cancelled')",
+                    (txid, now_iso, now_iso, matched.id),
+                )],
+            )
+        except AlreadyProcessedError:
+            continue
+        db.refresh(matched)
+        logger.info(f"[binance_pay] wallet deposit {matched.reference_code} credited via txid={txid}")
+        await _notify_deposit_credited(matched, db)
 
 
 # ── Manual TXID verification (shopper-submitted) ───────────────────────────────
@@ -995,6 +1518,14 @@ async def binance_pay_loop():
                                 db.commit()
                         except Exception as e:
                             logger.error(f"[binance_pay] sweep verify error order={order.order_code}: {e}")
+
+                    pending_deposits = _get_pending_deposits(db, "BINANCE")
+                    if pending_deposits:
+                        try:
+                            await _sweep_binance_deposits(db, cfg, pending_deposits)
+                        except Exception as e:
+                            logger.error(f"[binance_pay] deposit sweep error: {e}")
+
                     interval = max(60, int(cfg.get("min_check_interval_seconds") or 60))
                 else:
                     interval = 60

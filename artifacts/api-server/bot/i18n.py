@@ -246,7 +246,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "Chủ TK: {acc_name}\n"
             "Nội dung CK: <code>{ref}</code>\n\n"
             "⚠️ Vui lòng chuyển khoản đúng số tiền và ghi đúng nội dung ở trên.\n"
-            "Sau khi admin xác nhận, số dư ví của bạn sẽ được cộng tự động."
+            "🤖 Hệ thống sẽ tự động cộng tiền vào ví của bạn ngay khi nhận được chuyển khoản, không cần chờ admin."
         ),
         "wallet_deposit_created_usdt": (
             "✅ <b>YÊU CẦU NẠP TIỀN ĐÃ TẠO</b>\n\n"
@@ -254,13 +254,15 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "💰 Số tiền: <b>{amount} USDT</b>\n\n"
             "🌐 Network: {network}\n"
             "Địa chỉ: <code>{address}</code>\n\n"
-            "⚠️ Vui lòng gửi đúng số tiền và giữ lại mã tham chiếu trên để tra soát nếu cần.\n"
-            "Sau khi admin xác nhận, số dư ví của bạn sẽ được cộng tự động."
+            "⚠️ Vui lòng gửi <b>đúng số tiền</b> ở trên (kể cả phần lẻ) để hệ thống nhận diện đúng giao dịch của bạn.\n"
+            "🤖 Ví của bạn sẽ được cộng tiền tự động sau khi giao dịch đủ số xác nhận trên blockchain."
         ),
+        "wallet_deposit_detecting": "🔎 Đã phát hiện giao dịch nạp tiền <code>{ref}</code> — đang chờ xác nhận blockchain ({current}/{required}).",
         "wallet_history_title": "📜 <b>LỊCH SỬ GIAO DỊCH VÍ</b>\n",
         "wallet_history_empty": "Bạn chưa có giao dịch ví nào.",
-        "wallet_deposit_confirmed_user": "✅ Yêu cầu nạp tiền <code>{ref}</code> đã được xác nhận!\n💰 Đã cộng: <b>{amount}</b> vào ví của bạn.",
+        "wallet_deposit_confirmed_user": "✅ Yêu cầu nạp tiền <code>{ref}</code> đã được cộng tiền tự động!\n💰 Đã cộng: <b>{amount}</b> vào ví của bạn.",
         "wallet_deposit_rejected_user": "❌ Yêu cầu nạp tiền <code>{ref}</code> đã bị từ chối.\n{note}",
+        "wallet_deposit_expired_user": "⌛ Yêu cầu nạp tiền <code>{ref}</code> đã hết hạn vì không nhận được giao dịch. Vui lòng tạo yêu cầu mới nếu bạn vẫn muốn nạp tiền.",
         "wallet_refund_notice": "💼 Đơn <code>{code}</code> gặp lỗi khi giao hàng — số tiền <b>{amount}đ</b> đã được hoàn lại vào ví của bạn.",
         "wallet_admin_credit_notice": "💼 Ví của bạn đã được admin cộng thêm <b>{amount}</b>.\n📝 Lý do: {note}",
         "wallet_admin_debit_notice": "💼 Ví của bạn đã bị admin trừ <b>{amount}</b>.\n📝 Lý do: {note}",
@@ -579,7 +581,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "Account holder: {acc_name}\n"
             "Transfer note: <code>{ref}</code>\n\n"
             "⚠️ Please transfer the exact amount and use the note shown above.\n"
-            "Your wallet will be credited automatically once admin confirms."
+            "🤖 Your wallet will be credited automatically as soon as the transfer arrives — no admin wait."
         ),
         "wallet_deposit_created_usdt": (
             "✅ <b>DEPOSIT REQUEST CREATED</b>\n\n"
@@ -587,13 +589,15 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "💰 Amount: <b>{amount} USDT</b>\n\n"
             "🌐 Network: {network}\n"
             "Address: <code>{address}</code>\n\n"
-            "⚠️ Please send the exact amount and keep the reference above for support.\n"
-            "Your wallet will be credited automatically once admin confirms."
+            "⚠️ Please send <b>exactly</b> the amount above (including the decimals) so the system can match your transfer.\n"
+            "🤖 Your wallet will be credited automatically once the transaction reaches the required confirmations."
         ),
+        "wallet_deposit_detecting": "🔎 Detected an incoming transfer for deposit <code>{ref}</code> — waiting on blockchain confirmations ({current}/{required}).",
         "wallet_history_title": "📜 <b>WALLET TRANSACTION HISTORY</b>\n",
         "wallet_history_empty": "You have no wallet transactions yet.",
-        "wallet_deposit_confirmed_user": "✅ Deposit request <code>{ref}</code> confirmed!\n💰 Credited: <b>{amount}</b> to your wallet.",
+        "wallet_deposit_confirmed_user": "✅ Deposit request <code>{ref}</code> auto-credited!\n💰 Credited: <b>{amount}</b> to your wallet.",
         "wallet_deposit_rejected_user": "❌ Deposit request <code>{ref}</code> was rejected.\n{note}",
+        "wallet_deposit_expired_user": "⌛ Deposit request <code>{ref}</code> expired — no matching transfer was received. Please create a new request if you'd still like to top up.",
         "wallet_refund_notice": "💼 Order <code>{code}</code> could not be fulfilled — <b>{amount} VND</b> has been refunded to your wallet.",
         "wallet_admin_credit_notice": "💼 Admin credited your wallet with <b>{amount}</b>.\n📝 Reason: {note}",
         "wallet_admin_debit_notice": "💼 Admin deducted <b>{amount}</b> from your wallet.\n📝 Reason: {note}",

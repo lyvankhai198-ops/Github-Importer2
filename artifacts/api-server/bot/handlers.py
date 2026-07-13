@@ -378,7 +378,7 @@ async def _send_wallet_menu(bot_or_query, chat_id_or_none, db, tg_user, lang: st
         t(lang, "wallet_title"),
         "",
         t(lang, "wallet_balance_vnd", amount=format_vnd(vnd)),
-        t(lang, "wallet_balance_usdt", amount=f"{usdt:.2f}"),
+        t(lang, "wallet_balance_usdt", amount=f"{usdt:.4f}"),
     ])
     kbd = wallet_menu_keyboard(lang=lang)
     if edit:
@@ -1357,7 +1357,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 for tx in txs:
                     sign = SIGN.get(tx.tx_type, "")
                     cur = tx.currency.value if hasattr(tx.currency, "value") else str(tx.currency)
-                    amt_str = f"{format_vnd(tx.amount)}đ" if cur == "VND" else f"{tx.amount:.2f} USDT"
+                    amt_str = f"{format_vnd(tx.amount)}đ" if cur == "VND" else f"{tx.amount:.4f} USDT"
                     tt = tx.tx_type.value if hasattr(tx.tx_type, "value") else str(tx.tx_type)
                     lines.append(f"• {sign}{amt_str} — {tt} ({tx.created_at.strftime('%d/%m %H:%M')})")
             try:
@@ -2266,30 +2266,68 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             amount = wallet_service.quantize_amount(currency, amount)
             ref = wallet_service.generate_deposit_reference()
+
+            network_map = {"binance_pay": "BINANCE", "usdt_bep20": "BEP20",
+                            "usdt_trc20": "TRC20", "usdt_erc20": "ERC20"}
+            network = network_map.get(method)
+            expiry_minutes = 60
+            required_conf = None
+            final_amount = amount
+
+            if network:
+                from services.exchange_rate_service import generate_unique_crypto_amount
+                # Add a tiny offset so this deposit's amount never collides
+                # with another pending deposit OR order payment on the same
+                # shared wallet address — the same on-chain amount-matching
+                # trick used for order payments.
+                final_amount = generate_unique_crypto_amount(db, amount, network)
+                if method in ("usdt_bep20", "usdt_trc20", "usdt_erc20"):
+                    from models import PaymentMethod
+                    from crypto import decrypt
+                    pm = db.query(PaymentMethod).filter(
+                        PaymentMethod.method_code == method, PaymentMethod.is_active == True
+                    ).first()
+                    pm_cfg = {}
+                    if pm and pm.config_encrypted:
+                        try:
+                            pm_cfg = json.loads(decrypt(pm.config_encrypted) or "{}")
+                        except Exception:
+                            pm_cfg = {}
+                    required_conf = int(pm_cfg.get("required_confirmations") or (20 if network == "TRC20" else 12))
+                    expiry_minutes = int(pm_cfg.get("timeout_minutes") or 60)
+                else:  # binance_pay
+                    from services.binance_service import get_binance_config
+                    bnb_cfg = get_binance_config(db) or {}
+                    expiry_minutes = int(bnb_cfg.get("order_expiry_minutes") or 30)
+
             deposit = WalletDeposit(
                 telegram_user_id=str(tg_user.id),
                 currency=WalletCurrency(currency),
-                amount=amount,
+                amount=final_amount,
                 method=method,
                 reference_code=ref,
                 status=WalletDepositStatus.pending,
+                network=network,
+                receiving_address=payment_info.get("address") or payment_info.get("acc"),
+                payment_content=ref,
+                chat_id=tg_user.id,
+                confirmations=0,
+                required_confirmations=required_conf,
+                expires_at=datetime.utcnow() + timedelta(minutes=expiry_minutes),
             )
             db.add(deposit)
             db.commit()
             db.refresh(deposit)
 
             if currency == "VND":
-                text = t(lang, "wallet_deposit_created_vnd", ref=ref, amount=format_vnd(amount),
+                text = t(lang, "wallet_deposit_created_vnd", ref=ref, amount=format_vnd(final_amount),
                          bank=payment_info["bank"], acc=payment_info["acc"], acc_name=payment_info["acc_name"])
             else:
-                text = t(lang, "wallet_deposit_created_usdt", ref=ref, amount=f"{amount:.2f}",
+                text = t(lang, "wallet_deposit_created_usdt", ref=ref, amount=f"{final_amount:.4f}",
                          network=payment_info["network"], address=payment_info["address"])
-            await update.message.reply_text(text, parse_mode="HTML")
-
-            admin_id = _get_admin_id(db)
-            if admin_id:
-                from bot.notifier import notify_admin_wallet_deposit_request
-                await notify_admin_wallet_deposit_request(context.bot, deposit, admin_id)
+            sent = await update.message.reply_text(text, parse_mode="HTML")
+            deposit.deposit_message_id = sent.message_id
+            db.commit()
         finally:
             db.close()
         return

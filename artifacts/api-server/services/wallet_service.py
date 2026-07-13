@@ -5,8 +5,13 @@ wallet (deposit / pay-with-wallet / admin credit-debit / auto-refund).
 Storage stays as SQLAlchemy Float (consistent with the rest of the schema,
 which has no Numeric/Decimal precedent), but every arithmetic step here goes
 through Decimal and is quantized to a fixed precision before being written
-back — VND: 0 decimal places, USDT: 2 decimal places — so repeated
-credit/debit cycles never drift from floating-point rounding error.
+back — VND: 0 decimal places, USDT: 4 decimal places — so repeated
+credit/debit cycles never drift from floating-point rounding error. USDT is
+quantized to 4 (not 2) decimal places because wallet deposits are matched
+against on-chain/Binance transfers using a per-request 0.0001 USDT uniqueness
+offset (see exchange_rate_service.generate_unique_crypto_amount) — crediting
+at 2-decimal precision would silently round away part of the exact amount
+the shopper was instructed to send.
 
 Atomicity: the balance update, the ledger insert, AND the caller's related
 business-state change (e.g. "mark this WalletDeposit confirmed", "mark this
@@ -36,7 +41,7 @@ logger = logging.getLogger(__name__)
 
 _QUANT = {
     WalletCurrency.VND: Decimal("1"),
-    WalletCurrency.USDT: Decimal("0.01"),
+    WalletCurrency.USDT: Decimal("0.0001"),
 }
 
 

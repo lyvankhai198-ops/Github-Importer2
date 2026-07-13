@@ -295,6 +295,156 @@ def _find_payment_code(content: str, prefix: str = "AIC") -> str | None:
     return match.group(1).upper() if match else None
 
 
+_DEPOSIT_REF_RE = re.compile(r"(DEP[0-9A-Fa-f]{8})", re.IGNORECASE)
+
+
+def _find_deposit_reference(content: str) -> str | None:
+    """Wallet-deposit reference codes look like DEP-1A2B3C4D; bank transfer
+    content often strips punctuation, so match with or without the dash."""
+    match = _DEPOSIT_REF_RE.search((content or "").replace("-", "").replace(" ", ""))
+    return f"DEP-{match.group(1)[3:].upper()}" if match else None
+
+
+def _try_credit_vnd_deposit(db: Session, tx_id: str, amount_in: float, content: str, raw: dict, tx_date) -> dict | None:
+    """
+    Attempt to match a SePay bank-transfer webhook event to a pending VND
+    wallet deposit via its reference code in the transfer content. Returns a
+    result dict if a deposit was matched (whether credited or not), else
+    None so the caller falls through to "unmatched".
+    """
+    from models import WalletDeposit, WalletDepositStatus, WalletCurrency, WalletTxType
+    from services import wallet_service
+    from services.wallet_service import AlreadyProcessedError
+
+    ref = _find_deposit_reference(content)
+    if not ref:
+        return None
+    deposit = db.query(WalletDeposit).filter(
+        WalletDeposit.reference_code == ref,
+        WalletDeposit.currency == WalletCurrency.VND,
+    ).first()
+    if not deposit:
+        return None
+
+    if deposit.status == WalletDepositStatus.credited:
+        # Already accounted for — nothing left to reconcile.
+        return {"success": True, "action": "deposit_already_done", "deposit_id": deposit.id}
+
+    if deposit.status in (WalletDepositStatus.expired, WalletDepositStatus.cancelled,
+                           WalletDepositStatus.failed, WalletDepositStatus.manual_review):
+        # Money that matches a reference code but arrives after the deposit
+        # left the "still trackable" states must NEVER be silently dropped —
+        # a late bank transfer is real customer money that needs a human to
+        # reconcile it, not a no-op. Escalate to manual_review (idempotent:
+        # once there, later replays of the same tx just no-op below).
+        if deposit.status == WalletDepositStatus.manual_review:
+            return {"success": True, "action": "deposit_needs_review", "deposit_id": deposit.id}
+        from sqlalchemy import text as _sql_text
+        rows = db.execute(
+            _sql_text(
+                "UPDATE wallet_deposits SET status='manual_review', "
+                "external_transaction_id=:txid, raw_transaction_data=:raw, "
+                "failed_reason=:reason WHERE id=:id AND status=:prev_status"
+            ),
+            {
+                "txid": str(tx_id), "raw": json.dumps(raw, ensure_ascii=False)[:5000],
+                "reason": f"Chuyển khoản khớp mã {ref} sau khi yêu cầu đã {deposit.status.value} — cần admin kiểm tra.",
+                "id": deposit.id, "prev_status": deposit.status.value,
+            },
+        )
+        db.commit()
+        if rows.rowcount == 0:
+            # Someone else (admin action or another webhook replay) already
+            # moved it in the meantime — treat as already handled.
+            return {"success": True, "action": "deposit_already_done", "deposit_id": deposit.id}
+        db.refresh(deposit)
+        _notify_admin_deposit_needs_review(db, deposit)
+        return {"success": True, "action": "deposit_needs_review", "deposit_id": deposit.id}
+
+    # Bank transfer must cover at least the requested amount (small rounding
+    # tolerance for bank fee quirks); credit exactly the requested amount,
+    # any surplus stays with the shop (mirrors overpay handling on orders).
+    if amount_in < deposit.amount - 1:
+        return {"success": True, "action": "deposit_insufficient", "deposit_id": deposit.id}
+
+    now_iso = datetime.utcnow().isoformat(sep=" ")
+    try:
+        wallet_service.credit_wallet(
+            db, deposit.telegram_user_id, WalletCurrency.VND, deposit.amount,
+            WalletTxType.deposit, deposit_id=deposit.id,
+            note=f"Auto-credited SePay transfer (txid={tx_id})",
+            actor="system",
+            extra_updates=[(
+                "UPDATE wallet_deposits SET status='credited', external_transaction_id=?, "
+                "verified_at=?, credited_at=?, raw_transaction_data=? "
+                "WHERE id=? AND status NOT IN ('credited','failed','expired','cancelled')",
+                (tx_id, now_iso, now_iso, json.dumps(raw, ensure_ascii=False)[:5000], deposit.id),
+            )],
+        )
+    except AlreadyProcessedError:
+        return {"success": True, "action": "deposit_already_done", "deposit_id": deposit.id}
+
+    db.refresh(deposit)
+    asyncio.create_task(_notify_deposit_credited_async(deposit.id))
+    return {"success": True, "action": "deposit_credited", "deposit_id": deposit.id}
+
+
+def _notify_admin_deposit_needs_review(db: Session, deposit) -> None:
+    """Fire-and-forget admin alert for a deposit escalated to manual_review
+    (e.g. a late transfer matched after the deposit had already expired)."""
+    try:
+        asyncio.create_task(_notify_admin_deposit_needs_review_async(deposit.id))
+    except RuntimeError:
+        # No running event loop (e.g. a script/cron context) — log instead
+        # of losing the alert silently.
+        logger.warning(f"[wallet] deposit {deposit.id} needs manual review but no event loop to notify admin")
+
+
+async def _notify_admin_deposit_needs_review_async(deposit_id: int):
+    try:
+        from database import SessionLocal
+        from models import WalletDeposit
+        from services.bot_service import bot_manager
+        from bot.handlers import _get_admin_id
+        db = SessionLocal()
+        try:
+            deposit = db.query(WalletDeposit).filter(WalletDeposit.id == deposit_id).first()
+            if not deposit:
+                return
+            admin_id = _get_admin_id(db)
+            if not admin_id or not bot_manager.is_running():
+                return
+            from bot.notifier import notify_admin_wallet_deposit_request
+            await notify_admin_wallet_deposit_request(bot_manager._application.bot, deposit, admin_id)
+        finally:
+            db.close()
+    except Exception as e:
+        logger.error(f"[wallet] _notify_admin_deposit_needs_review_async error: {e}")
+
+
+async def _notify_deposit_credited_async(deposit_id: int):
+    try:
+        from database import SessionLocal
+        from models import WalletDeposit
+        from services.bot_service import bot_manager
+        if not bot_manager.is_running():
+            return
+        db = SessionLocal()
+        try:
+            deposit = db.query(WalletDeposit).filter(WalletDeposit.id == deposit_id).first()
+            if not deposit:
+                return
+            from bot.notifier import notify_user_wallet_deposit_confirmed
+            from bot.i18n import get_user_lang
+            lang = get_user_lang(db, deposit.telegram_user_id)
+            chat_id = deposit.chat_id or deposit.telegram_user_id
+            await notify_user_wallet_deposit_confirmed(bot_manager._application.bot, chat_id, deposit, lang=lang)
+        finally:
+            db.close()
+    except Exception as e:
+        logger.error(f"[wallet] _notify_deposit_credited_async error: {e}")
+
+
 def _parse_tx_date(raw_date: str) -> datetime | None:
     if not raw_date:
         return None
@@ -355,6 +505,15 @@ def process_webhook_transaction(db: Session, raw: dict) -> dict:
         order = db.query(Order).filter(Order.payment_code == payment_code).first()
 
     if not order:
+        deposit_result = _try_credit_vnd_deposit(
+            db, tx_id, amount_in, tx_data["transfer_content"], raw, tx_date,
+        )
+        if deposit_result:
+            tx.matched_deposit_id = deposit_result.get("deposit_id")
+            tx.match_status = deposit_result.get("action")
+            db.add(tx)
+            db.commit()
+            return deposit_result
         db.add(tx)
         db.commit()
         return {"success": True, "action": "unmatched"}

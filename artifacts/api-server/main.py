@@ -166,6 +166,28 @@ def _run_migrations():
         # UniqueConstraint can't be added via ALTER TABLE on an existing table.
         "CREATE UNIQUE INDEX IF NOT EXISTS ux_orders_api_client_order "
         "ON orders (api_client_id, client_order_id) WHERE client_order_id IS NOT NULL",
+        # Automatic wallet-deposit verification (VND via SePay webhook, USDT
+        # via the same on-chain monitors / Binance Pay sweep used for order
+        # payments). Reuses payment_transactions/crypto_transactions for
+        # anti-replay dedup instead of new tables/indexes.
+        "ALTER TABLE wallet_deposits ADD COLUMN network VARCHAR(50)",
+        "ALTER TABLE wallet_deposits ADD COLUMN receiving_address VARCHAR(200)",
+        "ALTER TABLE wallet_deposits ADD COLUMN payment_content VARCHAR(100)",
+        "ALTER TABLE wallet_deposits ADD COLUMN chat_id INTEGER",
+        "ALTER TABLE wallet_deposits ADD COLUMN deposit_message_id INTEGER",
+        "ALTER TABLE wallet_deposits ADD COLUMN external_transaction_id VARCHAR(255)",
+        "ALTER TABLE wallet_deposits ADD COLUMN confirmations INTEGER DEFAULT 0",
+        "ALTER TABLE wallet_deposits ADD COLUMN required_confirmations INTEGER",
+        "ALTER TABLE wallet_deposits ADD COLUMN raw_transaction_data TEXT",
+        "ALTER TABLE wallet_deposits ADD COLUMN expires_at DATETIME",
+        "ALTER TABLE wallet_deposits ADD COLUMN detected_at DATETIME",
+        "ALTER TABLE wallet_deposits ADD COLUMN verified_at DATETIME",
+        "ALTER TABLE wallet_deposits ADD COLUMN credited_at DATETIME",
+        "ALTER TABLE wallet_deposits ADD COLUMN failed_reason TEXT",
+        "CREATE INDEX IF NOT EXISTS ix_wallet_deposits_ext_tx ON wallet_deposits (external_transaction_id)",
+        "CREATE INDEX IF NOT EXISTS ix_wallet_deposits_status ON wallet_deposits (status)",
+        "ALTER TABLE payment_transactions ADD COLUMN matched_deposit_id INTEGER",
+        "ALTER TABLE crypto_transactions ADD COLUMN matched_deposit_id INTEGER",
     ]
     with engine.connect() as conn:
         ran_language_selected_migration = False
@@ -221,6 +243,17 @@ def _run_migrations():
                 conn.commit()
             except Exception:
                 pass
+
+        # Wallet deposits predating auto-verification used "confirmed"/
+        # "rejected" for the manual-admin flow — remap them onto the new
+        # terminal status names so existing history still loads correctly
+        # under the current WalletDepositStatus enum.
+        try:
+            conn.execute(text("UPDATE wallet_deposits SET status = 'credited' WHERE status = 'confirmed'"))
+            conn.execute(text("UPDATE wallet_deposits SET status = 'failed' WHERE status = 'rejected'"))
+            conn.commit()
+        except Exception:
+            pass
 
 
 def _seed_payment_methods():
@@ -306,11 +339,13 @@ async def lifespan(app: FastAPI):
     # Start crypto monitor workers (each independent — one crash won't affect others)
     from services.crypto_monitor import (
         bep20_monitor_loop, trc20_monitor_loop, erc20_monitor_loop, binance_pay_loop,
+        expire_wallet_deposits_loop,
     )
     _background_tasks.append(asyncio.create_task(bep20_monitor_loop()))
     _background_tasks.append(asyncio.create_task(trc20_monitor_loop()))
     _background_tasks.append(asyncio.create_task(erc20_monitor_loop()))
     _background_tasks.append(asyncio.create_task(binance_pay_loop()))
+    _background_tasks.append(asyncio.create_task(expire_wallet_deposits_loop()))
 
     # Auto-start the Telegram bot if it's configured + enabled, so it comes
     # back up on its own after a restart/redeploy without an admin visiting
