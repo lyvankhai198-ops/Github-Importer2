@@ -199,9 +199,56 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "/menu – Mở menu chính\n"
             "/products – Xem sản phẩm\n"
             "/orders – Xem đơn hàng\n"
+            "/wallet – Ví của tôi\n"
             "/language – Đổi ngôn ngữ\n"
             "/support – Hỗ trợ"
         ),
+        # ── Wallet ────────────────────────────────────────────────────────────
+        "menu_wallet": "💼 Ví của tôi",
+        "menu_btn_wallet": "💼 Ví của tôi",
+        "wallet_title": "💼 <b>VÍ CỦA TÔI</b>",
+        "wallet_balance_vnd": "💰 Số dư VND: <b>{amount}đ</b>",
+        "wallet_balance_usdt": "💰 Số dư USDT: <b>{amount} USDT</b>",
+        "btn_wallet_deposit": "➕ Nạp tiền",
+        "btn_wallet_history": "📜 Lịch sử giao dịch",
+        "wallet_choose_deposit_currency": "💼 Bạn muốn nạp bằng loại tiền nào?",
+        "btn_wallet_deposit_vnd": "🏦 VND (Chuyển khoản)",
+        "btn_wallet_deposit_usdt": "🟨 USDT (Crypto)",
+        "wallet_choose_deposit_method": "💼 Chọn phương thức nạp tiền:",
+        "wallet_enter_amount_vnd": "🔢 Nhập số tiền muốn nạp (VND), ví dụ: 100000",
+        "wallet_enter_amount_usdt": "🔢 Nhập số tiền muốn nạp (USDT), ví dụ: 10",
+        "wallet_amount_invalid": "❌ Vui lòng nhập số tiền hợp lệ (số dương).",
+        "wallet_deposit_no_payment_configured": "❌ Phương thức thanh toán này chưa được cấu hình. Vui lòng chọn phương thức khác hoặc liên hệ hỗ trợ.",
+        "wallet_deposit_created_vnd": (
+            "✅ <b>YÊU CẦU NẠP TIỀN ĐÃ TẠO</b>\n\n"
+            "🔑 Mã tham chiếu: <code>{ref}</code>\n"
+            "💰 Số tiền: <b>{amount}đ</b>\n\n"
+            "🏦 Ngân hàng: <b>{bank}</b>\n"
+            "Số tài khoản: <code>{acc}</code>\n"
+            "Chủ TK: {acc_name}\n"
+            "Nội dung CK: <code>{ref}</code>\n\n"
+            "⚠️ Vui lòng chuyển khoản đúng số tiền và ghi đúng nội dung ở trên.\n"
+            "Sau khi admin xác nhận, số dư ví của bạn sẽ được cộng tự động."
+        ),
+        "wallet_deposit_created_usdt": (
+            "✅ <b>YÊU CẦU NẠP TIỀN ĐÃ TẠO</b>\n\n"
+            "🔑 Mã tham chiếu: <code>{ref}</code>\n"
+            "💰 Số tiền: <b>{amount} USDT</b>\n\n"
+            "🌐 Network: {network}\n"
+            "Địa chỉ: <code>{address}</code>\n\n"
+            "⚠️ Vui lòng gửi đúng số tiền và giữ lại mã tham chiếu trên để tra soát nếu cần.\n"
+            "Sau khi admin xác nhận, số dư ví của bạn sẽ được cộng tự động."
+        ),
+        "wallet_history_title": "📜 <b>LỊCH SỬ GIAO DỊCH VÍ</b>\n",
+        "wallet_history_empty": "Bạn chưa có giao dịch ví nào.",
+        "wallet_deposit_confirmed_user": "✅ Yêu cầu nạp tiền <code>{ref}</code> đã được xác nhận!\n💰 Đã cộng: <b>{amount}</b> vào ví của bạn.",
+        "wallet_deposit_rejected_user": "❌ Yêu cầu nạp tiền <code>{ref}</code> đã bị từ chối.\n{note}",
+        "wallet_refund_notice": "💼 Đơn <code>{code}</code> gặp lỗi khi giao hàng — số tiền <b>{amount}đ</b> đã được hoàn lại vào ví của bạn.",
+        "wallet_admin_credit_notice": "💼 Ví của bạn đã được admin cộng thêm <b>{amount}</b>.\n📝 Lý do: {note}",
+        "wallet_admin_debit_notice": "💼 Ví của bạn đã bị admin trừ <b>{amount}</b>.\n📝 Lý do: {note}",
+        "btn_pay_wallet": "💼 Thanh toán bằng Ví",
+        "wallet_insufficient_balance": "❌ Số dư ví không đủ.\nCần: <b>{needed}đ</b>\nHiện có: <b>{have}đ</b>\n\nVui lòng nạp thêm tiền vào ví.",
+        "wallet_purchase_debited": "✅ Đã thanh toán <b>{amount}đ</b> từ Ví.\nSố dư còn lại: <b>{balance}đ</b>",
     },
 
     "en": {
@@ -398,9 +445,56 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "/menu – Open the main menu\n"
             "/products – Show products\n"
             "/orders – Show orders\n"
+            "/wallet – My wallet\n"
             "/language – Change language\n"
             "/support – Open support"
         ),
+        # ── Wallet ────────────────────────────────────────────────────────────
+        "menu_wallet": "💼 My Wallet",
+        "menu_btn_wallet": "💼 My Wallet",
+        "wallet_title": "💼 <b>MY WALLET</b>",
+        "wallet_balance_vnd": "💰 VND balance: <b>{amount} VND</b>",
+        "wallet_balance_usdt": "💰 USDT balance: <b>{amount} USDT</b>",
+        "btn_wallet_deposit": "➕ Deposit",
+        "btn_wallet_history": "📜 Transaction history",
+        "wallet_choose_deposit_currency": "💼 Which currency would you like to deposit?",
+        "btn_wallet_deposit_vnd": "🏦 VND (Bank transfer)",
+        "btn_wallet_deposit_usdt": "🟨 USDT (Crypto)",
+        "wallet_choose_deposit_method": "💼 Choose a deposit method:",
+        "wallet_enter_amount_vnd": "🔢 Enter the amount to deposit (VND), e.g. 100000",
+        "wallet_enter_amount_usdt": "🔢 Enter the amount to deposit (USDT), e.g. 10",
+        "wallet_amount_invalid": "❌ Please enter a valid amount (positive number).",
+        "wallet_deposit_no_payment_configured": "❌ This payment method isn't configured yet. Please choose another or contact support.",
+        "wallet_deposit_created_vnd": (
+            "✅ <b>DEPOSIT REQUEST CREATED</b>\n\n"
+            "🔑 Reference: <code>{ref}</code>\n"
+            "💰 Amount: <b>{amount} VND</b>\n\n"
+            "🏦 Bank: <b>{bank}</b>\n"
+            "Account: <code>{acc}</code>\n"
+            "Account holder: {acc_name}\n"
+            "Transfer note: <code>{ref}</code>\n\n"
+            "⚠️ Please transfer the exact amount and use the note shown above.\n"
+            "Your wallet will be credited automatically once admin confirms."
+        ),
+        "wallet_deposit_created_usdt": (
+            "✅ <b>DEPOSIT REQUEST CREATED</b>\n\n"
+            "🔑 Reference: <code>{ref}</code>\n"
+            "💰 Amount: <b>{amount} USDT</b>\n\n"
+            "🌐 Network: {network}\n"
+            "Address: <code>{address}</code>\n\n"
+            "⚠️ Please send the exact amount and keep the reference above for support.\n"
+            "Your wallet will be credited automatically once admin confirms."
+        ),
+        "wallet_history_title": "📜 <b>WALLET TRANSACTION HISTORY</b>\n",
+        "wallet_history_empty": "You have no wallet transactions yet.",
+        "wallet_deposit_confirmed_user": "✅ Deposit request <code>{ref}</code> confirmed!\n💰 Credited: <b>{amount}</b> to your wallet.",
+        "wallet_deposit_rejected_user": "❌ Deposit request <code>{ref}</code> was rejected.\n{note}",
+        "wallet_refund_notice": "💼 Order <code>{code}</code> could not be fulfilled — <b>{amount} VND</b> has been refunded to your wallet.",
+        "wallet_admin_credit_notice": "💼 Admin credited your wallet with <b>{amount}</b>.\n📝 Reason: {note}",
+        "wallet_admin_debit_notice": "💼 Admin deducted <b>{amount}</b> from your wallet.\n📝 Reason: {note}",
+        "btn_pay_wallet": "💼 Pay with Wallet",
+        "wallet_insufficient_balance": "❌ Insufficient wallet balance.\nNeeded: <b>{needed} VND</b>\nYou have: <b>{have} VND</b>\n\nPlease top up your wallet.",
+        "wallet_purchase_debited": "✅ Paid <b>{amount} VND</b> from your Wallet.\nRemaining balance: <b>{balance} VND</b>",
     },
 }
 

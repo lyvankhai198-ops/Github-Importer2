@@ -629,6 +629,9 @@ async def _deliver_to_user(order: Order, db: Session):
 
 async def _notify_paid_api_failed(order: Order, db: Session, reason: str = ""):
     try:
+        from services.wallet_service import refund_order_to_wallet
+        await refund_order_to_wallet(db, order, reason="API nguồn lỗi sau khi thanh toán")
+
         from services.bot_service import bot_manager
         if not bot_manager.is_running():
             return
@@ -647,6 +650,9 @@ async def _notify_paid_api_failed(order: Order, db: Session, reason: str = ""):
 async def _notify_paid_waiting_stock(order: Order, db: Session):
     """Payment received but source ran out of stock unexpectedly."""
     try:
+        from services.wallet_service import refund_order_to_wallet
+        await refund_order_to_wallet(db, order, reason="Nguồn hết hàng sau khi thanh toán")
+
         from services.bot_service import bot_manager
         if not bot_manager.is_running():
             return

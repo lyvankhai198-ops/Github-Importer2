@@ -4,8 +4,9 @@ from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from database import get_db
-from models import User, Order
+from models import User, Order, WalletCurrency, WalletTxType
 from services.bot_service import bot_manager
+from services import wallet_service
 
 router = APIRouter()
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
@@ -111,11 +112,13 @@ async def user_detail(telegram_id: str, request: Request, db: Session = Depends(
         flash(request, "Người dùng không tồn tại!", "error")
         return RedirectResponse(url="/users", status_code=302)
     orders = db.query(Order).filter(Order.telegram_user_id == telegram_id).order_by(Order.created_at.desc()).all()
+    wallet_txs = wallet_service.list_wallet_transactions(db, telegram_id, limit=50)
     flash_msg = request.session.pop("flash", None)
     return templates.TemplateResponse(request, "users.html", {
         
         "detail_user": user,
         "user_orders": orders,
+        "wallet_txs": wallet_txs,
         "users": [],
         "search": "",
         "page": 1,
@@ -123,6 +126,59 @@ async def user_detail(telegram_id: str, request: Request, db: Session = Depends(
         "per_page": 20,
         "flash": flash_msg,
     })
+
+
+@router.post("/users/{telegram_id}/wallet/adjust")
+async def adjust_wallet(
+    telegram_id: str, request: Request, db: Session = Depends(get_db),
+    currency: str = Form(...), direction: str = Form(...),
+    amount: float = Form(...), note: str = Form(...),
+):
+    """Admin manual credit/debit of a customer's wallet. Requires a note,
+    is fully ledgered, is atomic (see services.wallet_service), and never
+    lets a balance go negative."""
+    if not check_auth(request):
+        return RedirectResponse(url="/login", status_code=302)
+    user = db.query(User).filter(User.telegram_id == telegram_id).first()
+    if not user:
+        flash(request, "Người dùng không tồn tại!", "error")
+        return RedirectResponse(url="/users", status_code=302)
+
+    note = (note or "").strip()
+    if not note:
+        flash(request, "Vui lòng nhập lý do điều chỉnh!", "error")
+        return RedirectResponse(url=f"/users/{telegram_id}", status_code=302)
+    if currency not in ("VND", "USDT") or direction not in ("credit", "debit") or amount <= 0:
+        flash(request, "Dữ liệu điều chỉnh không hợp lệ!", "error")
+        return RedirectResponse(url=f"/users/{telegram_id}", status_code=302)
+
+    admin_id = request.session.get("admin_id", "admin")
+    try:
+        if direction == "credit":
+            wallet_service.credit_wallet(
+                db, telegram_id, currency, amount, WalletTxType.admin_credit,
+                note=note, actor=str(admin_id),
+            )
+        else:
+            wallet_service.debit_wallet(
+                db, telegram_id, currency, amount, WalletTxType.admin_debit,
+                note=note, actor=str(admin_id),
+            )
+        flash(request, "Đã điều chỉnh số dư ví!")
+
+        if bot_manager.is_running():
+            from bot.notifier import notify_user_wallet_admin_adjustment
+            from bot.i18n import get_user_lang
+            lang = get_user_lang(db, telegram_id)
+            await notify_user_wallet_admin_adjustment(
+                bot_manager._application.bot, telegram_id, currency, amount, note,
+                is_credit=(direction == "credit"), lang=lang,
+            )
+    except wallet_service.InsufficientBalanceError as e:
+        flash(request, f"Số dư không đủ để trừ: hiện có {e.balance}, cần {e.amount}.", "error")
+    except Exception as e:
+        flash(request, f"Lỗi điều chỉnh ví: {e}", "error")
+    return RedirectResponse(url=f"/users/{telegram_id}", status_code=302)
 
 
 @router.post("/users/{telegram_id}/ban")

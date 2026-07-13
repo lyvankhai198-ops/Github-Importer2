@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Ví khách hàng - AI Center{% endblock %}
+{% block page_title %}💼 Ví khách hàng — Yêu cầu nạp tiền{% endblock %}
+{% block content %}
+
+<div class="card mb-3">
+  <div class="card-body d-flex align-items-center gap-2">
+    <span class="text-muted">Trạng thái:</span>
+    <a href="/wallet?status=pending" class="btn btn-sm {{ 'btn-warning' if status == 'pending' else 'btn-outline-warning' }}">⏳ Chờ xác nhận ({{ pending_count }})</a>
+    <a href="/wallet?status=confirmed" class="btn btn-sm {{ 'btn-success' if status == 'confirmed' else 'btn-outline-success' }}">✅ Đã xác nhận</a>
+    <a href="/wallet?status=rejected" class="btn btn-sm {{ 'btn-danger' if status == 'rejected' else 'btn-outline-danger' }}">❌ Đã từ chối</a>
+    <a href="/wallet?status=all" class="btn btn-sm {{ 'btn-secondary' if status == 'all' else 'btn-outline-secondary' }}">Tất cả</a>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm mb-0 align-middle">
+        <thead>
+          <tr>
+            <th>Mã tham chiếu</th>
+            <th>User</th>
+            <th>Số tiền</th>
+            <th>Phương thức</th>
+            <th>Trạng thái</th>
+            <th>Ngày tạo</th>
+            <th>Hành động</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for d in deposits %}
+          {% set u = user_map.get(d.telegram_user_id) %}
+          {% set cur = d.currency.value if d.currency.value is defined else d.currency %}
+          <tr>
+            <td><code>{{ d.reference_code }}</code></td>
+            <td>
+              <a href="/users/{{ d.telegram_user_id }}">
+                {{ u.first_name if u else '' }} {{ ('@' + u.username) if u and u.username else '' }}
+              </a>
+              <div class="text-muted small">{{ d.telegram_user_id }}</div>
+            </td>
+            <td class="fw-bold">
+              {% if cur == "VND" %}{{ "{:,.0f}".format(d.amount).replace(",", ".") }}đ{% else %}{{ "%.2f"|format(d.amount) }} USDT{% endif %}
+            </td>
+            <td>{{ d.method or '—' }}</td>
+            <td>
+              {% if d.status.value == "pending" or d.status == "pending" %}<span class="badge bg-warning text-dark">Chờ xác nhận</span>
+              {% elif d.status.value == "confirmed" or d.status == "confirmed" %}<span class="badge bg-success">Đã xác nhận</span>
+              {% elif d.status.value == "rejected" or d.status == "rejected" %}<span class="badge bg-danger">Đã từ chối</span>
+              {% else %}<span class="badge bg-secondary">Đã hủy</span>{% endif %}
+            </td>
+            <td><small>{{ d.created_at.strftime('%d/%m/%Y %H:%M') }}</small></td>
+            <td>
+              {% if d.status.value == "pending" or d.status == "pending" %}
+              <div class="d-flex gap-1">
+                <form action="/wallet/{{ d.id }}/confirm" method="post" onsubmit="return confirm('Xác nhận đã nhận tiền và cộng vào ví user?')">
+                  <button type="submit" class="btn btn-sm btn-success">✅ Xác nhận</button>
+                </form>
+                <form action="/wallet/{{ d.id }}/reject" method="post" onsubmit="return confirm('Từ chối yêu cầu nạp tiền này?')">
+                  <button type="submit" class="btn btn-sm btn-outline-danger">❌ Từ chối</button>
+                </form>
+              </div>
+              {% else %}
+              <small class="text-muted">{{ d.admin_note or '' }}</small>
+              {% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="7" class="text-center text-muted py-4">Không có yêu cầu nạp tiền nào</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

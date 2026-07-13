@@ -6,7 +6,8 @@ from services.normalize import format_vnd, format_usdt
 def main_menu_keyboard(lang: str = "vi", is_admin: bool = False) -> ReplyKeyboardMarkup:
     buttons = [
         [t(lang, "menu_products"), t(lang, "menu_orders")],
-        [t(lang, "menu_language"), t(lang, "menu_support")],
+        [t(lang, "menu_btn_wallet"), t(lang, "menu_support")],
+        [t(lang, "menu_language")],
     ]
     if is_admin:
         buttons.append([t(lang, "menu_admin")])
@@ -112,10 +113,12 @@ def out_of_stock_keyboard(product_id: int, lang: str = "vi") -> InlineKeyboardMa
     ])
 
 
-def payment_method_keyboard(order_id: int, enabled_methods: list, lang: str = "vi") -> InlineKeyboardMarkup:
+def payment_method_keyboard(order_id: int, enabled_methods: list, lang: str = "vi",
+                             show_wallet: bool = False) -> InlineKeyboardMarkup:
     """
     Show only the enabled payment methods.
     enabled_methods: list of method_code strings, e.g. ["bank_transfer", "binance_pay"]
+    show_wallet: adds a "Pay with Wallet" row (VND-only) above the others.
     """
     METHOD_BUTTONS = {
         "bank_transfer":  ("btn_bank_transfer",  f"pay_method:{order_id}:bank_transfer"),
@@ -125,12 +128,57 @@ def payment_method_keyboard(order_id: int, enabled_methods: list, lang: str = "v
         "usdt_erc20":     ("btn_usdt_erc20",      f"pay_method:{order_id}:usdt_erc20"),
     }
     rows = []
+    if show_wallet:
+        rows.append([InlineKeyboardButton(t(lang, "btn_pay_wallet"), callback_data=f"pay_method:{order_id}:wallet")])
     for code in ["bank_transfer", "binance_pay", "usdt_bep20", "usdt_trc20", "usdt_erc20"]:
         if code in enabled_methods:
             label_key, callback = METHOD_BUTTONS[code]
             rows.append([InlineKeyboardButton(t(lang, label_key), callback_data=callback)])
     rows.append([InlineKeyboardButton(t(lang, "btn_cancel_order"), callback_data=f"cancel_pending:{order_id}")])
     return InlineKeyboardMarkup(rows)
+
+
+# ── Wallet ───────────────────────────────────────────────────────────────────
+
+def wallet_menu_keyboard(lang: str = "vi") -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(t(lang, "btn_wallet_deposit"), callback_data="wallet_deposit")],
+        [InlineKeyboardButton(t(lang, "btn_wallet_history"), callback_data="wallet_history")],
+        [InlineKeyboardButton(t(lang, "btn_home"), callback_data="home")],
+    ])
+
+
+def wallet_deposit_currency_keyboard(lang: str = "vi") -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(t(lang, "btn_wallet_deposit_vnd"), callback_data="wallet_dep_cur:VND")],
+        [InlineKeyboardButton(t(lang, "btn_wallet_deposit_usdt"), callback_data="wallet_dep_cur:USDT")],
+        [InlineKeyboardButton(t(lang, "btn_back"), callback_data="wallet_home")],
+    ])
+
+
+def wallet_deposit_method_keyboard(currency: str, enabled_methods: list, lang: str = "vi") -> InlineKeyboardMarkup:
+    """Reuse the same method labels as order payment (bank/crypto), filtered by currency."""
+    vnd_methods = {"bank_transfer": ("btn_bank_transfer", "bank_transfer")}
+    usdt_methods = {
+        "binance_pay": ("btn_binance_pay", "binance_pay"),
+        "usdt_bep20":  ("btn_usdt_bep20",  "usdt_bep20"),
+        "usdt_trc20":  ("btn_usdt_trc20",  "usdt_trc20"),
+        "usdt_erc20":  ("btn_usdt_erc20",  "usdt_erc20"),
+    }
+    pool = vnd_methods if currency == "VND" else usdt_methods
+    rows = []
+    for code, (label_key, m) in pool.items():
+        if code in enabled_methods:
+            rows.append([InlineKeyboardButton(t(lang, label_key), callback_data=f"wallet_dep_method:{currency}:{m}")])
+    rows.append([InlineKeyboardButton(t(lang, "btn_back"), callback_data="wallet_deposit")])
+    return InlineKeyboardMarkup(rows)
+
+
+def wallet_insufficient_balance_keyboard(order_id: int, lang: str = "vi") -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(t(lang, "btn_wallet_deposit"), callback_data="wallet_deposit")],
+        [InlineKeyboardButton(t(lang, "btn_cancel_order"), callback_data=f"cancel_pending:{order_id}")],
+    ])
 
 
 def payment_keyboard(order_id: int, support_username: str = "", lang: str = "vi",

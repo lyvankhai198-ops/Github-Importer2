@@ -399,6 +399,9 @@ def _get_bot_config(db: Session):
 
 async def _notify_inventory_waiting_stock(order: Order, db: Session):
     try:
+        from services.wallet_service import refund_order_to_wallet
+        await refund_order_to_wallet(db, order, reason="Kho nội bộ hết hàng sau khi thanh toán")
+
         from services.bot_service import bot_manager
         if not bot_manager.is_running():
             return
@@ -436,6 +439,9 @@ async def _notify_inventory_delivery_success(order: Order, db: Session):
 async def _notify_inventory_delivery_failed(order: Order, db: Session):
     """Telegram send failed after reserving stock — stock was rolled back, payment intact."""
     try:
+        from services.wallet_service import refund_order_to_wallet
+        await refund_order_to_wallet(db, order, reason="Không thể gửi hàng qua Telegram")
+
         from services.bot_service import bot_manager
         if not bot_manager.is_running():
             return

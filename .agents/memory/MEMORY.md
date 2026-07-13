@@ -13,3 +13,4 @@
 - [Language-gate needs its own flag](language-gate-flag.md) — a nullable-looking column with a non-null DB default (User.language_code default "vi") can't represent "unset"; add a separate boolean instead of checking the value
 - [Manual-edit-safe field sync](manual-edit-safe-sync.md) — track which admin-edited fields to freeze via a diff-on-save comparison, not a "was this form submitted" flag
 - [Two distinct restock-notify audiences](restock-notify-audiences.md) — don't conflate paid_waiting_stock buyers with a browsing "notify me" opt-in list; they're different users needing different triggers
+- [Wallet ledger & atomicity design](wallet-ledger-design.md) — wallet balance mutations always go through wallet_service credit/debit (BEGIN IMMEDIATE lock + Decimal quantize); never write wallet_vnd/usdt directly

@@ -395,6 +395,71 @@ async def notify_user_payment_partial(bot, chat_id: str, order: Order,
         logger.error(f"notify_user_payment_partial error: {e}")
 
 
+# ── Wallet ───────────────────────────────────────────────────────────────────
+
+async def notify_user_wallet_refund(bot, chat_id: str, order: Order, lang: str = "vi"):
+    """User: a wallet-paid order failed to fulfill and was auto-refunded."""
+    try:
+        from bot.i18n import t
+        text = t(lang, "wallet_refund_notice", code=order.order_code, amount=format_vnd(order.total_price))
+        await bot.send_message(chat_id=int(chat_id), text=text, parse_mode="HTML")
+    except Exception as e:
+        logger.error(f"notify_user_wallet_refund error: {e}")
+
+
+async def notify_admin_wallet_deposit_request(bot, deposit, admin_telegram_id: str):
+    """Admin: shopper submitted a new wallet deposit request awaiting confirmation."""
+    if not admin_telegram_id:
+        return
+    try:
+        currency = deposit.currency.value if hasattr(deposit.currency, "value") else str(deposit.currency)
+        amount_str = format_vnd(deposit.amount) + "đ" if currency == "VND" else f"{deposit.amount:.2f} USDT"
+        text = (
+            f"💼 <b>YÊU CẦU NẠP TIỀN MỚI!</b>\n\n"
+            f"👤 User: <code>{deposit.telegram_user_id}</code>\n"
+            f"💰 Số tiền: <b>{amount_str}</b>\n"
+            f"🔑 Mã tham chiếu: <code>{deposit.reference_code}</code>\n"
+            f"💳 Phương thức: {deposit.method or '—'}\n\n"
+            "Vui lòng kiểm tra và xác nhận trên trang quản trị (Ví / Nạp tiền)."
+        )
+        await bot.send_message(chat_id=int(admin_telegram_id), text=text, parse_mode="HTML")
+    except Exception as e:
+        logger.error(f"notify_admin_wallet_deposit_request error: {e}")
+
+
+async def notify_user_wallet_deposit_confirmed(bot, chat_id: str, deposit, lang: str = "vi"):
+    try:
+        from bot.i18n import t
+        currency = deposit.currency.value if hasattr(deposit.currency, "value") else str(deposit.currency)
+        amount_str = format_vnd(deposit.amount) + " VND" if currency == "VND" else f"{deposit.amount:.2f} USDT"
+        text = t(lang, "wallet_deposit_confirmed_user", ref=deposit.reference_code, amount=amount_str)
+        await bot.send_message(chat_id=int(chat_id), text=text, parse_mode="HTML")
+    except Exception as e:
+        logger.error(f"notify_user_wallet_deposit_confirmed error: {e}")
+
+
+async def notify_user_wallet_deposit_rejected(bot, chat_id: str, deposit, lang: str = "vi"):
+    try:
+        from bot.i18n import t
+        note = deposit.admin_note or ""
+        text = t(lang, "wallet_deposit_rejected_user", ref=deposit.reference_code, note=note)
+        await bot.send_message(chat_id=int(chat_id), text=text, parse_mode="HTML")
+    except Exception as e:
+        logger.error(f"notify_user_wallet_deposit_rejected error: {e}")
+
+
+async def notify_user_wallet_admin_adjustment(bot, chat_id: str, currency: str, amount: float,
+                                               note: str, is_credit: bool, lang: str = "vi"):
+    try:
+        from bot.i18n import t
+        amount_str = format_vnd(amount) + " VND" if currency == "VND" else f"{amount:.2f} USDT"
+        key = "wallet_admin_credit_notice" if is_credit else "wallet_admin_debit_notice"
+        text = t(lang, key, amount=amount_str, note=note or "—")
+        await bot.send_message(chat_id=int(chat_id), text=text, parse_mode="HTML")
+    except Exception as e:
+        logger.error(f"notify_user_wallet_admin_adjustment error: {e}")
+
+
 async def notify_user_api_failed_after_payment(bot, chat_id: str, order: Order, lang: str = "vi"):
     """
     User: payment received but API failed.

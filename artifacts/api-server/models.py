@@ -70,6 +70,26 @@ class PaymentStatus(str, enum.Enum):
     late_payment = "late_payment"  # received after expiry
 
 
+class WalletCurrency(str, enum.Enum):
+    VND = "VND"
+    USDT = "USDT"
+
+
+class WalletTxType(str, enum.Enum):
+    deposit = "deposit"              # confirmed top-up
+    purchase = "purchase"            # debited to pay for an order
+    refund = "refund"                # auto-refund after a wallet-paid order failed
+    admin_credit = "admin_credit"    # manual admin top-up
+    admin_debit = "admin_debit"      # manual admin deduction
+
+
+class WalletDepositStatus(str, enum.Enum):
+    pending = "pending"      # awaiting admin confirmation
+    confirmed = "confirmed"  # admin confirmed, wallet credited
+    rejected = "rejected"    # admin rejected, nothing credited
+    cancelled = "cancelled"  # shopper cancelled before admin acted
+
+
 def now():
     return datetime.utcnow()
 
@@ -169,6 +189,10 @@ class User(Base):
     total_orders = Column(Integer, default=0)
     total_spent = Column(Float, default=0.0)
     balance = Column(Float, default=0.0, nullable=False)  # wallet balance carried over from legacy-bot import
+    # New wallet balances (deposit/pay-with-wallet feature). Kept separate from
+    # the legacy `balance` column above — different provenance, never auto-merged.
+    wallet_vnd = Column(Float, default=0.0, nullable=False)
+    wallet_usdt = Column(Float, default=0.0, nullable=False)
     is_banned = Column(Boolean, default=False)
     # True once a broadcast/DM send gets a Telegram "Forbidden" (user blocked
     # the bot). Distinct from is_banned (admin action) — this is detected
@@ -379,6 +403,11 @@ class Order(Base):
     payment_network = Column(String(50), nullable=True)            # BEP20 | TRC20 | BINANCE
     confirmations = Column(Integer, nullable=True, default=0)
     required_confirmations = Column(Integer, nullable=True)
+    # ── Wallet fields ─────────────────────────────────────────────────────────
+    # True once this order's total_price has been auto-refunded back to the
+    # buyer's wallet_vnd after a fulfillment failure. Only ever set for orders
+    # paid via payment_method == "wallet"; prevents double-refunding.
+    refunded_to_wallet = Column(Boolean, default=False, nullable=False)
     # ─────────────────────────────────────────────────────────────────────────
     created_at = Column(DateTime, default=now)
     updated_at = Column(DateTime, default=now, onupdate=now)
@@ -453,6 +482,53 @@ class CryptoTransaction(Base):
     __table_args__ = (
         UniqueConstraint("network", "txid", "log_index", name="uq_crypto_tx"),
     )
+
+
+class WalletTransaction(Base):
+    """
+    Immutable ledger row for every wallet balance change (deposit, purchase
+    debit, auto-refund, or manual admin credit/debit). balance_before/after
+    let the admin/user history show a running total without recomputation.
+    """
+    __tablename__ = "wallet_transactions"
+    id = Column(Integer, primary_key=True, index=True)
+    telegram_user_id = Column(String(50), ForeignKey("users.telegram_id"), nullable=False, index=True)
+    currency = Column(SAEnum(WalletCurrency), nullable=False)
+    tx_type = Column(SAEnum(WalletTxType), nullable=False)
+    amount = Column(Float, nullable=False)           # always positive magnitude
+    balance_before = Column(Float, nullable=False)
+    balance_after = Column(Float, nullable=False)
+    order_id = Column(Integer, ForeignKey("orders.id"), nullable=True)
+    deposit_id = Column(Integer, ForeignKey("wallet_deposits.id"), nullable=True)
+    note = Column(Text, nullable=True)
+    actor = Column(String(100), nullable=True)  # "system" | "admin" | admin username
+    created_at = Column(DateTime, default=now)
+
+    user = relationship("User", foreign_keys=[telegram_user_id])
+    order = relationship("Order", foreign_keys=[order_id])
+
+
+class WalletDeposit(Base):
+    """
+    A shopper-initiated top-up request. Admin manually confirms/rejects from
+    the dashboard after verifying the transfer arrived (mirrors the existing
+    Binance-manual / paid_waiting_stock manual-confirm pattern) — this table
+    is intentionally NOT wired into the SePay webhook or on-chain monitor.
+    """
+    __tablename__ = "wallet_deposits"
+    id = Column(Integer, primary_key=True, index=True)
+    telegram_user_id = Column(String(50), ForeignKey("users.telegram_id"), nullable=False, index=True)
+    currency = Column(SAEnum(WalletCurrency), nullable=False)
+    amount = Column(Float, nullable=False)
+    method = Column(String(50), nullable=True)  # bank_transfer | binance_pay | usdt_bep20 | usdt_trc20 | usdt_erc20
+    reference_code = Column(String(50), nullable=True, index=True)  # shown to shopper, helps admin match the transfer
+    status = Column(SAEnum(WalletDepositStatus), default=WalletDepositStatus.pending, nullable=False)
+    admin_note = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=now)
+    confirmed_at = Column(DateTime, nullable=True)
+    confirmed_by = Column(String(100), nullable=True)
+
+    user = relationship("User", foreign_keys=[telegram_user_id])
 
 
 class OrderSourceAttempt(Base):

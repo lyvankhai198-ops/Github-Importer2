@@ -2,6 +2,7 @@ import io
 import html
 import json
 import logging
+import asyncio
 from datetime import datetime, timedelta
 from telegram import Update, BotCommand, BotCommandScopeDefault, BotCommandScopeChat
 from telegram.ext import ContextTypes
@@ -11,6 +12,8 @@ from bot.keyboards import (
     partial_delivery_keyboard, language_keyboard, payment_method_keyboard,
     binance_keyboard, crypto_payment_keyboard,
     confirm_order_keyboard,
+    wallet_menu_keyboard, wallet_deposit_currency_keyboard, wallet_deposit_method_keyboard,
+    wallet_insufficient_balance_keyboard,
 )
 from bot.i18n import t, get_user_lang
 from services.product_service import (
@@ -22,9 +25,13 @@ from services.payment_service import (
     generate_vietqr_url, is_sepay_enabled, get_sepay_config,
     get_enabled_payment_methods, safe_delete_message as _safe_del,
     create_pending_payment_order, create_crypto_payment_order, create_binance_order,
-    generate_payment_code,
+    generate_payment_code, process_paid_order,
 )
-from models import Order, TelegramBotConfig, OrderStatus, PaymentStatus, User
+from services import wallet_service
+from models import (
+    Order, TelegramBotConfig, OrderStatus, PaymentStatus, User,
+    WalletCurrency, WalletTxType, WalletDeposit, WalletDepositStatus,
+)
 from database import SessionLocal
 
 logger = logging.getLogger(__name__)
@@ -78,6 +85,7 @@ async def _set_bot_commands(bot, lang: str = "vi", chat_id: int = None):
         BotCommand("menu",     "Thông tin tài khoản"),
         BotCommand("product",  "Danh sách sản phẩm"),
         BotCommand("orders",   "Đơn hàng của tôi"),
+        BotCommand("wallet",   "Ví của tôi"),
         BotCommand("language", "Đổi ngôn ngữ"),
         BotCommand("support",  "Hỗ trợ"),
         BotCommand("myid",     "Lấy Telegram ID"),
@@ -86,6 +94,7 @@ async def _set_bot_commands(bot, lang: str = "vi", chat_id: int = None):
         BotCommand("menu",     "Account information"),
         BotCommand("product",  "Product list"),
         BotCommand("orders",   "My orders"),
+        BotCommand("wallet",   "My wallet"),
         BotCommand("language", "Change language"),
         BotCommand("support",  "Support"),
         BotCommand("myid",     "Get Telegram ID"),
@@ -346,6 +355,40 @@ async def orders_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db.close()
 
 
+async def _send_wallet_menu(bot_or_query, chat_id_or_none, db, tg_user, lang: str, edit=False):
+    user = db.query(User).filter(User.telegram_id == str(tg_user.id)).first()
+    vnd = wallet_service.get_balance(user, WalletCurrency.VND) if user else 0.0
+    usdt = wallet_service.get_balance(user, WalletCurrency.USDT) if user else 0.0
+    text = "\n".join([
+        t(lang, "wallet_title"),
+        "",
+        t(lang, "wallet_balance_vnd", amount=format_vnd(vnd)),
+        t(lang, "wallet_balance_usdt", amount=f"{usdt:.2f}"),
+    ])
+    kbd = wallet_menu_keyboard(lang=lang)
+    if edit:
+        try:
+            await bot_or_query.message.edit_text(text, parse_mode="HTML", reply_markup=kbd)
+        except Exception:
+            await bot_or_query.message.reply_text(text, parse_mode="HTML", reply_markup=kbd)
+    else:
+        await bot_or_query.reply_text(text, parse_mode="HTML", reply_markup=kbd)
+
+
+async def wallet_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handler for /wallet command and 💼 Ví của tôi / My Wallet menu button."""
+    db = SessionLocal()
+    try:
+        if not await _require_language_selected(update, db):
+            return
+        lang = _get_lang(db, update.effective_user.id)
+        tg_user = update.effective_user
+        get_or_create_user(db, str(tg_user.id), tg_user.username, tg_user.first_name, tg_user.last_name)
+        await _send_wallet_menu(update.message, None, db, tg_user, lang, edit=False)
+    finally:
+        db.close()
+
+
 async def support_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db = SessionLocal()
     try:
@@ -564,6 +607,130 @@ async def _setup_sepay_payment(context, db, tg_user, order, lang: str, processin
         order.payment_message_id = sent_msg.message_id
         order.payment_chat_id = tg_user.id
         db.commit()
+    return True
+
+
+def _get_deposit_payment_display(db, method: str):
+    """
+    Return a dict of display fields for a wallet-deposit payment method, or
+    None if that method isn't configured. Reuses the same config sources as
+    the order-payment setup functions above (SepayConfig / Binance / crypto
+    PaymentMethod rows) — read-only here, nothing is created upstream.
+    """
+    if method == "bank_transfer":
+        sepay = get_sepay_config(db)
+        if not sepay or not sepay.is_enabled or not sepay.account_number or not sepay.bank_bin or not sepay.account_name:
+            return None
+        return {"bank": sepay.bank_bin, "acc": sepay.account_number, "acc_name": sepay.account_name}
+
+    if method == "binance_pay":
+        from services.binance_service import get_binance_config
+        bnb_cfg = get_binance_config(db)
+        if not bnb_cfg or not bnb_cfg.get("receiver_binance_id"):
+            return None
+        return {"network": "Binance Pay", "address": bnb_cfg.get("receiver_binance_id")}
+
+    if method in ("usdt_bep20", "usdt_trc20", "usdt_erc20"):
+        from models import PaymentMethod
+        from crypto import decrypt
+        pm = db.query(PaymentMethod).filter(PaymentMethod.method_code == method, PaymentMethod.is_active == True).first()
+        if not pm or not pm.config_encrypted:
+            return None
+        try:
+            pm_cfg = json.loads(decrypt(pm.config_encrypted) or "{}")
+        except Exception:
+            pm_cfg = {}
+        wallet = (pm_cfg.get("wallet_address") or "").strip()
+        if not wallet:
+            return None
+        network = {"usdt_bep20": "BEP20", "usdt_trc20": "TRC20", "usdt_erc20": "ERC20"}[method]
+        return {"network": network, "address": wallet}
+
+    return None
+
+
+async def _setup_wallet_payment(context, db, tg_user, order, lang: str, processing_msg=None):
+    """
+    Pay-with-wallet: unlike the other methods, this is synchronous — no
+    external wait for a webhook/on-chain confirmation. Debits wallet_vnd
+    atomically, marks the order paid, then hands it straight to
+    process_paid_order(). order.total_price is always VND-denominated
+    regardless of chosen method, so only wallet_vnd is used here.
+    """
+    user = db.query(User).filter(User.telegram_id == str(tg_user.id)).first()
+    balance = wallet_service.get_balance(user, WalletCurrency.VND) if user else 0.0
+
+    if balance < order.total_price:
+        if processing_msg:
+            try:
+                await processing_msg.delete()
+            except Exception:
+                pass
+        await context.bot.send_message(
+            chat_id=tg_user.id,
+            text=t(lang, "wallet_insufficient_balance", needed=format_vnd(order.total_price), have=format_vnd(balance)),
+            parse_mode="HTML",
+            reply_markup=wallet_insufficient_balance_keyboard(order.id, lang=lang),
+        )
+        return False
+
+    # The debit and the order's paid-status flip happen in ONE atomic
+    # transaction (extra_updates), guarded by "payment_status is not
+    # already paid/overpaid" — so a duplicate callback (double-tap, retry)
+    # can never debit the wallet twice for the same order.
+    now_iso = datetime.utcnow().isoformat(sep=" ")
+    try:
+        tx = wallet_service.debit_wallet(
+            db, str(tg_user.id), WalletCurrency.VND, order.total_price,
+            WalletTxType.purchase, order_id=order.id,
+            note=f"Thanh toán đơn {order.order_code}", actor="system",
+            extra_updates=[(
+                "UPDATE orders SET payment_method = 'wallet', payment_currency = 'VND', "
+                "payment_status = 'paid', paid_amount = ?, paid_at = ?, payment_chat_id = ? "
+                "WHERE id = ? AND (payment_status IS NULL OR payment_status NOT IN ('paid', 'overpaid'))",
+                (order.total_price, now_iso, str(tg_user.id), order.id),
+            )],
+        )
+    except wallet_service.InsufficientBalanceError:
+        if processing_msg:
+            try:
+                await processing_msg.delete()
+            except Exception:
+                pass
+        await context.bot.send_message(
+            chat_id=tg_user.id,
+            text=t(lang, "wallet_insufficient_balance", needed=format_vnd(order.total_price), have=format_vnd(balance)),
+            parse_mode="HTML",
+            reply_markup=wallet_insufficient_balance_keyboard(order.id, lang=lang),
+        )
+        return False
+    except wallet_service.AlreadyProcessedError:
+        # Order was already marked paid by a concurrent/duplicate call —
+        # nothing was debited this time around. Fall through to hand it to
+        # process_paid_order in case that step itself didn't finish
+        # previously; the balance shown falls back to the live value.
+        logger.info(f"[wallet] order {order.id} already paid — skipping duplicate debit")
+        tx = None
+
+    db.refresh(order)
+    db.refresh(user)
+
+    if processing_msg:
+        try:
+            await processing_msg.delete()
+        except Exception:
+            pass
+    try:
+        display_balance = tx.balance_after if tx else wallet_service.get_balance(user, WalletCurrency.VND)
+        await context.bot.send_message(
+            chat_id=tg_user.id,
+            text=t(lang, "wallet_purchase_debited", amount=format_vnd(order.total_price), balance=format_vnd(display_balance)),
+            parse_mode="HTML",
+        )
+    except Exception:
+        pass
+
+    asyncio.create_task(process_paid_order(order.id))
     return True
 
 
@@ -841,7 +1008,7 @@ async def _do_create_order(context, db, tg_user, product_id: int, quantity: int,
              product=html.escape(product_name),
              qty=quantity,
              total=total_str)
-    kbd = payment_method_keyboard(order.id, enabled_methods, lang=lang)
+    kbd = payment_method_keyboard(order.id, enabled_methods, lang=lang, show_wallet=True)
 
     try:
         await processing_msg.delete()
@@ -1018,6 +1185,99 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.message.delete()
         except Exception:
             pass
+        finally:
+            db.close()
+        return
+
+    # ── wallet: menu / deposit flow ──
+    if data == "wallet_home":
+        db = SessionLocal()
+        try:
+            tg_user = update.effective_user
+            lang = _get_lang(db, tg_user.id)
+            context.user_data.pop("state", None)
+            await _send_wallet_menu(query, None, db, tg_user, lang, edit=True)
+        finally:
+            db.close()
+        return
+
+    if data == "wallet_history":
+        db = SessionLocal()
+        try:
+            tg_user = update.effective_user
+            lang = _get_lang(db, tg_user.id)
+            txs = wallet_service.list_wallet_transactions(db, str(tg_user.id), limit=20)
+            if not txs:
+                lines = [t(lang, "wallet_history_title"), "", t(lang, "wallet_history_empty")]
+            else:
+                lines = [t(lang, "wallet_history_title")]
+                SIGN = {WalletTxType.deposit: "+", WalletTxType.refund: "+", WalletTxType.admin_credit: "+",
+                        WalletTxType.purchase: "-", WalletTxType.admin_debit: "-"}
+                for tx in txs:
+                    sign = SIGN.get(tx.tx_type, "")
+                    cur = tx.currency.value if hasattr(tx.currency, "value") else str(tx.currency)
+                    amt_str = f"{format_vnd(tx.amount)}đ" if cur == "VND" else f"{tx.amount:.2f} USDT"
+                    tt = tx.tx_type.value if hasattr(tx.tx_type, "value") else str(tx.tx_type)
+                    lines.append(f"• {sign}{amt_str} — {tt} ({tx.created_at.strftime('%d/%m %H:%M')})")
+            try:
+                await query.message.edit_text(
+                    "\n".join(lines), parse_mode="HTML",
+                    reply_markup=wallet_menu_keyboard(lang=lang),
+                )
+            except Exception:
+                pass
+        finally:
+            db.close()
+        return
+
+    if data == "wallet_deposit":
+        db = SessionLocal()
+        try:
+            tg_user = update.effective_user
+            lang = _get_lang(db, tg_user.id)
+            try:
+                await query.message.edit_text(
+                    t(lang, "wallet_choose_deposit_currency"),
+                    reply_markup=wallet_deposit_currency_keyboard(lang=lang),
+                )
+            except Exception:
+                pass
+        finally:
+            db.close()
+        return
+
+    if data.startswith("wallet_dep_cur:"):
+        currency = data.split(":")[1]
+        db = SessionLocal()
+        try:
+            tg_user = update.effective_user
+            lang = _get_lang(db, tg_user.id)
+            enabled = get_enabled_payment_methods(db)
+            try:
+                await query.message.edit_text(
+                    t(lang, "wallet_choose_deposit_method"),
+                    reply_markup=wallet_deposit_method_keyboard(currency, enabled, lang=lang),
+                )
+            except Exception:
+                pass
+        finally:
+            db.close()
+        return
+
+    if data.startswith("wallet_dep_method:"):
+        _, currency, method = data.split(":")
+        db = SessionLocal()
+        try:
+            tg_user = update.effective_user
+            lang = _get_lang(db, tg_user.id)
+            context.user_data["state"] = "waiting_wallet_deposit_amount"
+            context.user_data["wallet_dep_currency"] = currency
+            context.user_data["wallet_dep_method"] = method
+            prompt_key = "wallet_enter_amount_vnd" if currency == "VND" else "wallet_enter_amount_usdt"
+            try:
+                await query.message.edit_text(t(lang, prompt_key))
+            except Exception:
+                await context.bot.send_message(chat_id=tg_user.id, text=t(lang, prompt_key))
         finally:
             db.close()
         return
@@ -1263,6 +1523,8 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await _setup_binance_payment(context, db, tg_user, order, lang, processing_msg)
             elif method in ("usdt_bep20", "usdt_trc20", "usdt_erc20"):
                 await _setup_crypto_payment(context, db, tg_user, order, lang, method, processing_msg)
+            elif method == "wallet":
+                await _setup_wallet_payment(context, db, tg_user, order, lang, processing_msg)
             else:
                 try:
                     await processing_msg.edit_text(t(lang, "payment_method_disabled"))
@@ -1651,6 +1913,60 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text_in = update.message.text or ""
     if text_in in ("🌐 Ngôn ngữ", "🌐 Language"):
         await update.message.reply_text(t("vi", "choose_lang"), reply_markup=language_keyboard())
+        return
+
+    if state == "waiting_wallet_deposit_amount":
+        currency = context.user_data.get("wallet_dep_currency")
+        method = context.user_data.get("wallet_dep_method")
+        raw = (update.message.text or "").strip().replace(",", "").replace(".", "" if currency == "VND" else ".")
+        context.user_data.pop("state", None)
+        context.user_data.pop("wallet_dep_currency", None)
+        context.user_data.pop("wallet_dep_method", None)
+
+        try:
+            amount = float(raw)
+            if amount <= 0:
+                raise ValueError
+        except ValueError:
+            await update.message.reply_text(t(lang, "wallet_amount_invalid"))
+            return
+
+        db = SessionLocal()
+        try:
+            tg_user = update.effective_user
+            payment_info = _get_deposit_payment_display(db, method)
+            if not payment_info:
+                await update.message.reply_text(t(lang, "wallet_deposit_no_payment_configured"))
+                return
+
+            amount = wallet_service.quantize_amount(currency, amount)
+            ref = wallet_service.generate_deposit_reference()
+            deposit = WalletDeposit(
+                telegram_user_id=str(tg_user.id),
+                currency=WalletCurrency(currency),
+                amount=amount,
+                method=method,
+                reference_code=ref,
+                status=WalletDepositStatus.pending,
+            )
+            db.add(deposit)
+            db.commit()
+            db.refresh(deposit)
+
+            if currency == "VND":
+                text = t(lang, "wallet_deposit_created_vnd", ref=ref, amount=format_vnd(amount),
+                         bank=payment_info["bank"], acc=payment_info["acc"], acc_name=payment_info["acc_name"])
+            else:
+                text = t(lang, "wallet_deposit_created_usdt", ref=ref, amount=f"{amount:.2f}",
+                         network=payment_info["network"], address=payment_info["address"])
+            await update.message.reply_text(text, parse_mode="HTML")
+
+            admin_id = _get_admin_id(db)
+            if admin_id:
+                from bot.notifier import notify_admin_wallet_deposit_request
+                await notify_admin_wallet_deposit_request(context.bot, deposit, admin_id)
+        finally:
+            db.close()
         return
 
     if state == "waiting_txid":

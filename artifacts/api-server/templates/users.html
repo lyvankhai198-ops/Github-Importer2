@@ -36,6 +36,36 @@
     </div>
   </div>
   <div class="col-12 col-lg-8">
+    <div class="card mb-3">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <h6 class="mb-0">💼 Ví khách hàng</h6>
+        <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#walletModal">Điều chỉnh số dư</button>
+      </div>
+      <div class="card-body">
+        <div class="row g-2 text-center mb-3">
+          <div class="col-6"><div class="fw-bold fs-5">{{ "{:,.0f}".format(detail_user.wallet_vnd or 0).replace(",", ".") }}đ</div><small class="text-muted">Số dư VND (Ví)</small></div>
+          <div class="col-6"><div class="fw-bold fs-5">{{ "%.2f"|format(detail_user.wallet_usdt or 0) }} USDT</div><small class="text-muted">Số dư USDT (Ví)</small></div>
+        </div>
+        <div class="table-responsive" style="max-height: 260px; overflow-y: auto;">
+          <table class="table table-sm mb-0">
+            <thead><tr><th>Loại</th><th>Số tiền</th><th>Trước → Sau</th><th>Ghi chú</th><th>Thời gian</th></tr></thead>
+            <tbody>
+              {% for tx in wallet_txs %}
+              <tr>
+                <td><span class="badge bg-secondary">{{ tx.tx_type.value if tx.tx_type.value is defined else tx.tx_type }}</span></td>
+                <td>{{ "{:,.0f}".format(tx.amount).replace(",", ".") if (tx.currency.value if tx.currency.value is defined else tx.currency) == "VND" else "%.2f"|format(tx.amount) }} {{ tx.currency.value if tx.currency.value is defined else tx.currency }}</td>
+                <td><small>{{ "{:,.0f}".format(tx.balance_before).replace(",", ".") if (tx.currency.value if tx.currency.value is defined else tx.currency) == "VND" else "%.2f"|format(tx.balance_before) }} → {{ "{:,.0f}".format(tx.balance_after).replace(",", ".") if (tx.currency.value if tx.currency.value is defined else tx.currency) == "VND" else "%.2f"|format(tx.balance_after) }}</small></td>
+                <td><small>{{ tx.note or '—' }}</small></td>
+                <td><small>{{ tx.created_at.strftime('%d/%m %H:%M') }}</small></td>
+              </tr>
+              {% else %}
+              <tr><td colspan="5" class="text-center text-muted py-3">Chưa có giao dịch ví</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
     <div class="card">
       <div class="card-header"><h6 class="mb-0">Lịch sử đơn hàng</h6></div>
       <div class="card-body p-0">
@@ -60,6 +90,39 @@
       </div>
     </div>
   </div>
+</div>
+<!-- Wallet Adjustment Modal -->
+<div class="modal fade" id="walletModal" tabindex="-1">
+  <div class="modal-dialog"><div class="modal-content">
+    <div class="modal-header"><h5 class="modal-title">💼 Điều chỉnh số dư ví</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+    <form action="/users/{{ detail_user.telegram_id }}/wallet/adjust" method="post">
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label">Loại tiền</label>
+          <select name="currency" class="form-select" required>
+            <option value="VND">VND</option>
+            <option value="USDT">USDT</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Hành động</label>
+          <select name="direction" class="form-select" required>
+            <option value="credit">➕ Cộng tiền</option>
+            <option value="debit">➖ Trừ tiền</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Số tiền</label>
+          <input type="number" name="amount" step="0.01" min="0.01" class="form-control" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Lý do (bắt buộc)</label>
+          <textarea name="note" class="form-control" rows="2" placeholder="Vd: hoàn tiền do khiếu nại, khuyến mãi..." required></textarea>
+        </div>
+      </div>
+      <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button><button type="submit" class="btn btn-primary">Xác nhận</button></div>
+    </form>
+  </div></div>
 </div>
 <!-- Message Modal -->
 <div class="modal fade" id="msgModal" tabindex="-1">

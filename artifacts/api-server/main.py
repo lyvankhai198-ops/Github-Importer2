@@ -150,6 +150,13 @@ def _run_migrations():
         # blocked-in-Telegram detection (distinct from admin-issued is_banned).
         "ALTER TABLE users ADD COLUMN balance FLOAT DEFAULT 0.0",
         "ALTER TABLE users ADD COLUMN is_blocked BOOLEAN DEFAULT 0",
+        # Customer wallet feature: separate deposit/pay-with-wallet balances,
+        # kept distinct from the legacy `balance` column above. New
+        # wallet_transactions/wallet_deposits tables are created automatically
+        # by Base.metadata.create_all (new tables, no ALTER needed).
+        "ALTER TABLE users ADD COLUMN wallet_vnd FLOAT DEFAULT 0.0",
+        "ALTER TABLE users ADD COLUMN wallet_usdt FLOAT DEFAULT 0.0",
+        "ALTER TABLE orders ADD COLUMN refunded_to_wallet BOOLEAN DEFAULT 0",
     ]
     with engine.connect() as conn:
         ran_language_selected_migration = False
@@ -350,7 +357,7 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 UPLOADS_DIR.mkdir(exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
 
-from routers import auth, dashboard, products, orders, api_connections, users, settings
+from routers import auth, dashboard, products, orders, api_connections, users, settings, wallet
 from routers import webhooks  # public endpoints — no session auth
 
 app.include_router(auth.router)
@@ -360,6 +367,7 @@ app.include_router(orders.router)
 app.include_router(api_connections.router)
 app.include_router(users.router)
 app.include_router(settings.router)
+app.include_router(wallet.router)
 app.include_router(webhooks.router)  # POST /webhooks/sepay
 
 
