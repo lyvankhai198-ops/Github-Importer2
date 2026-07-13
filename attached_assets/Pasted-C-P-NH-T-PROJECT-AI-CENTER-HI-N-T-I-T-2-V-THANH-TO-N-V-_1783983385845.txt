@@ -1,0 +1,232 @@
+CẬP NHẬT PROJECT AI CENTER HIỆN TẠI — ĐỢT 2: VÍ, THANH TOÁN VÀ GIAO HÀNG
+
+Không tạo project mới.
+Không reset database.
+Không làm mất người dùng, ví, đơn hàng, API key, sản phẩm hoặc lịch sử hiện có.
+Giữ nguyên Generic API đã hoàn thành.
+Chỉ sửa các chức năng dưới đây.
+
+==================================================
+1. NẠP VÍ TỰ ĐỘNG QUA SEPAY
+==================================================
+
+Luồng:
+
+👛 Ví
+→ ➕ Nạp tiền
+→ 🏦 Chuyển khoản ngân hàng
+→ nhập số tiền
+→ Bot tạo QR thanh toán.
+
+Bot phải tạo:
+
+- QR VietQR
+- Nội dung chuyển khoản
+- Mã giao dịch
+- Đơn nạp
+
+==================================================
+2. HIỂN THỊ THÔNG TIN NGÂN HÀNG
+==================================================
+
+Không chỉ hiển thị:
+
+970422
+
+Phải hiển thị:
+
+🏦 Ngân hàng: MB Bank
+👤 Chủ tài khoản:
+🔢 Số tài khoản:
+💰 Số tiền:
+📝 Nội dung:
+
+Tên ngân hàng phải rõ ràng để khách dễ nhận biết.
+
+==================================================
+3. QR THANH TOÁN
+==================================================
+
+QR phải chứa:
+
+- MB Bank
+- số tài khoản
+- số tiền
+- nội dung chuyển khoản
+
+Quét bằng app ngân hàng là thanh toán ngay.
+
+==================================================
+4. WEBHOOK SEPAY
+==================================================
+
+Khi SePay gửi webhook:
+
+Hệ thống phải:
+
+- xác thực webhook
+- kiểm tra transaction chưa xử lý
+- kiểm tra số tiền
+- kiểm tra nội dung
+- cộng ví tự động
+- lưu lịch sử
+- không cộng hai lần
+
+Nếu webhook gửi lại:
+
+Không cộng lại.
+
+==================================================
+5. THÔNG BÁO SAU KHI NẠP
+==================================================
+
+Bot gửi:
+
+✅ NẠP TIỀN THÀNH CÔNG
+
+💰 Đã cộng:
+👛 Số dư mới:
+🕒 Thời gian:
+
+Sau khi cộng ví:
+
+- QR đổi trạng thái thành Đã thanh toán.
+- Không còn sử dụng được.
+
+==================================================
+6. NÚT HỦY ĐƠN NẠP
+==================================================
+
+Trong màn hình QR có:
+
+🔄 Kiểm tra thanh toán
+
+❌ Hủy đơn
+
+Nếu hủy:
+
+- trạng thái chuyển cancelled
+- QR hết hiệu lực
+- gửi thông báo
+
+❌ Yêu cầu nạp tiền đã được hủy.
+
+Nếu khách chuyển khoản sau khi hủy:
+
+Không tự cộng.
+
+Chuyển manual review.
+
+==================================================
+7. GIAO DIỆN GIAO HÀNG
+==================================================
+
+Thiết kế lại đẹp hơn.
+
+Sau khi mua:
+
+✅ MUA HÀNG THÀNH CÔNG
+
+🧾 Mã đơn
+
+📦 Sản phẩm
+
+🔢 Số lượng
+
+💰 Tổng tiền
+
+🎁 TÀI KHOẢN
+
+Mỗi tài khoản:
+
+<pre>
+email|password
+</pre>
+
+Nếu nhiều tài khoản:
+
+Tài khoản #1
+
+<pre>
+...
+</pre>
+
+Tài khoản #2
+
+<pre>
+...
+</pre>
+
+Phải dễ chạm để copy.
+
+Không gửi JSON.
+
+Không gửi dữ liệu nội bộ.
+
+==================================================
+8. NÚT SAU KHI GIAO
+==================================================
+
+Hiển thị:
+
+🛍 Mua tiếp
+
+📦 Xem đơn
+
+💬 Hỗ trợ
+
+🏠 Trang chủ
+
+Khi bấm:
+
+🛍 Mua tiếp
+
+Bot phải:
+
+- cập nhật danh sách sản phẩm
+- mở sản phẩm mới nhất
+
+==================================================
+9. THÔNG TIN GIAO HÀNG
+==================================================
+
+Giao diện gọn.
+
+Không quá nhiều chữ.
+
+Nếu trên 10 tài khoản:
+
+Gửi file TXT.
+
+==================================================
+10. KIỂM THỬ
+==================================================
+
+Test:
+
+✓ QR đúng
+
+✓ MB Bank hiển thị
+
+✓ Webhook cộng ví
+
+✓ Không cộng hai lần
+
+✓ Hủy đơn hoạt động
+
+✓ Chuyển khoản sau khi hủy không tự cộng
+
+✓ Giao hàng đẹp
+
+✓ Code block copy được
+
+✓ Mua tiếp hoạt động
+
+Sau khi hoàn thành:
+
+- chạy test
+- commit
+- push GitHub
+- báo commit hash
+- báo file đã sửa
+- git status phải sạch

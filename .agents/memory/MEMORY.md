@@ -20,3 +20,4 @@
 - [Restock/new-product notify audiences](restock-notify-audiences.md) — 3 distinct paths: paid_waiting_stock buyers, opt-in waiting list, and all-active-users broadcast; never conflate
 - [telegram_icon lock semantics](telegram-icon-lock.md) — auto-assign from name keywords unless admin-locked; clearing the field unlocks it (unlike other tracked synced fields, which freeze permanently)
 - [brand_key computed on the fly](brand-key-on-the-fly.md) — bot product-list brand grouping key is derived at query time from name, not a persisted column, to avoid a migration when only sort order needs it
+- [ai-center DB test isolation trap](ai-center-db-test-isolation.md) — config.py hardcodes sqlite path and ignores DATABASE_URL env var; test scripts must monkeypatch database.engine, not set an env var
