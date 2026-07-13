@@ -2,7 +2,7 @@ import json
 import httpx
 from pathlib import Path
 from datetime import datetime
-from fastapi import APIRouter, Request, Depends, Form
+from fastapi import APIRouter, Request, Depends, Form, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
@@ -434,14 +434,15 @@ async def save_binance_settings(
     request: Request,
     db: Session = Depends(get_db),
     is_enabled: str = Form("off"),
-    mode: str = Form("manual"),
-    pay_id: str = Form(""),
-    recipient_name: str = Form(""),
-    payment_instructions: str = Form(""),
-    merchant_id: str = Form(""),
+    receiver_binance_id: str = Form(""),
+    default_coin: str = Form("USDT"),
+    order_expiry_minutes: int = Form(30),
+    min_check_interval_seconds: int = Form(15),
+    amount_tolerance: float = Form(0.0),
     api_key: str = Form(""),
     secret_key: str = Form(""),
-    timeout_minutes: int = Form(30),
+    qr_image: UploadFile = File(None),
+    remove_qr_image: str = Form("off"),
 ):
     if not check_auth(request):
         return RedirectResponse(url="/login", status_code=302)
@@ -455,14 +456,15 @@ async def save_binance_settings(
         existing_cfg = {}
 
     new_cfg = {
-        "mode": mode,
-        "pay_id": pay_id.strip(),
-        "recipient_name": recipient_name.strip(),
-        "payment_instructions": payment_instructions.strip(),
-        "merchant_id": merchant_id.strip(),
-        "timeout_minutes": timeout_minutes,
+        "receiver_binance_id": receiver_binance_id.strip(),
+        "default_coin": (default_coin.strip() or "USDT").upper(),
+        "order_expiry_minutes": max(5, order_expiry_minutes),
+        "min_check_interval_seconds": max(5, min_check_interval_seconds),
+        "amount_tolerance": max(0.0, amount_tolerance),
+        "qr_image_path": existing_cfg.get("qr_image_path", ""),
     }
-    # Only update key/secret if user submitted non-masked values
+    # Only update key/secret if the admin submitted non-masked values —
+    # never overwrite a saved secret with the masked placeholder we returned.
     if api_key.strip() and not api_key.strip().startswith("*"):
         new_cfg["api_key"] = api_key.strip()
     else:
@@ -472,11 +474,48 @@ async def save_binance_settings(
     else:
         new_cfg["secret_key"] = existing_cfg.get("secret_key", "")
 
+    if remove_qr_image == "on":
+        new_cfg["qr_image_path"] = ""
+    elif qr_image and qr_image.filename:
+        from routers.products import _save_image
+        saved = await _save_image(qr_image)
+        if saved:
+            new_cfg["qr_image_path"] = saved
+
     pm.config_encrypted = encrypt(json.dumps(new_cfg, ensure_ascii=False))
     pm.updated_at = datetime.utcnow()
     db.commit()
     flash(request, "Cài đặt Binance Pay đã được lưu!")
     return RedirectResponse(url="/settings?tab=binance", status_code=302)
+
+
+@router.post("/settings/payment-method/binance/test-connection")
+async def test_binance_connection_endpoint(
+    request: Request,
+    db: Session = Depends(get_db),
+    api_key: str = Form(""),
+    secret_key: str = Form(""),
+):
+    """
+    Test the given (or currently saved, if the field is left as the masked
+    placeholder) API Key/Secret against Binance Pay History, without
+    exposing any transaction contents in the response.
+    """
+    if not check_auth(request):
+        return JSONResponse({"success": False}, status_code=401)
+
+    pm = _get_pm(db, "binance_pay")
+    try:
+        existing_cfg = json.loads(decrypt(pm.config_encrypted) or "{}") if pm.config_encrypted else {}
+    except Exception:
+        existing_cfg = {}
+
+    real_api_key = api_key.strip() if api_key.strip() and not api_key.strip().startswith("*") else existing_cfg.get("api_key", "")
+    real_secret_key = secret_key.strip() if secret_key.strip() and not secret_key.strip().startswith("*") else existing_cfg.get("secret_key", "")
+
+    from services.binance_service import test_binance_connection
+    result = await test_binance_connection(real_api_key, real_secret_key)
+    return JSONResponse(result)
 
 
 @router.post("/settings/payment-method/bep20")

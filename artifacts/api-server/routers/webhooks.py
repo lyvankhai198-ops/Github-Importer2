@@ -1,7 +1,10 @@
 """
 Public webhook endpoints — no session authentication required.
-POST /webhooks/sepay   — receives SePay payment notifications.
-POST /webhooks/binance — receives Binance Pay Merchant webhook.
+POST /webhooks/sepay — receives SePay payment notifications.
+
+Binance Pay is no longer verified via a Merchant API webhook — see
+services.crypto_monitor.verify_binance_payment, which checks the shop's own
+Binance API Management Pay History instead.
 """
 import json
 import logging
@@ -84,85 +87,6 @@ async def sepay_webhook(
         background_tasks.add_task(_bg_notify_late_payment, order_id)
 
     return JSONResponse({"success": True})
-
-
-@router.post("/webhooks/binance")
-async def binance_webhook(
-    request: Request,
-    background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
-):
-    """
-    Binance Pay Merchant webhook.
-    Verifies HMAC-SHA512 signature before processing.
-    Idempotent: calling process_paid_order twice is safe.
-    """
-    from models import PaymentMethod, Order, OrderStatus, PaymentStatus
-    from crypto import decrypt
-    from services.binance_service import verify_binance_webhook_signature
-
-    pm = db.query(PaymentMethod).filter(
-        PaymentMethod.method_code == "binance_pay",
-        PaymentMethod.is_active == True,
-    ).first()
-    if not pm or not pm.config_encrypted:
-        return JSONResponse({"returnCode": "FAIL", "returnMessage": "Not configured"}, status_code=400)
-
-    try:
-        cfg = json.loads(decrypt(pm.config_encrypted) or "{}")
-    except Exception:
-        return JSONResponse({"returnCode": "FAIL"}, status_code=400)
-
-    if cfg.get("mode") != "merchant":
-        return JSONResponse({"returnCode": "FAIL", "returnMessage": "Not merchant mode"}, status_code=400)
-
-    secret_key = cfg.get("secret_key") or ""
-    if not secret_key:
-        return JSONResponse({"returnCode": "FAIL"}, status_code=400)
-
-    # Extract signature headers
-    timestamp = request.headers.get("BinancePay-Timestamp", "")
-    nonce = request.headers.get("BinancePay-Nonce", "")
-    signature = request.headers.get("BinancePay-Signature", "")
-
-    try:
-        body_bytes = await request.body()
-        body_str = body_bytes.decode("utf-8")
-        raw = json.loads(body_str)
-    except Exception:
-        return JSONResponse({"returnCode": "FAIL"}, status_code=400)
-
-    # SECURITY: verify signature — never trust unsigned payloads
-    if not verify_binance_webhook_signature(timestamp, nonce, body_str, signature, secret_key):
-        logger.warning("[webhook/binance] signature verification failed")
-        return JSONResponse({"returnCode": "FAIL", "returnMessage": "Signature mismatch"}, status_code=401)
-
-    biz_type = raw.get("bizType") or ""
-    biz_status = raw.get("bizStatus") or ""
-    biz_id_str = raw.get("bizIdStr") or raw.get("merchantTradeNo") or ""
-
-    logger.info(f"[webhook/binance] bizType={biz_type} status={biz_status} tradeNo={biz_id_str}")
-
-    if biz_type == "PAY" and biz_status == "PAY_SUCCESS":
-        # Find order by order_code (= merchantTradeNo)
-        order = db.query(Order).filter(Order.order_code == biz_id_str).first()
-        if order and order.payment_status not in (PaymentStatus.paid, PaymentStatus.overpaid):
-            order.payment_status = PaymentStatus.paid
-            order.paid_at = __import__("datetime").datetime.utcnow()
-            # Extract USDT amount from payload
-            biz_data = {}
-            try:
-                biz_data = json.loads(raw.get("data") or "{}")
-            except Exception:
-                pass
-            paid_usdt = float(biz_data.get("openAmount") or order.expected_crypto_amount or 0)
-            order.received_crypto_amount = paid_usdt
-            order.paid_amount = paid_usdt * (order.exchange_rate or 1.0)
-            db.commit()
-            from services.payment_service import process_paid_order
-            background_tasks.add_task(process_paid_order, order.id)
-
-    return JSONResponse({"returnCode": "SUCCESS", "returnMessage": "SUCCESS"})
 
 
 # ── Background notification helpers ───────────────────────────────────────────

@@ -152,29 +152,17 @@ def payment_keyboard(order_id: int, support_username: str = "", lang: str = "vi"
     return InlineKeyboardMarkup(rows)
 
 
-def binance_manual_keyboard(order_id: int, support_username: str = "", lang: str = "vi") -> InlineKeyboardMarkup:
-    """Keyboard for Binance Pay Manual payment."""
+def binance_keyboard(order_id: int, support_username: str = "", lang: str = "vi") -> InlineKeyboardMarkup:
+    """Keyboard for Binance Pay, verified via Binance API Management Pay History."""
     rows = [
         [
             InlineKeyboardButton(t(lang, "btn_copy_payid"), callback_data=f"copy_payid:{order_id}"),
             InlineKeyboardButton(t(lang, "btn_copy_amount"), callback_data=f"copy_amt:{order_id}"),
         ],
+        [InlineKeyboardButton(t(lang, "btn_verify_txid"), callback_data=f"verify_txid:{order_id}")],
         [InlineKeyboardButton(t(lang, "btn_check_payment"), callback_data=f"check_payment:{order_id}")],
         [InlineKeyboardButton(t(lang, "btn_cancel_pending"), callback_data=f"cancel_pending:{order_id}")],
     ]
-    if support_username:
-        rows.append([InlineKeyboardButton(t(lang, "btn_support"), url=f"https://t.me/{support_username.lstrip('@')}")])
-    rows.append([InlineKeyboardButton(t(lang, "btn_home"), callback_data="home")])
-    return InlineKeyboardMarkup(rows)
-
-
-def binance_merchant_keyboard(order_id: int, checkout_url: str = "", support_username: str = "",
-                               lang: str = "vi") -> InlineKeyboardMarkup:
-    rows = []
-    if checkout_url:
-        rows.append([InlineKeyboardButton(t(lang, "btn_open_binance_merchant"), url=checkout_url)])
-    rows.append([InlineKeyboardButton(t(lang, "btn_check_binance"), callback_data=f"check_payment:{order_id}")])
-    rows.append([InlineKeyboardButton(t(lang, "btn_cancel_pending"), callback_data=f"cancel_pending:{order_id}")])
     if support_username:
         rows.append([InlineKeyboardButton(t(lang, "btn_support"), url=f"https://t.me/{support_username.lstrip('@')}")])
     rows.append([InlineKeyboardButton(t(lang, "btn_home"), callback_data="home")])

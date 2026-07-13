@@ -9,7 +9,7 @@ from bot.keyboards import (
     main_menu_keyboard, product_list_keyboard, product_detail_keyboard,
     out_of_stock_keyboard, payment_keyboard, post_delivery_keyboard,
     partial_delivery_keyboard, language_keyboard, payment_method_keyboard,
-    binance_manual_keyboard, binance_merchant_keyboard, crypto_payment_keyboard,
+    binance_keyboard, crypto_payment_keyboard,
     confirm_order_keyboard,
 )
 from bot.i18n import t, get_user_lang
@@ -553,16 +553,20 @@ async def _setup_sepay_payment(context, db, tg_user, order, lang: str, processin
 
 
 async def _setup_binance_payment(context, db, tg_user, order, lang: str, processing_msg=None):
-    """Set up Binance Pay for an existing order."""
-    from services.binance_service import get_binance_config, create_binance_merchant_order
+    """
+    Set up Binance Pay for an existing order. Verification happens later,
+    once the shopper submits a TXID, against the shop's own Binance API
+    Management Pay History (services.crypto_monitor.verify_binance_payment)
+    — there is no Merchant API checkout order to create up front.
+    """
+    from services.binance_service import get_binance_config
     from services.exchange_rate_service import calculate_crypto_amount, generate_unique_crypto_amount
 
     cfg_bot = db.query(TelegramBotConfig).first()
     support = cfg_bot.support_username if cfg_bot else ""
-    admin_id = cfg_bot.admin_telegram_id if cfg_bot else ""
 
     bnb_cfg = get_binance_config(db)
-    if not bnb_cfg:
+    if not bnb_cfg or not bnb_cfg.get("api_key") or not bnb_cfg.get("secret_key") or not bnb_cfg.get("receiver_binance_id"):
         if processing_msg:
             try:
                 await processing_msg.edit_text(t(lang, "payment_method_disabled"))
@@ -572,8 +576,8 @@ async def _setup_binance_payment(context, db, tg_user, order, lang: str, process
 
     base_usdt, rate = await calculate_crypto_amount(db, order.total_price)
     unique_usdt = generate_unique_crypto_amount(db, base_usdt, "BINANCE")
-    mode = bnb_cfg.get("mode", "manual")
-    timeout = int(bnb_cfg.get("timeout_minutes") or 30)
+    timeout = int(bnb_cfg.get("order_expiry_minutes") or 30)
+    receiver_id = bnb_cfg.get("receiver_binance_id") or "—"
 
     order.payment_method = "binance_pay"
     order.payment_currency = "USDT"
@@ -581,6 +585,8 @@ async def _setup_binance_payment(context, db, tg_user, order, lang: str, process
     order.expected_crypto_amount = unique_usdt
     order.payment_network = "BINANCE"
     order.payment_chat_id = tg_user.id
+    order.payment_expires_at = datetime.utcnow() + timedelta(minutes=timeout)
+    db.commit()
 
     if processing_msg:
         try:
@@ -588,117 +594,43 @@ async def _setup_binance_payment(context, db, tg_user, order, lang: str, process
         except Exception:
             pass
 
-    product_name = _product_display_name(order.product, lang) if order.product else str(order.product_id)
+    text = "\n".join([
+        t(lang, "binance_manual_title"),
+        "",
+        t(lang, "binance_pay_id", pay_id=receiver_id),
+        t(lang, "binance_amount", amount=f"{unique_usdt:.4f}"),
+        t(lang, "binance_order_code", code=order.order_code),
+        "",
+        t(lang, "binance_instruction"),
+    ])
+    qr_path = bnb_cfg.get("qr_image_path") or ""
+    kbd = binance_keyboard(order.id, support, lang=lang)
 
-    if mode == "manual":
-        pay_id = bnb_cfg.get("pay_id") or "—"
-        recipient = bnb_cfg.get("recipient_name") or "—"
-        order.status = OrderStatus.waiting_manual_verification
-        db.commit()
-
-        text = "\n".join([
-            t(lang, "binance_manual_title"),
-            "",
-            t(lang, "binance_pay_id", pay_id=pay_id),
-            t(lang, "binance_recipient", name=recipient),
-            t(lang, "binance_amount", amount=f"{unique_usdt:.4f}"),
-            t(lang, "binance_order_code", code=order.order_code),
-            "",
-            t(lang, "binance_instruction"),
-        ])
-        qr_path = bnb_cfg.get("qr_image_path") or ""
-        kbd = binance_manual_keyboard(order.id, support, lang=lang)
-
-        sent_msg = None
-        if qr_path:
-            try:
-                sent_msg = await context.bot.send_photo(
-                    chat_id=tg_user.id, photo=open(qr_path, "rb"),
-                    caption=text, parse_mode="HTML", reply_markup=kbd,
-                )
-                order.payment_message_type = "photo"
-            except Exception:
-                pass
-        if not sent_msg:
-            try:
-                sent_msg = await context.bot.send_message(
-                    chat_id=tg_user.id, text=text, parse_mode="HTML",
-                    reply_markup=kbd,
-                )
-                order.payment_message_type = "text"
-            except Exception as e:
-                logger.error(f"[binance_manual] send error: {e}")
-                return False
-
-        # Notify admin about manual verification needed
-        if admin_id:
-            try:
-                await context.bot.send_message(
-                    chat_id=int(admin_id),
-                    text=(
-                        f"🟡 <b>Binance Pay – chờ xác nhận thủ công!</b>\n\n"
-                        f"📋 Đơn: <code>{order.order_code}</code>\n"
-                        f"👤 User: <code>{tg_user.id}</code>\n"
-                        f"📦 Sản phẩm: {html.escape(product_name)}\n"
-                        f"💰 Số tiền: <b>{unique_usdt:.4f} USDT</b>\n\n"
-                        f"Dùng lệnh admin để xác nhận hoặc từ chối."
-                    ),
-                    parse_mode="HTML",
-                )
-            except Exception:
-                pass
-
-    else:  # Merchant API
-        api_key = bnb_cfg.get("api_key") or ""
-        secret_key = bnb_cfg.get("secret_key") or ""
-        result = await create_binance_merchant_order(
-            api_key=api_key, secret_key=secret_key,
-            merchant_trade_no=order.order_code,
-            amount_usdt=unique_usdt,
-            description=product_name,
-            timeout_minutes=timeout,
-        )
-        if not result.get("success"):
-            msg = result.get("message", "Binance API error")
-            logger.error(f"[binance_merchant] create order failed: {msg}")
-            if processing_msg:
-                try:
-                    await processing_msg.edit_text(t(lang, "order_error"))
-                except Exception:
-                    pass
-            return False
-
-        data = result.get("data", {})
-        prepay_id = data.get("prepayId") or ""
-        checkout_url = data.get("checkoutUrl") or data.get("universalUrl") or ""
-        order.payment_txid = prepay_id
-        order.payment_address = checkout_url
-        db.commit()
-
-        text = "\n".join([
-            f"🟡 <b>BINANCE PAY</b>",
-            "",
-            f"Amount: <b>{unique_usdt:.4f} USDT</b>",
-            f"Order: <code>{order.order_code}</code>",
-            "",
-            "Open Binance Pay to complete payment.",
-        ])
-        kbd = binance_merchant_keyboard(order.id, checkout_url, support, lang=lang)
+    sent_msg = None
+    if qr_path:
+        try:
+            from pathlib import Path
+            local_path = Path(__file__).resolve().parent.parent / qr_path.lstrip("/")
+            sent_msg = await context.bot.send_photo(
+                chat_id=tg_user.id, photo=open(local_path, "rb"),
+                caption=text, parse_mode="HTML", reply_markup=kbd,
+            )
+            order.payment_message_type = "photo"
+        except Exception:
+            pass
+    if not sent_msg:
         try:
             sent_msg = await context.bot.send_message(
-                chat_id=tg_user.id, text=text, parse_mode="HTML", reply_markup=kbd,
+                chat_id=tg_user.id, text=text, parse_mode="HTML",
+                reply_markup=kbd,
             )
             order.payment_message_type = "text"
-            order.payment_message_id = sent_msg.message_id
-            db.commit()
         except Exception as e:
-            logger.error(f"[binance_merchant] send message error: {e}")
+            logger.error(f"[binance_pay] send error: {e}")
             return False
 
-    if sent_msg if mode == "manual" else True:
-        if mode == "manual" and 'sent_msg' in dir() and sent_msg:
-            order.payment_message_id = sent_msg.message_id
-        db.commit()
+    order.payment_message_id = sent_msg.message_id
+    db.commit()
     return True
 
 
@@ -1522,6 +1454,24 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             sv = order.status.value if hasattr(order.status, "value") else str(order.status)
             ps = order.payment_status.value if hasattr(order.payment_status, "value") else str(order.payment_status or "pending")
 
+            # For Binance Pay, an explicit "check payment" press triggers a
+            # real (throttled) check against Pay History instead of only
+            # reporting the last-known DB state.
+            if sv == "pending_payment" and ps == "pending" and order.payment_network == "BINANCE" and order.payment_txid:
+                from services.crypto_monitor import verify_binance_payment
+                result = await verify_binance_payment(db, order)
+                if result.get("ok"):
+                    await query.answer(t(lang, "txid_ok_confirmed"), show_alert=True)
+                    return
+                if result.get("reason") == "permission_denied":
+                    order.status = OrderStatus.waiting_manual_verification
+                    db.commit()
+                    await query.answer(t(lang, "txid_fail_permission_denied"), show_alert=True)
+                    return
+                db.refresh(order)
+                sv = order.status.value if hasattr(order.status, "value") else str(order.status)
+                ps = order.payment_status.value if hasattr(order.payment_status, "value") else str(order.payment_status or "pending")
+
             if sv == "completed":
                 await query.answer("✅ Đơn đã hoàn thành." if lang == "vi" else "✅ Order completed.", show_alert=True)
                 return
@@ -1575,7 +1525,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:  # copy_payid
                 from services.binance_service import get_binance_config
                 bnb_cfg = get_binance_config(db) or {}
-                value = bnb_cfg.get("pay_id") or "—"
+                value = bnb_cfg.get("receiver_binance_id") or "—"
                 await query.answer(t(lang, "copy_payid_alert", value=value), show_alert=True)
         finally:
             db.close()
@@ -1593,7 +1543,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await query.answer(t(lang, "order_not_found"), show_alert=True)
                 return
             sv = order.status.value if hasattr(order.status, "value") else str(order.status)
-            if sv != "pending_payment" or order.payment_network not in ("BEP20", "TRC20", "ERC20"):
+            if sv != "pending_payment" or order.payment_network not in ("BEP20", "TRC20", "ERC20", "BINANCE"):
                 await query.answer(t(lang, "order_not_found"), show_alert=True)
                 return
             context.user_data["state"] = "waiting_txid"
@@ -1713,8 +1663,12 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await checking_msg.edit_text(t(lang, "order_not_found"))
                 return
 
-            from services.crypto_monitor import verify_txid_for_order
-            result = await verify_txid_for_order(db, order, txid)
+            if order.payment_network == "BINANCE":
+                from services.crypto_monitor import verify_binance_payment
+                result = await verify_binance_payment(db, order, submitted_txid=txid)
+            else:
+                from services.crypto_monitor import verify_txid_for_order
+                result = await verify_txid_for_order(db, order, txid)
 
             if result.get("ok"):
                 try:
@@ -1724,6 +1678,18 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
 
             reason = result.get("reason", "generic")
+
+            # Binance API key lacking Pay History permission → fall back to
+            # manual admin review instead of silently failing or retrying.
+            if order.payment_network == "BINANCE" and reason == "permission_denied":
+                order.status = OrderStatus.waiting_manual_verification
+                db.commit()
+                try:
+                    await checking_msg.edit_text(t(lang, "txid_fail_permission_denied"))
+                except Exception:
+                    pass
+                return
+
             key = f"txid_fail_{reason}"
             try:
                 if reason == "insufficient_confirmations":
@@ -1733,7 +1699,6 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception:
                 msg = t(lang, "txid_fail_generic")
 
-            from bot.keyboards import crypto_payment_keyboard
             support = _get_support_username(db)
             try:
                 await checking_msg.edit_text(msg)

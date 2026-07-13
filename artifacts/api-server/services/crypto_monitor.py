@@ -2,9 +2,12 @@
 Background workers for on-chain USDT payment monitoring.
 
 Workers:
-  - bep20_monitor_loop:  polls BSC (BEP20 USDT) for incoming transfers
-  - trc20_monitor_loop:  polls TRON (TRC20 USDT) for incoming transfers
-  - binance_pending_loop: polls Binance Pay Merchant API for pending orders
+  - bep20_monitor_loop: polls BSC (BEP20 USDT) for incoming transfers
+  - trc20_monitor_loop: polls TRON (TRC20 USDT) for incoming transfers
+  - erc20_monitor_loop: polls Ethereum (ERC20 USDT) for incoming transfers
+  - binance_pay_loop:   sweeps pending Binance Pay orders against the shop's
+                        own Binance API Management Pay History (throttled,
+                        shared cache with shopper/admin-triggered checks)
 
 Each worker runs independently — a failure in one does NOT stop the others.
 Workers check the database every N seconds (configurable, not faster than API limits).
@@ -19,7 +22,9 @@ Security rules enforced:
 import asyncio
 import json
 import logging
+import time
 from datetime import datetime, timedelta
+from decimal import Decimal, InvalidOperation
 
 logger = logging.getLogger(__name__)
 
@@ -449,39 +454,207 @@ async def _notify_user_detecting(order, db, confirmations: int, required: int):
         logger.error(f"[crypto] _notify_user_detecting error: {e}")
 
 
-# ── Binance Pay Merchant pending poll ─────────────────────────────────────────
+# ── Binance Pay verification (via Binance API Management Pay History) ─────────
+#
+# Binance Pay Merchant API polling has been fully removed. Verification now
+# calls the shop's own Pay History (/sapi/v1/pay/transactions) and matches
+# the shopper-submitted TXID against it. All callers (shopper "check
+# payment"/TXID submission, admin manual check, and the background sweep)
+# share one throttled cache so repeated presses never cause extra Binance
+# API calls within min_check_interval_seconds.
 
-async def _check_binance_pending(cfg: dict, db) -> None:
-    """Poll Binance Pay API for pending Merchant orders."""
-    api_key = cfg.get("api_key") or ""
-    secret_key = cfg.get("secret_key") or ""
-    if not api_key or not secret_key:
-        return
+_binance_cache: dict = {"transactions": None, "fetched_at": 0.0, "error": None}
+_binance_cache_lock = asyncio.Lock()
 
-    from models import Order, OrderStatus, PaymentStatus
-    pending = (
-        db.query(Order)
-        .filter(
-            Order.payment_network == "BINANCE",
-            Order.payment_status == PaymentStatus.pending,
-            Order.status == OrderStatus.pending_payment,
-        )
-        .all()
+
+async def _get_binance_transactions_cached(cfg: dict) -> dict:
+    """Fetch Binance Pay history, throttled to at most once per min_check_interval_seconds."""
+    from services.binance_service import fetch_pay_transactions
+    min_interval = max(5, int(cfg.get("min_check_interval_seconds") or 15))
+    async with _binance_cache_lock:
+        now = time.time()
+        if _binance_cache["transactions"] is not None and (now - _binance_cache["fetched_at"]) < min_interval:
+            return {"success": True, "transactions": _binance_cache["transactions"]}
+        result = await fetch_pay_transactions(cfg.get("api_key") or "", cfg.get("secret_key") or "")
+        if result.get("success"):
+            _binance_cache["transactions"] = result["transactions"]
+            _binance_cache["fetched_at"] = now
+            _binance_cache["error"] = None
+            return result
+        _binance_cache["error"] = result
+        return result
+
+
+def _decimal(v) -> "Decimal | None":
+    try:
+        return Decimal(str(v))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+
+
+def _extract_binance_coin_amount(tx: dict, coin: str) -> "Decimal | None":
+    """
+    Return the amount of `coin` reported by a Pay History row, whether given
+    directly via currency/amount or summed from a fundsDetail breakdown.
+    """
+    coin = (coin or "USDT").upper()
+    currency = (tx.get("currency") or "").upper()
+    if currency == coin and tx.get("amount") is not None:
+        amt = _decimal(tx.get("amount"))
+        if amt is not None:
+            return amt
+    total = Decimal("0")
+    found = False
+    for fd in (tx.get("fundsDetail") or []):
+        if (fd.get("currency") or "").upper() == coin:
+            amt = _decimal(fd.get("amount"))
+            if amt is not None:
+                total += amt
+                found = True
+    return total if found else None
+
+
+async def verify_binance_payment(db, order, submitted_txid: str | None = None) -> dict:
+    """
+    Verify a Binance Pay order against the shop's own Pay History
+    (/sapi/v1/pay/transactions), checking (in order):
+      - order/payment not already completed or paid
+      - order still pending payment, network is BINANCE
+      - Binance API Management config present (api key/secret/receiver id)
+      - a TXID was submitted or already stored on the order
+      - TXID not already matched to a DIFFERENT order (unique index reuse
+        on payment_transactions(provider, external_transaction_id))
+      - TXID found in Pay History and is a Pay-type transaction
+      - receiver Binance ID matches the shop's configured ID
+      - currency/fundsDetail amount is the configured coin (USDT)
+      - amount matches order.expected_crypto_amount exactly (Decimal),
+        within the admin-configured tolerance (default 0)
+      - transaction time falls within the order's valid window
+
+    On success: marks the order paid and schedules process_paid_order()
+    exactly once. On "permission_denied", the caller should move the order
+    to waiting_manual_verification instead of retrying automatically.
+
+    Returns {"ok": bool, "reason": str, ...extra context}.
+    """
+    from models import PaymentStatus, PaymentTransaction
+    from sqlalchemy.exc import IntegrityError
+
+    sv = order.status.value if hasattr(order.status, "value") else str(order.status)
+    if sv == "completed":
+        return {"ok": False, "reason": "already_paid"}
+    if sv != "pending_payment":
+        return {"ok": False, "reason": "order_not_pending"}
+
+    ps = order.payment_status.value if hasattr(order.payment_status, "value") else str(order.payment_status or "")
+    if ps in ("paid", "overpaid"):
+        return {"ok": False, "reason": "already_paid"}
+
+    if order.payment_network != "BINANCE":
+        return {"ok": False, "reason": "unsupported_network"}
+
+    cfg = _get_pm_config(db, "binance_pay")
+    if not cfg or not cfg.get("api_key") or not cfg.get("secret_key") or not cfg.get("receiver_binance_id"):
+        return {"ok": False, "reason": "config_missing"}
+
+    txid = (submitted_txid or order.payment_txid or "").strip()
+    if not txid:
+        return {"ok": False, "reason": "empty"}
+
+    dup = db.query(PaymentTransaction).filter(
+        PaymentTransaction.provider == "binance_pay",
+        PaymentTransaction.external_transaction_id == txid,
+    ).first()
+    if dup and dup.matched_order_id and dup.matched_order_id != order.id:
+        return {"ok": False, "reason": "txid_reused"}
+
+    result = await _get_binance_transactions_cached(cfg)
+    if not result.get("success"):
+        return {"ok": False, "reason": result.get("reason", "unavailable"), "message": result.get("message")}
+
+    tx = None
+    for row in result.get("transactions") or []:
+        row_txid = str(row.get("transactionId") or row.get("orderId") or row.get("tranId") or "")
+        if row_txid == txid:
+            tx = row
+            break
+
+    if not tx:
+        return {"ok": False, "reason": "not_found"}
+
+    order_type = (tx.get("orderType") or "").upper()
+    if order_type and order_type not in ("PAY", "C2C", "PAYMENT"):
+        return {"ok": False, "reason": "not_found"}
+
+    receiver_info = tx.get("receiverInfo") or {}
+    receiver_id = str(receiver_info.get("binanceId") or tx.get("receiverId") or "")
+    expected_receiver = str(cfg.get("receiver_binance_id") or "")
+    if not receiver_id or receiver_id != expected_receiver:
+        return {"ok": False, "reason": "wrong_receiver"}
+
+    coin = cfg.get("default_coin") or "USDT"
+    amount = _extract_binance_coin_amount(tx, coin)
+    if amount is None:
+        return {"ok": False, "reason": "wrong_currency"}
+
+    expected = _decimal(order.expected_crypto_amount)
+    if expected is None:
+        return {"ok": False, "reason": "config_missing"}
+    tolerance = _decimal(cfg.get("amount_tolerance")) or Decimal("0")
+    if abs(amount - expected) > tolerance:
+        return {"ok": False, "reason": "amount_mismatch", "amount": str(amount), "expected": str(expected)}
+
+    tx_time_raw = tx.get("transactionTime") or tx.get("createTime") or 0
+    try:
+        tx_time = datetime.utcfromtimestamp(int(tx_time_raw) / 1000)
+    except Exception:
+        tx_time = None
+    if not tx_time:
+        return {"ok": False, "reason": "not_found"}
+
+    expiry_minutes = int(cfg.get("order_expiry_minutes") or 30)
+    window_end = order.payment_expires_at or (order.created_at + timedelta(minutes=expiry_minutes))
+    grace = timedelta(minutes=10)
+    if tx_time < (order.created_at - timedelta(minutes=2)) or tx_time > (window_end + grace):
+        return {"ok": False, "reason": "time_window"}
+
+    # All checks passed — record the transaction (idempotent via the unique
+    # index on provider+external_transaction_id) and finalize exactly once.
+    ptx = PaymentTransaction(
+        provider="binance_pay",
+        external_transaction_id=txid,
+        gateway="binance_pay",
+        transaction_date=tx_time,
+        amount_in=float(amount),
+        matched_order_id=order.id,
+        match_status="matched",
+        raw_json=json.dumps(tx, ensure_ascii=False)[:5000],
     )
-    for order in pending:
-        if not order.payment_txid:  # payment_txid stores prepayId for Binance Merchant
-            continue
-        try:
-            from services.binance_service import query_binance_order_status
-            result = await query_binance_order_status(api_key, secret_key, order.order_code)
-            status = (result.get("data") or {}).get("status") or ""
-            if status == "PAID":
-                order.payment_status = PaymentStatus.paid
-                order.paid_at = datetime.utcnow()
-                db.commit()
-                asyncio.create_task(_trigger_fulfillment(order.id))
-        except Exception as e:
-            logger.error(f"[binance_merchant] poll error for {order.order_code}: {e}")
+    try:
+        db.add(ptx)
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        existing = db.query(PaymentTransaction).filter(
+            PaymentTransaction.provider == "binance_pay",
+            PaymentTransaction.external_transaction_id == txid,
+        ).first()
+        if existing and existing.matched_order_id != order.id:
+            return {"ok": False, "reason": "txid_reused"}
+
+    if order.payment_status in (PaymentStatus.paid, PaymentStatus.overpaid):
+        return {"ok": True, "reason": "confirmed"}
+
+    order.payment_status = PaymentStatus.paid
+    order.paid_at = datetime.utcnow()
+    order.payment_txid = txid
+    order.received_crypto_amount = float(amount)
+    order.paid_amount = float(amount) * (order.exchange_rate or 1.0)
+    db.commit()
+
+    logger.info(f"[binance_pay] order {order.order_code} confirmed via Pay History txid={txid}")
+    asyncio.create_task(_trigger_fulfillment(order.id))
+    return {"ok": True, "reason": "confirmed"}
 
 
 # ── Manual TXID verification (shopper-submitted) ───────────────────────────────
@@ -787,23 +960,47 @@ async def erc20_monitor_loop():
         await asyncio.sleep(interval)
 
 
-async def binance_merchant_loop():
-    """Background loop: poll Binance Pay Merchant orders."""
-    logger.info("[binance_merchant] monitor loop started")
+async def binance_pay_loop():
+    """
+    Background sweep: batches every pending Binance order that has a
+    submitted TXID into the shared, throttled Pay History cache (see
+    verify_binance_payment/_get_binance_transactions_cached above). Runs at
+    most once per min_check_interval_seconds (60s floor for the sweep) so it
+    never calls Binance more than necessary.
+    """
+    logger.info("[binance_pay] sweep loop started")
     while True:
         try:
             from database import SessionLocal
             db = SessionLocal()
             try:
                 cfg = _get_pm_config(db, "binance_pay")
-                if cfg and cfg.get("mode") == "merchant":
-                    await _check_binance_pending(cfg, db)
-                    interval = 15
+                if cfg and cfg.get("api_key") and cfg.get("secret_key") and cfg.get("receiver_binance_id"):
+                    from models import Order, OrderStatus, PaymentStatus
+                    pending = (
+                        db.query(Order)
+                        .filter(
+                            Order.payment_network == "BINANCE",
+                            Order.payment_status == PaymentStatus.pending,
+                            Order.status == OrderStatus.pending_payment,
+                            Order.payment_txid.isnot(None),
+                        )
+                        .all()
+                    )
+                    for order in pending:
+                        try:
+                            result = await verify_binance_payment(db, order)
+                            if not result.get("ok") and result.get("reason") == "permission_denied":
+                                order.status = OrderStatus.waiting_manual_verification
+                                db.commit()
+                        except Exception as e:
+                            logger.error(f"[binance_pay] sweep verify error order={order.order_code}: {e}")
+                    interval = max(60, int(cfg.get("min_check_interval_seconds") or 60))
                 else:
                     interval = 60
             finally:
                 db.close()
         except Exception as e:
-            logger.error(f"[binance_merchant] loop error: {e}")
+            logger.error(f"[binance_pay] loop error: {e}")
             interval = 60
         await asyncio.sleep(interval)

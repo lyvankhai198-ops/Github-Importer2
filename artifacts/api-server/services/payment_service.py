@@ -229,11 +229,13 @@ def create_binance_order(
     expected_crypto_amount: float,
     exchange_rate: float,
     timeout_minutes: int = 30,
-    prepay_id: str = "",
-    checkout_url: str = "",
-    mode: str = "manual",  # "manual" | "merchant"
 ) -> Order:
-    """Create an order for Binance Pay."""
+    """
+    Create an order for Binance Pay. Verification happens later against the
+    shop's own Binance API Management Pay History (see
+    services.crypto_monitor.verify_binance_payment) once the shopper submits
+    a TXID — there is no merchant checkout order to create up front.
+    """
     from models import Product
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
@@ -258,12 +260,8 @@ def create_binance_order(
         exchange_rate=exchange_rate,
         expected_crypto_amount=expected_crypto_amount,
         payment_network="BINANCE",
-        payment_txid=prepay_id,         # prepayId stored here for merchant mode
-        payment_address=checkout_url,   # checkoutUrl stored here for merchant mode
         payment_expires_at=datetime.utcnow() + timedelta(minutes=timeout_minutes),
     )
-    if mode == "manual":
-        order.status = OrderStatus.waiting_manual_verification
     db.add(order)
     db.commit()
     db.refresh(order)

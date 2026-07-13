@@ -280,12 +280,12 @@ async def lifespan(app: FastAPI):
 
     # Start crypto monitor workers (each independent — one crash won't affect others)
     from services.crypto_monitor import (
-        bep20_monitor_loop, trc20_monitor_loop, erc20_monitor_loop, binance_merchant_loop,
+        bep20_monitor_loop, trc20_monitor_loop, erc20_monitor_loop, binance_pay_loop,
     )
     _background_tasks.append(asyncio.create_task(bep20_monitor_loop()))
     _background_tasks.append(asyncio.create_task(trc20_monitor_loop()))
     _background_tasks.append(asyncio.create_task(erc20_monitor_loop()))
-    _background_tasks.append(asyncio.create_task(binance_merchant_loop()))
+    _background_tasks.append(asyncio.create_task(binance_pay_loop()))
 
     # Auto-start the Telegram bot if it's configured + enabled, so it comes
     # back up on its own after a restart/redeploy without an admin visiting
@@ -351,7 +351,7 @@ app.include_router(orders.router)
 app.include_router(api_connections.router)
 app.include_router(users.router)
 app.include_router(settings.router)
-app.include_router(webhooks.router)  # POST /webhooks/sepay, /webhooks/binance
+app.include_router(webhooks.router)  # POST /webhooks/sepay
 
 
 if __name__ == "__main__":
