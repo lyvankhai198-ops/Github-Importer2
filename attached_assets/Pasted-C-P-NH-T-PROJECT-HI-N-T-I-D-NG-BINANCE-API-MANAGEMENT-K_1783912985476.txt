@@ -1,0 +1,447 @@
+CẬP NHẬT PROJECT HIỆN TẠI ĐỂ DÙNG BINANCE API MANAGEMENT.
+
+Không tạo project mới.
+Không xóa database, đơn hàng, kho, API nguồn hoặc các phương thức thanh toán khác.
+
+MỤC TIÊU:
+
+Thay toàn bộ chế độ Binance Pay Merchant API hiện tại bằng cơ chế xác minh Binance Pay thông qua API Key và Secret Key được tạo tại Binance API Management.
+
+==================================================
+1. LOẠI BỎ MERCHANT API
+==================================================
+
+Xóa khỏi giao diện và logic:
+
+- Merchant ID
+- Merchant API mode
+- Merchant Create Order API
+- Merchant webhook
+- Merchant certificate/public key
+
+Không sử dụng API Binance Pay Merchant.
+
+Thay bằng chế độ:
+
+Binance API Management — Pay History Verification
+
+==================================================
+2. CẤU HÌNH WEB
+==================================================
+
+Trong Cài đặt → Thanh toán → Binance thêm:
+
+- Bật Binance Pay
+- Binance API Key
+- Binance Secret Key
+- Binance ID người nhận
+- Coin thanh toán mặc định: USDT
+- Thời gian hết hạn đơn
+- Khoảng thời gian kiểm tra tối thiểu
+- Nút Kiểm tra kết nối
+- Nút Lưu cấu hình
+
+Không hiển thị toàn bộ API Key hoặc Secret Key sau khi lưu.
+
+Không lưu Secret Key dạng plaintext nếu project đã có module mã hóa.
+
+Không ghi key vào log.
+
+==================================================
+3. QUYỀN API
+==================================================
+
+API Key chỉ cần quyền đọc USER_DATA cần thiết.
+
+Không yêu cầu:
+
+- Spot Trading
+- Margin Trading
+- Futures
+- Withdrawals
+- Universal Transfer
+
+Hiển thị cảnh báo trên web:
+
+“Chỉ sử dụng API Key có quyền đọc. Không bật quyền rút tiền hoặc giao dịch.”
+
+Khuyến nghị admin whitelist IP cố định khi đưa lên VPS.
+
+==================================================
+4. ENDPOINT BINANCE CHÍNH THỨC
+==================================================
+
+Dùng:
+
+GET https://api.binance.com/sapi/v1/pay/transactions
+
+Parameters:
+
+- timestamp: thời gian hiện tại theo milliseconds
+- startTime: thời điểm tạo đơn trừ một khoảng đệm
+- endTime: thời điểm hiện tại
+- limit: tối đa 100
+- recvWindow: 5000
+
+Header:
+
+X-MBX-APIKEY: {BINANCE_API_KEY}
+
+Tạo signature:
+
+query_string =
+timestamp=...&startTime=...&endTime=...&limit=100&recvWindow=5000
+
+signature =
+HMAC_SHA256(
+    secret_key,
+    query_string
+)
+
+Request cuối:
+
+/sapi/v1/pay/transactions?{query_string}&signature={signature}
+
+Đồng bộ giờ với:
+
+GET /api/v3/time
+
+Nếu Binance báo timestamp ngoài recvWindow:
+- lấy serverTime
+- tính time offset
+- thử lại đúng một lần
+
+==================================================
+5. KHÔNG POLLING LIÊN TỤC
+==================================================
+
+Endpoint Pay History có request weight rất cao.
+
+Không gọi mỗi giây.
+Không gọi theo vòng lặp cho từng đơn.
+
+Chỉ kiểm tra trong các trường hợp:
+
+1. Khách bấm “🔄 Kiểm tra thanh toán”
+2. Khách gửi Transaction ID
+3. Background worker gộp toàn bộ đơn Binance pending và kiểm tra tối đa mỗi 60 giây
+4. Admin bấm kiểm tra thủ công
+
+Một lần gọi API phải dùng để đối chiếu tất cả đơn pending trong khoảng thời gian tương ứng.
+
+Thêm cache kết quả 30–60 giây để tránh gọi trùng.
+
+==================================================
+6. LUỒNG THANH TOÁN BINANCE
+==================================================
+
+Sau khi khách chọn Binance:
+
+- Tạo đơn pending_payment
+- Ghi lại expected_amount_usdt
+- Ghi lại binance_receiver_id
+- Ghi payment_expires_at
+- Không gọi API nguồn
+- Không giao tài khoản
+
+Bot hiển thị:
+
+🟡 <b>BINANCE PAY</b>
+
+Binance ID:
+<code>{binance_id}</code>
+
+Amount:
+<code>{amount_usdt} USDT</code>
+
+After completing the payment, send the Binance Transaction ID below.
+
+Vietnamese:
+
+Sau khi thanh toán, hãy gửi mã giao dịch Binance để hệ thống xác minh.
+
+Nút:
+
+🔄 Kiểm tra thanh toán
+❌ Hủy đơn
+🏠 Menu
+
+==================================================
+7. KHÁCH GỬI TRANSACTION ID
+==================================================
+
+Khách có thể gửi:
+
+- transactionId Binance Pay
+- mã giao dịch/off-chain reference Binance Pay
+
+Lưu vào:
+
+order.submitted_transaction_id
+
+Sau đó gọi verify_binance_payment(order_id).
+
+Không đánh dấu paid chỉ vì khách đã gửi mã.
+
+==================================================
+8. XÁC MINH BINANCE PAY
+==================================================
+
+Tạo hàm:
+
+async def verify_binance_payment(order_id: int)
+
+Gọi Pay Trade History và tìm bản ghi phù hợp.
+
+Chỉ xác nhận khi đồng thời đúng:
+
+- response.success == true
+- transactionId khớp mã khách gửi
+- orderType thuộc nhóm thanh toán Binance Pay hợp lệ
+- currency hoặc fundsDetail là USDT
+- amount đúng số tiền đơn
+- receiverInfo.binanceId đúng Binance ID của shop
+- transactionTime không sớm hơn thời điểm tạo đơn
+- transactionTime không quá xa sau thời hạn cho phép
+- transactionId chưa được dùng cho đơn khác
+- order vẫn chưa completed
+- payment_status vẫn pending
+
+So sánh số tiền bằng Decimal, không dùng float.
+
+Cho phép sai số chỉ khi admin cấu hình rõ ràng.
+Mặc định sai số = 0.
+
+Nếu không khớp:
+- không giao hàng
+- hiển thị lý do an toàn, không tiết lộ dữ liệu người khác
+
+Ví dụ:
+
+❌ Không tìm thấy giao dịch phù hợp.
+Vui lòng kiểm tra lại mã giao dịch, số tiền và Binance ID nhận.
+
+==================================================
+9. FUNDS DETAIL
+==================================================
+
+Response Binance có thể chứa:
+
+- amount
+- currency
+- fundsDetail[]
+
+Nếu fundsDetail tồn tại:
+
+- tìm phần tử currency = USDT
+- cộng tổng amount USDT
+- dùng tổng đó để đối chiếu
+
+Nếu không có fundsDetail:
+
+- dùng currency và amount cấp trên
+
+Không xác nhận nếu loại tiền không phải USDT.
+
+==================================================
+10. CHỐNG DÙNG LẠI GIAO DỊCH
+==================================================
+
+Tạo bảng hoặc bổ sung bảng payment_transactions:
+
+- provider = binance_pay
+- external_transaction_id
+- order_id
+- amount
+- currency
+- payer_binance_id nếu có
+- receiver_binance_id
+- transaction_time
+- raw_response_encrypted hoặc raw_response_sanitized
+- verified_at
+
+Tạo unique index:
+
+provider + external_transaction_id
+
+Một transactionId chỉ được sử dụng cho đúng một đơn.
+
+Nếu transactionId đã gắn với đơn khác:
+
+❌ Giao dịch này đã được sử dụng.
+
+Không giao hàng.
+
+==================================================
+11. SAU KHI XÁC MINH THÀNH CÔNG
+==================================================
+
+Trong một database transaction:
+
+- payment_status = paid
+- order.status = paid
+- paid_at = transactionTime
+- payment_txid = transactionId
+- lưu payment transaction
+- commit
+
+Sau đó gọi duy nhất:
+
+process_paid_order(order.id)
+
+Nếu sản phẩm là:
+
+api_auto:
+- mua từ API nguồn
+- parse tài khoản
+- giao khách
+
+manual_stock:
+- lấy tài khoản từ kho
+- giao khách
+
+manual_admin:
+- chuyển paid_waiting_admin
+
+process_paid_order phải idempotent.
+
+Webhook, retry hoặc nút kiểm tra lặp không được giao lần hai.
+
+==================================================
+12. QR BINANCE
+==================================================
+
+Binance ID không phải địa chỉ blockchain.
+
+Không tạo QR BEP20/TRC20 từ Binance ID.
+
+Cho phép admin tải lên ảnh QR Binance Pay cá nhân:
+
+- binance_pay_qr_image
+
+Khi khách chọn Binance:
+- gửi ảnh QR đã lưu
+- caption chứa Binance ID và đúng số tiền
+
+Nếu chưa có ảnh QR:
+- chỉ hiển thị Binance ID
+
+QR BEP20 và TRC20 vẫn là phương thức riêng, dùng địa chỉ ví blockchain riêng.
+
+==================================================
+13. KHÔNG NHẦM VỚI BEP20/TRC20
+==================================================
+
+Binance Pay:
+- xác minh qua /sapi/v1/pay/transactions
+- dùng transactionId nội bộ Binance
+- không có blockchain confirmations
+
+USDT BEP20/TRC20:
+- xác minh on-chain
+- dùng tx hash blockchain
+- đúng contract, địa chỉ, mạng và confirmations
+
+Không dùng endpoint Pay History để kiểm tra BEP20/TRC20.
+
+==================================================
+14. XÓA QR
+==================================================
+
+Chỉ xóa tin nhắn QR/thanh toán khi:
+
+payment_status đã chuyển sang paid.
+
+Nếu:
+
+- chưa tìm thấy giao dịch
+- transactionId sai
+- Binance API lỗi
+- đơn chưa thanh toán
+
+thì giữ nguyên QR và thông tin thanh toán.
+
+Lỗi xóa QR không được ngăn giao tài khoản.
+
+==================================================
+15. KIỂM TRA KẾT NỐI TRÊN WEB
+==================================================
+
+Nút “Kiểm tra kết nối Binance” phải:
+
+1. Gọi Binance server time.
+2. Tạo request signed tới Pay Trade History.
+3. Không hiển thị nội dung giao dịch.
+4. Chỉ trả:
+
+✅ API Binance hoạt động và có quyền đọc Pay History.
+
+Hoặc lỗi cụ thể:
+
+- Invalid API key
+- Invalid signature
+- IP not allowed
+- Permission denied
+- Timestamp outside recvWindow
+- Endpoint unavailable
+
+==================================================
+16. NẾU API KHÔNG CÓ QUYỀN PAY HISTORY
+==================================================
+
+Không giả vờ xác minh thành công.
+
+Chuyển đơn sang:
+
+waiting_manual_verification
+
+Thông báo:
+
+⚠️ Không thể xác minh tự động bằng Binance API.
+Admin sẽ kiểm tra giao dịch thủ công.
+
+Không giao tài khoản tự động.
+
+==================================================
+17. TEST BẮT BUỘC
+==================================================
+
+Test:
+
+1. API Key sai:
+- không paid
+- không giao hàng
+
+2. Secret sai:
+- báo invalid signature
+
+3. Transaction ID không tồn tại:
+- không paid
+
+4. Transaction ID đúng nhưng sai số tiền:
+- không paid
+
+5. Transaction ID đúng nhưng sai receiver Binance ID:
+- không paid
+
+6. Transaction ID đúng, USDT đúng, receiver đúng:
+- paid
+- giao hàng đúng một lần
+
+7. Dùng lại transaction ID:
+- từ chối
+
+8. Nhấn kiểm tra nhiều lần:
+- không gọi API quá mức
+- không giao trùng
+
+9. API Binance tạm lỗi:
+- giữ đơn pending
+- giữ QR
+- cho kiểm tra lại
+
+10. Sau khi hoàn thành:
+- restart app
+- test kết nối thật
+- commit
+- push GitHub
