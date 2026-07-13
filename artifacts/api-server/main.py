@@ -136,6 +136,11 @@ def _run_migrations():
             FOREIGN KEY(product_id) REFERENCES products(id),
             UNIQUE(product_id, telegram_user_id)
         )""",
+        # Freeze flags for auto-translated EN name/description — once an
+        # admin hand-types either field, auto-translation must stop
+        # overwriting it on the next save/sync.
+        "ALTER TABLE products ADD COLUMN name_en_locked BOOLEAN DEFAULT 0",
+        "ALTER TABLE products ADD COLUMN description_en_locked BOOLEAN DEFAULT 0",
     ]
     with engine.connect() as conn:
         ran_language_selected_migration = False

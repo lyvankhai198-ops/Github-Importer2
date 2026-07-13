@@ -138,8 +138,8 @@
       <form action="/products/{{ product.id }}/edit" method="post" enctype="multipart/form-data">
         <div class="modal-body">
           <div class="row g-3">
-            <div class="col-md-6"><label class="form-label">Tên sản phẩm *</label><input type="text" name="name" class="form-control" value="{{ product.name }}" required></div>
-            <div class="col-md-6"><label class="form-label">Tên sản phẩm (English)</label><input type="text" name="name_en" class="form-control" value="{{ product.name_en or '' }}" placeholder="Shown to English-language shoppers"></div>
+            <div class="col-md-6"><label class="form-label">Tên sản phẩm *</label><input type="text" name="name" class="form-control en-src-name" value="{{ product.name }}" required></div>
+            <div class="col-md-6"><label class="form-label">Tên sản phẩm (English) {% if product.name_en_locked %}<span class="badge bg-secondary">🔒 đã sửa tay</span>{% endif %}</label><input type="text" name="name_en" class="form-control en-out-name" value="{{ product.name_en or '' }}" placeholder="Shown to English-language shoppers"></div>
             <div class="col-md-6"><label class="form-label">Mã sản phẩm *</label><input type="text" name="product_code" class="form-control" value="{{ product.product_code }}" required></div>
             <div class="col-md-6"><label class="form-label">Giá bán (đ)</label><input type="number" name="sale_price" class="form-control" value="{{ product.sale_price|int }}" step="1" min="0">
               <div class="form-text">≈ {{ "%.2f"|format(product.price_usdt or 0) }} USDT — tự động tính theo tỉ giá hiện tại</div>
@@ -153,8 +153,13 @@
               </select>
             </div>
             <div class="col-md-6"><label class="form-label">Icon Telegram (emoji)</label><input type="text" name="telegram_icon" class="form-control" value="{{ product.telegram_icon or '' }}" placeholder="📦"></div>
-            <div class="col-12"><label class="form-label">Mô tả</label><textarea name="description" class="form-control" rows="3">{{ product.description or '' }}</textarea></div>
-            <div class="col-12"><label class="form-label">Mô tả (English)</label><textarea name="description_en" class="form-control" rows="2">{{ product.description_en or '' }}</textarea></div>
+            <div class="col-12"><label class="form-label">Mô tả</label><textarea name="description" class="form-control en-src-desc" rows="3">{{ product.description or '' }}</textarea></div>
+            <div class="col-12">
+              <label class="form-label">Mô tả (English) {% if product.description_en_locked %}<span class="badge bg-secondary">🔒 đã sửa tay</span>{% endif %}</label>
+              <textarea name="description_en" class="form-control en-out-desc" rows="2">{{ product.description_en or '' }}</textarea>
+              <button type="button" class="btn btn-sm btn-outline-info mt-1 gen-en-btn">🌐 Tạo bản tiếng Anh</button>
+              <div class="form-text">Tự dịch từ tên/mô tả tiếng Việt — bạn có thể chỉnh lại trước khi lưu.</div>
+            </div>
             <div class="col-md-6"><label class="form-label">Bảo hành</label><input type="text" name="warranty" class="form-control" value="{{ product.warranty or '' }}" placeholder="VD: 30 ngày"></div>
             <div class="col-md-6"><label class="form-label">Thời hạn</label><input type="text" name="duration" class="form-control" value="{{ product.duration or '' }}" placeholder="VD: 1 năm"></div>
             {% if product.source_type.value == 'api' %}
@@ -201,6 +206,32 @@ document.getElementById('previewBtn')?.addEventListener('click', function() {
         `<span class="text-warning">${d.duplicates} trùng</span> · ` +
         `<span class="text-danger">${d.errors} lỗi</span> / ${d.total_lines} dòng`;
     });
+});
+
+// "🌐 Tạo bản tiếng Anh" — auto-translate name/description within the same
+// modal, filling the EN fields for the admin to review/edit before saving.
+document.querySelectorAll('.gen-en-btn').forEach(btn => {
+  btn.addEventListener('click', async function() {
+    const modal = this.closest('.modal-body') || this.closest('form');
+    const nameSrc = modal.querySelector('.en-src-name')?.value || '';
+    const descSrc = modal.querySelector('.en-src-desc')?.value || '';
+    if (!nameSrc && !descSrc) return;
+    this.disabled = true;
+    const oldLabel = this.textContent;
+    this.textContent = 'Đang dịch...';
+    try {
+      const body = new URLSearchParams({ name: nameSrc, description: descSrc });
+      const resp = await fetch('/products/generate_en', { method: 'POST', body });
+      const data = await resp.json();
+      const nameOut = modal.querySelector('.en-out-name');
+      const descOut = modal.querySelector('.en-out-desc');
+      if (nameOut && data.name_en) nameOut.value = data.name_en;
+      if (descOut && data.description_en) descOut.value = data.description_en;
+    } finally {
+      this.disabled = false;
+      this.textContent = oldLabel;
+    }
+  });
 });
 </script>
 {% endblock %}

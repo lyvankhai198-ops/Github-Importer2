@@ -11,6 +11,8 @@ Product, so there is nothing to "protect" for it.
 """
 import logging
 
+from services.normalize import translate_product_name_to_en, normalize_and_translate_description
+
 logger = logging.getLogger(__name__)
 
 # The only Product columns this task protects. Anything not in this set
@@ -53,6 +55,49 @@ def apply_admin_edit(product, new_values: dict) -> set:
         setattr(product, field, normalized_new or None)
     if changed:
         mark_fields_edited(product, changed)
+    return changed
+
+
+def apply_admin_en_edit(product, name_en: str | None, description_en: str | None) -> set:
+    """
+    Apply admin-submitted name_en/description_en, freezing whichever one
+    actually changed (name_en_locked / description_en_locked) so future
+    auto-translation (ensure_en_fields) never overwrites it again. Clearing
+    a field back to blank unlocks it, allowing auto-translation to fill it
+    in again.
+    """
+    changed = set()
+    new_name_en = (name_en or "").strip() or None
+    if new_name_en != (product.name_en or None):
+        changed.add("name_en")
+        product.name_en = new_name_en
+        product.name_en_locked = bool(new_name_en)
+    new_desc_en = (description_en or "").strip() or None
+    if new_desc_en != (product.description_en or None):
+        changed.add("description_en")
+        product.description_en = new_desc_en
+        product.description_en_locked = bool(new_desc_en)
+    return changed
+
+
+def ensure_en_fields(product) -> bool:
+    """
+    Auto-fill Product.name_en/description_en from the Vietnamese name/
+    description via translation, but only where the field is currently
+    blank AND not locked by an admin edit. Safe to call on every sync —
+    it never overwrites existing text. Returns True if anything changed.
+    """
+    changed = False
+    if not product.name_en and not product.name_en_locked and product.name:
+        translated = translate_product_name_to_en(product.name)
+        if translated:
+            product.name_en = translated
+            changed = True
+    if not product.description_en and not product.description_en_locked and product.description:
+        translated = normalize_and_translate_description(product.description)
+        if translated:
+            product.description_en = translated
+            changed = True
     return changed
 
 

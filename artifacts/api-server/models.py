@@ -201,6 +201,12 @@ class Product(Base):
     # Any field name in this set was explicitly edited by an admin and must
     # never be silently overwritten by the next automatic API sync.
     manually_edited_fields = Column(Text, nullable=True)
+    # True once an admin has hand-written/edited name_en or description_en —
+    # auto-translation (see services/product_sync.ensure_en_fields) must
+    # never overwrite it again. Auto-generated (not admin-typed) text leaves
+    # this False so it can still be regenerated/filled in later.
+    name_en_locked = Column(Boolean, default=False)
+    description_en_locked = Column(Boolean, default=False)
     created_at = Column(DateTime, default=now)
     updated_at = Column(DateTime, default=now, onupdate=now)
 

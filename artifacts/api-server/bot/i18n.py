@@ -24,6 +24,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         # ── Product list ──────────────────────────────────────────────────────
         "product_list_title": "🛍 <b>Danh sách sản phẩm:</b>",
         "product_list_empty": "Hiện không có sản phẩm nào.",
+        "products_syncing": "⏳ Đang cập nhật sản phẩm...",
+        "products_sync_partial_warning": "⚠️ Một số nguồn chưa đồng bộ được, danh sách có thể chưa mới nhất.",
         "product_list_refreshed": "✅ Đã cập nhật danh sách sản phẩm.",
         "product_list_out_of_stock": "Hết hàng",
         "product_list_accept_order": "Nhận đặt hàng",
@@ -211,6 +213,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         # ── Product list ──────────────────────────────────────────────────────
         "product_list_title": "🛍 <b>Product list:</b>",
         "product_list_empty": "No products available.",
+        "products_syncing": "⏳ Updating products...",
+        "products_sync_partial_warning": "⚠️ Some sources could not be refreshed — the list may not be fully up to date.",
         "product_list_refreshed": "✅ Product list updated.",
         "product_list_out_of_stock": "Out of stock",
         "product_list_accept_order": "Pre-order",

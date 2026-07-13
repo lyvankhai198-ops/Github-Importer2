@@ -78,7 +78,7 @@ async def sync_api_products(db: Session, api_connection_id: int) -> dict:
         # propagate image/description/warranty/duration onto the linked
         # Product itself — skipping any field the admin has manually edited
         # (see services/product_sync.py).
-        from services.product_sync import sync_product_from_api_product
+        from services.product_sync import sync_product_from_api_product, ensure_en_fields
         from models import DeliveryMode
         sources = db.query(ProductSource).join(ApiProduct).filter(
             ApiProduct.api_connection_id == api_connection_id
@@ -99,6 +99,10 @@ async def sync_api_products(db: Session, api_connection_id: int) -> dict:
             if src.product and src.product.source_type == SourceType.api and \
                     src.product.delivery_mode == DeliveryMode.api_auto:
                 sync_product_from_api_product(src.product, src.api_product)
+                # Keep name_en/description_en auto-filled from the (possibly
+                # just-updated) Vietnamese text, unless the admin has locked
+                # either field with a hand-typed value.
+                ensure_en_fields(src.product)
 
         conn.last_sync_at = now
         conn.last_success_at = now
@@ -213,6 +217,57 @@ async def _sync_loop(api_connection_id: int, interval_minutes: int):
             pass
         finally:
             db.close()
+
+
+# ── On-demand full sync (used when a shopper opens the product list) ───────
+# Short-lived cache so rapid repeated taps on "Products" don't re-hit every
+# source; per-source timeout + isolated DB session so one slow/broken source
+# can never hang the bot or block the others.
+_SYNC_CACHE_SECONDS = 30
+_SOURCE_TIMEOUT_SECONDS = 8
+_last_full_sync_at: datetime | None = None
+_full_sync_lock = asyncio.Lock()
+
+
+async def sync_active_supplier_products(db: Session) -> dict:
+    """
+    Refresh every active API connection in parallel before the shopper sees
+    the product list. Each source gets its own DB session and an ~8s
+    timeout; a failing/slow source is skipped (its last-known DB data is
+    kept as-is — never zeroed out) and reported in "failed" without
+    affecting the others. Returns immediately (no re-sync) if the last full
+    sync completed within the last 30s.
+    """
+    global _last_full_sync_at
+    now = datetime.utcnow()
+    async with _full_sync_lock:
+        if _last_full_sync_at and (now - _last_full_sync_at).total_seconds() < _SYNC_CACHE_SECONDS:
+            return {"ran": False, "failed": []}
+        _last_full_sync_at = now
+
+    connections = db.query(ApiConnection).filter(ApiConnection.is_active == True).all()
+    if not connections:
+        return {"ran": True, "failed": []}
+
+    async def _sync_one(conn_id: int, conn_name: str):
+        sess = SessionLocal()
+        try:
+            result = await asyncio.wait_for(sync_api_products(sess, conn_id), timeout=_SOURCE_TIMEOUT_SECONDS)
+            return None if result.get("success") else conn_name
+        except asyncio.TimeoutError:
+            logger.error(f"API_SYNC_TIMEOUT: connection_id={conn_id} name={conn_name}")
+            return conn_name
+        except Exception as e:
+            logger.error(f"API_SYNC_ON_DEMAND_ERROR: connection_id={conn_id} name={conn_name} error={e}")
+            return conn_name
+        finally:
+            sess.close()
+
+    outcomes = await asyncio.gather(
+        *[_sync_one(c.id, c.name) for c in connections], return_exceptions=True
+    )
+    failed = [o for o in outcomes if isinstance(o, str)]
+    return {"ran": True, "failed": failed}
 
 
 _sync_tasks: dict = {}

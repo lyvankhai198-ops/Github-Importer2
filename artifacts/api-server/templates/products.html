@@ -77,8 +77,8 @@
                 <form action="/products/{{ p.id }}/edit" method="post" enctype="multipart/form-data">
                   <div class="modal-body">
                     <div class="row g-3">
-                      <div class="col-md-6"><label class="form-label">Tên sản phẩm *</label><input type="text" name="name" class="form-control" value="{{ p.name }}" required></div>
-                      <div class="col-md-6"><label class="form-label">Tên sản phẩm (English)</label><input type="text" name="name_en" class="form-control" value="{{ p.name_en or '' }}" placeholder="Shown to English-language shoppers"></div>
+                      <div class="col-md-6"><label class="form-label">Tên sản phẩm *</label><input type="text" name="name" class="form-control en-src-name" value="{{ p.name }}" required></div>
+                      <div class="col-md-6"><label class="form-label">Tên sản phẩm (English) {% if p.name_en_locked %}<span class="badge bg-secondary">🔒 đã sửa tay</span>{% endif %}</label><input type="text" name="name_en" class="form-control en-out-name" value="{{ p.name_en or '' }}" placeholder="Shown to English-language shoppers"></div>
                       <div class="col-md-6"><label class="form-label">Mã sản phẩm *</label><input type="text" name="product_code" class="form-control" value="{{ p.product_code }}" required></div>
                       <div class="col-md-6"><label class="form-label">Giá bán (đ)</label><input type="number" name="sale_price" class="form-control" value="{{ p.sale_price|int }}" step="1" min="0">
                         <div class="form-text">≈ {{ "%.2f"|format(p.price_usdt or 0) }} USDT — tự động tính theo tỉ giá hiện tại</div>
@@ -92,8 +92,13 @@
                         </select>
                       </div>
                       <div class="col-md-6"><label class="form-label">Icon Telegram (emoji)</label><input type="text" name="telegram_icon" class="form-control" value="{{ p.telegram_icon or '' }}" placeholder="📦"></div>
-                      <div class="col-12"><label class="form-label">Mô tả</label><textarea name="description" class="form-control" rows="3">{{ p.description or '' }}</textarea></div>
-                      <div class="col-12"><label class="form-label">Mô tả (English)</label><textarea name="description_en" class="form-control" rows="2">{{ p.description_en or '' }}</textarea></div>
+                      <div class="col-12"><label class="form-label">Mô tả</label><textarea name="description" class="form-control en-src-desc" rows="3">{{ p.description or '' }}</textarea></div>
+                      <div class="col-12">
+                        <label class="form-label">Mô tả (English) {% if p.description_en_locked %}<span class="badge bg-secondary">🔒 đã sửa tay</span>{% endif %}</label>
+                        <textarea name="description_en" class="form-control en-out-desc" rows="2">{{ p.description_en or '' }}</textarea>
+                        <button type="button" class="btn btn-sm btn-outline-info mt-1 gen-en-btn">🌐 Tạo bản tiếng Anh</button>
+                        <div class="form-text">Tự dịch từ tên/mô tả tiếng Việt — bạn có thể chỉnh lại trước khi lưu.</div>
+                      </div>
                       <div class="col-md-6"><label class="form-label">Bảo hành</label><input type="text" name="warranty" class="form-control" value="{{ p.warranty or '' }}" placeholder="VD: 30 ngày"></div>
                       <div class="col-md-6"><label class="form-label">Thời hạn</label><input type="text" name="duration" class="form-control" value="{{ p.duration or '' }}" placeholder="VD: 1 năm"></div>
                       {% if p.source_type.value == 'api' %}
@@ -150,8 +155,8 @@
       <form action="/products/add" method="post" enctype="multipart/form-data">
         <div class="modal-body">
           <div class="row g-3">
-            <div class="col-md-6"><label class="form-label">Tên sản phẩm *</label><input type="text" name="name" class="form-control" required></div>
-            <div class="col-md-6"><label class="form-label">Tên sản phẩm (English)</label><input type="text" name="name_en" class="form-control" placeholder="Shown to English-language shoppers"></div>
+            <div class="col-md-6"><label class="form-label">Tên sản phẩm *</label><input type="text" name="name" class="form-control en-src-name" required></div>
+            <div class="col-md-6"><label class="form-label">Tên sản phẩm (English)</label><input type="text" name="name_en" class="form-control en-out-name" placeholder="Shown to English-language shoppers"></div>
             <div class="col-md-6"><label class="form-label">Mã sản phẩm *</label><input type="text" name="product_code" class="form-control" required></div>
             <div class="col-md-6"><label class="form-label">Giá bán (đ)</label><input type="number" name="sale_price" class="form-control" value="0" step="1" min="0"></div>
             <div class="col-md-6"><label class="form-label">Số lượng tối thiểu</label><input type="number" name="min_quantity" class="form-control" value="1" step="1" min="1"></div>
@@ -163,8 +168,13 @@
               </select>
             </div>
             <div class="col-md-6"><label class="form-label">Icon Telegram (emoji)</label><input type="text" name="telegram_icon" class="form-control" placeholder="📦"></div>
-            <div class="col-12"><label class="form-label">Mô tả</label><textarea name="description" class="form-control" rows="3"></textarea></div>
-            <div class="col-12"><label class="form-label">Mô tả (English)</label><textarea name="description_en" class="form-control" rows="2"></textarea></div>
+            <div class="col-12"><label class="form-label">Mô tả</label><textarea name="description" class="form-control en-src-desc" rows="3"></textarea></div>
+            <div class="col-12">
+              <label class="form-label">Mô tả (English)</label>
+              <textarea name="description_en" class="form-control en-out-desc" rows="2"></textarea>
+              <button type="button" class="btn btn-sm btn-outline-info mt-1 gen-en-btn">🌐 Tạo bản tiếng Anh</button>
+              <div class="form-text">Tự dịch từ tên/mô tả tiếng Việt — bạn có thể chỉnh lại trước khi lưu.</div>
+            </div>
             <div class="col-md-6"><label class="form-label">Ảnh sản phẩm</label><input type="file" name="image" class="form-control" accept="image/*" id="imageUpload"></div>
             <div class="col-md-3"><label class="form-label">Trạng thái</label>
               <select name="is_active" class="form-select">
@@ -201,6 +211,32 @@ document.getElementById('imageUpload')?.addEventListener('change', function() {
     prev.src = URL.createObjectURL(this.files[0]);
     prev.style.display = 'block';
   }
+});
+
+// "🌐 Tạo bản tiếng Anh" — auto-translate name/description within the same
+// modal, filling the EN fields for the admin to review/edit before saving.
+document.querySelectorAll('.gen-en-btn').forEach(btn => {
+  btn.addEventListener('click', async function() {
+    const modal = this.closest('.modal-body') || this.closest('form');
+    const nameSrc = modal.querySelector('.en-src-name')?.value || '';
+    const descSrc = modal.querySelector('.en-src-desc')?.value || '';
+    if (!nameSrc && !descSrc) return;
+    this.disabled = true;
+    const oldLabel = this.textContent;
+    this.textContent = 'Đang dịch...';
+    try {
+      const body = new URLSearchParams({ name: nameSrc, description: descSrc });
+      const resp = await fetch('/products/generate_en', { method: 'POST', body });
+      const data = await resp.json();
+      const nameOut = modal.querySelector('.en-out-name');
+      const descOut = modal.querySelector('.en-out-desc');
+      if (nameOut && data.name_en) nameOut.value = data.name_en;
+      if (descOut && data.description_en) descOut.value = data.description_en;
+    } finally {
+      this.disabled = false;
+      this.textContent = oldLabel;
+    }
+  });
 });
 </script>
 {% endblock %}

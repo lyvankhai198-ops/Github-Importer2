@@ -81,6 +81,59 @@ def translate_shorthand_to_en(text: str) -> str:
     return result
 
 
+# ── Phrase-level Vietnamese → English dictionary for full descriptions ──────
+# Longer/more specific phrases must be listed (and therefore matched) before
+# the shorter phrases they contain, e.g. "không đổi mail" before "đổi mail".
+_DESCRIPTION_PHRASE_PATTERNS = [
+    (re.compile(r"tk\s*\|\s*mk", re.IGNORECASE), "username|password"),
+    (re.compile(r"kh[oô]ng\s+đổi\s+mail", re.IGNORECASE), "do not change the email"),
+    (re.compile(r"đổi\s+mail", re.IGNORECASE), "change the email"),
+    (re.compile(r"kh[oô]ng\s+bật\s+2fa", re.IGNORECASE), "do not enable 2FA"),
+    (re.compile(r"bật\s+2fa", re.IGNORECASE), "enable 2FA"),
+    (re.compile(r"kh[oô]ng\s+link\s+ho[aặ]c\s+gỡ", re.IGNORECASE), "do not link or remove the account from"),
+    (re.compile(r"link\s+ho[aặ]c\s+gỡ", re.IGNORECASE), "link or remove the account from"),
+    (re.compile(r"bảo\s+h[aà]nh\s+full", re.IGNORECASE), "full warranty"),
+    (re.compile(r"kh[oô]ng\s+bảo\s+h[aà]nh", re.IGNORECASE), "no warranty"),
+    (re.compile(r"bảo\s+h[aà]nh", re.IGNORECASE), "warranty"),
+    (re.compile(r"hạn\s+sử\s+dụng", re.IGNORECASE), "duration"),
+    (re.compile(r"tài\s+khoản", re.IGNORECASE), "account"),
+    (re.compile(r"đăng\s+nhập", re.IGNORECASE), "log in"),
+    (re.compile(r"thiết\s+bị", re.IGNORECASE), "device"),
+    (re.compile(r"định\s+dạng", re.IGNORECASE), "format"),
+    (re.compile(r"gói", re.IGNORECASE), "package"),
+    (re.compile(r"vui\s+l[oò]ng\s+đọc\s+kỹ\s+m[oô]\s+tả\s+trước\s+khi\s+mua", re.IGNORECASE),
+     "please read the description carefully before buying"),
+    (re.compile(r"m[oô]\s+tả", re.IGNORECASE), "description"),
+]
+
+
+def translate_product_name_to_en(name: str) -> str:
+    """
+    Auto-generate an English product name from a Vietnamese one using the
+    fixed warranty/duration shorthand table (BHF -> Full Warranty,
+    3 Tháng -> 3 Months, etc). Used to fill Product.name_en when the admin
+    hasn't supplied one — never called once name_en_locked is set.
+    """
+    return translate_shorthand_to_en(name or "")
+
+
+def normalize_and_translate_description(description: str) -> str:
+    """
+    Auto-generate an English product description from a Vietnamese one:
+    applies the phrase-level dictionary (tk|mk -> username|password, bảo
+    hành -> warranty, ...) followed by the warranty/duration shorthand
+    table. Used to fill Product.description_en when the admin hasn't
+    supplied one — never called once description_en_locked is set.
+    """
+    if not description:
+        return description
+    result = description
+    for pattern, repl in _DESCRIPTION_PHRASE_PATTERNS:
+        result = pattern.sub(repl, result)
+    result = translate_shorthand_to_en(result)
+    return result
+
+
 def normalize_product_data(raw_item: dict) -> dict:
     """
     Map các tên field khác nhau từ API nguồn về chuẩn nội bộ.

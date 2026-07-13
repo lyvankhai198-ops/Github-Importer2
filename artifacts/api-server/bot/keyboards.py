@@ -45,7 +45,18 @@ def product_list_keyboard(products: list, lang: str = "vi",
         status = item.get("status", "in_stock")
         is_unavailable = status in ("out_of_stock", "unavailable")
 
-        display_name = p.name_en if (lang == "en" and getattr(p, "name_en", None)) else p.name
+        if lang == "en":
+            if getattr(p, "name_en", None):
+                display_name = p.name_en
+            else:
+                # Defensive fallback (should be rare — name_en is normally
+                # auto-filled on save/sync): never show raw Vietnamese
+                # warranty/duration shorthand (BHF, KBH, Tháng, Ngày...) to
+                # English shoppers.
+                from services.normalize import translate_shorthand_to_en
+                display_name = translate_shorthand_to_en(p.name)
+        else:
+            display_name = p.name
         price_str = f"{format_vnd(p.sale_price)}đ" if lang == "vi" else f"{format_usdt(p.price_usdt)} USDT"
 
         if is_unavailable:

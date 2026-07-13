@@ -138,13 +138,19 @@ async def add_product(
         return RedirectResponse(url="/products", status_code=302)
 
     try:
+        from services.product_sync import ensure_en_fields
+
         image_path = await _save_image(image)
+        name_en_clean = name_en.strip() or None
+        description_en_clean = description_en or None
         product = Product(
             name=name.strip(),
-            name_en=name_en.strip() or None,
+            name_en=name_en_clean,
+            name_en_locked=bool(name_en_clean),
             product_code=product_code,
             description=description,
-            description_en=description_en or None,
+            description_en=description_en_clean,
+            description_en_locked=bool(description_en_clean),
             sale_price=sale_price,
             price_usdt=compute_price_usdt(sale_price, _current_retail_rate(db)),
             min_quantity=min_quantity,
@@ -155,6 +161,10 @@ async def add_product(
             image_path=image_path,
             source_type=SourceType.manual,
         )
+        # Auto-translate name/description into English wherever the admin
+        # left the English field blank, so bilingual display never falls
+        # back to raw untranslated Vietnamese text.
+        ensure_en_fields(product)
         db.add(product)
         db.commit()
         flash(request, "Sản phẩm đã được thêm thành công!")
@@ -205,12 +215,15 @@ async def edit_product(
         return RedirectResponse(url="/products", status_code=302)
 
     try:
-        from services.product_sync import apply_admin_edit
+        from services.product_sync import apply_admin_edit, apply_admin_en_edit, ensure_en_fields
 
         product.name = name.strip()
-        product.name_en = name_en.strip() or None
         product.product_code = product_code
-        product.description_en = description_en or None
+        # name_en/description_en: only flag as manually-locked when the
+        # admin's submitted value actually differs from what's stored —
+        # resubmitting the same (possibly auto-translated) text must not
+        # freeze it against future auto-translation.
+        apply_admin_en_edit(product, name_en, description_en)
         product.sale_price = sale_price
         product.price_usdt = compute_price_usdt(sale_price, _current_retail_rate(db))
         product.min_quantity = min_quantity
@@ -234,6 +247,10 @@ async def edit_product(
             from services.product_sync import mark_fields_edited
             mark_fields_edited(product, {"image_path"})
 
+        # Fill in any English field the admin left blank (and didn't just
+        # unlock above) so display never falls back to raw Vietnamese text.
+        ensure_en_fields(product)
+
         db.commit()
         db.refresh(product)
         flash(request, "Sản phẩm đã được cập nhật!")
@@ -242,6 +259,26 @@ async def edit_product(
         logger.error(f"edit_product({product_id}) failed:\n" + traceback.format_exc())
         flash(request, "Có lỗi xảy ra khi cập nhật sản phẩm. Vui lòng thử lại!", "error")
     return RedirectResponse(url="/products", status_code=302)
+
+
+@router.post("/products/generate_en")
+async def generate_en_preview(
+    request: Request,
+    name: str = Form(""),
+    description: str = Form(""),
+):
+    """
+    "🌐 Tạo bản tiếng Anh" — returns an auto-translated EN name/description
+    preview (via the same dictionary used for auto-sync) for the admin to
+    review and edit before saving. Does not touch the database.
+    """
+    if not check_auth(request):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    from services.normalize import translate_product_name_to_en, normalize_and_translate_description
+    return JSONResponse({
+        "name_en": translate_product_name_to_en(name) if name else "",
+        "description_en": normalize_and_translate_description(description) if description else "",
+    })
 
 
 @router.post("/products/{product_id}/toggle")

@@ -260,15 +260,44 @@ async def products_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not await _require_language_selected(update, db):
             return
         lang = _get_lang(db, update.effective_user.id)
+
+        # Auto-sync every active API source before rendering — no manual
+        # "Refresh" tap required. Skipped entirely if there's no active API
+        # connection at all (nothing to sync).
+        from models import ApiConnection
+        from services.api_service import sync_active_supplier_products
+
+        sync_failed = []
+        status_msg = None
+        if db.query(ApiConnection).filter(ApiConnection.is_active == True).first():
+            status_msg = await update.message.reply_text(t(lang, "products_syncing"))
+            try:
+                sync_result = await sync_active_supplier_products(db)
+                sync_failed = sync_result.get("failed", [])
+                db.expire_all()  # pick up commits made by the parallel sync sessions
+            except Exception as e:
+                logger.error(f"[products_handler] sync_active_supplier_products failed: {e}")
+
         show_oos = _get_show_out_of_stock(db)
         per_page = _get_products_per_page(db)
         products = get_active_products_for_bot(db, show_out_of_stock=show_oos)
+
+        if status_msg:
+            try:
+                await status_msg.delete()
+            except Exception:
+                pass
+
         if not products:
             await update.message.reply_text(t(lang, "product_list_empty"))
             return
+
         context.user_data["last_products_page"] = 0
+        title = t(lang, "product_list_title")
+        if sync_failed:
+            title += "\n" + t(lang, "products_sync_partial_warning")
         await update.message.reply_text(
-            t(lang, "product_list_title"),
+            title,
             parse_mode="HTML",
             reply_markup=product_list_keyboard(products, lang=lang, page=0, per_page=per_page),
         )
@@ -1122,10 +1151,17 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Name: use English name if lang=en and available, else fall back
             # to the Vietnamese name (never show a bare product code).
             display_name = p.name
-            if lang == "en" and getattr(p, "name_en", None):
-                display_name = p.name_en
+            if lang == "en":
+                if getattr(p, "name_en", None):
+                    display_name = p.name_en
+                else:
+                    # Defensive fallback — see bot/keyboards.py for why.
+                    display_name = translate_shorthand_to_en(p.name)
 
-            lines = [f"📦 <b>{html.escape(display_name)}</b>\n"]
+            detail_icon = (getattr(p, "telegram_icon", None) or "").strip() or "📦"
+            if status in ("out_of_stock", "unavailable"):
+                detail_icon = "❌"
+            lines = [f"{detail_icon} <b>{html.escape(display_name)}</b>\n"]
             if lang == "en":
                 lines.append(t(lang, "product_price", price=format_usdt(p.price_usdt)))
             else:
