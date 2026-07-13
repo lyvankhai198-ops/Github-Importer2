@@ -2,6 +2,7 @@
 normalize.py — Chuẩn hóa dữ liệu từ các API nguồn khác nhau.
 """
 import html
+import re
 
 
 def format_vnd(value) -> str:
@@ -14,6 +15,70 @@ def format_vnd(value) -> str:
         return f"{float(value or 0):,.0f}".replace(",", ".")
     except (TypeError, ValueError):
         return "0"
+
+
+def format_usdt(value) -> str:
+    """
+    Format a number as a USDT amount with 2 decimals (e.g. 2.0800 -> "2.08").
+    Caller appends the "USDT" suffix.
+    """
+    try:
+        return f"{float(value or 0):.2f}"
+    except (TypeError, ValueError):
+        return "0.00"
+
+
+def compute_price_usdt(sale_price_vnd, rate: float) -> float:
+    """
+    Convert a VND retail price to USDT using the given VND-per-USDT rate.
+    Rounded to 2 decimals for display. Returns 0.0 on invalid input.
+    """
+    try:
+        rate = float(rate or 0)
+        if rate <= 0:
+            return 0.0
+        return round(float(sale_price_vnd or 0) / rate, 2)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+# ── Vietnamese shorthand → English translation table ────────────────────────
+# Used to auto-translate warranty/duration/name shorthand codes commonly typed
+# by admins (e.g. "BHF", "BH 30D", "Ngày") wherever product text is rendered
+# to English-language shoppers. Order matters: longer/more specific patterns
+# (BH <N> D/M/Y) must be matched before the bare "BHF"/"KBH" codes.
+_WARRANTY_PATTERNS = [
+    (re.compile(r"\bBH\s*(\d+)\s*D\b", re.IGNORECASE), lambda m: f"{m.group(1)}-Day Warranty"),
+    (re.compile(r"\bBH\s*(\d+)\s*M\b", re.IGNORECASE), lambda m: f"{m.group(1)}-Month Warranty"),
+    (re.compile(r"\bBH\s*(\d+)\s*Y\b", re.IGNORECASE), lambda m: f"{m.group(1)}-Year Warranty"),
+    (re.compile(r"\bBHF\b", re.IGNORECASE), "Full Warranty"),
+    (re.compile(r"\bKBH\b", re.IGNORECASE), "No Warranty"),
+    (re.compile(r"\bAdd\s*Fam\b", re.IGNORECASE), "Add Family"),
+    (re.compile(r"\bSlot\b", re.IGNORECASE), "Shared Slot"),
+    (re.compile(r"\bKey\b", re.IGNORECASE), "License Key"),
+    (re.compile(r"\bAPI\b", re.IGNORECASE), "API"),
+    (re.compile(r"\bTeam\b", re.IGNORECASE), "Team"),
+    (re.compile(r"\bRandom\b", re.IGNORECASE), "Random"),
+    (re.compile(r"\bCredit\b", re.IGNORECASE), "Credit"),
+    (re.compile(r"\bNg[aà]y\b", re.IGNORECASE), "Days"),
+    (re.compile(r"\bTh[aá]ng\b", re.IGNORECASE), "Months"),
+    (re.compile(r"\bN[aă]m\b", re.IGNORECASE), "Years"),
+]
+
+
+def translate_shorthand_to_en(text: str) -> str:
+    """
+    Apply the fixed Vietnamese-shorthand → English translation table to a
+    warranty/duration/name string (e.g. "BHF" -> "Full Warranty",
+    "BH 30D" -> "30-Day Warranty", "Ngày" -> "Days"). Safe to call on text
+    that already has no matches — it is returned unchanged.
+    """
+    if not text:
+        return text
+    result = text
+    for pattern, repl in _WARRANTY_PATTERNS:
+        result = pattern.sub(repl, result)
+    return result
 
 
 def normalize_product_data(raw_item: dict) -> dict:
@@ -145,21 +210,44 @@ def normalize_delivery_items(response_json: dict) -> list:
     return items
 
 
-def format_delivery_message(order, items: list, product_name: str) -> tuple:
+def format_delivery_message(order, items: list, product_name: str, lang: str = "vi") -> tuple:
     """
     Tạo tin nhắn giao hàng đẹp cho bot (HTML parse_mode).
     Trả về (text, file_bytes_or_None).
     - ≤10 tài khoản: gửi text với <code> blocks.
     - >10 tài khoản: tạo nội dung file TXT.
     """
-    header = (
-        f"✅ <b>MUA HÀNG THÀNH CÔNG</b>\n\n"
-        f"Mã đơn: <code>{order.order_code}</code>\n"
-        f"Sản phẩm: {html.escape(product_name)}\n"
-        f"Số lượng: {order.quantity}\n"
-        f"Tổng tiền: {format_vnd(order.total_price)}đ\n\n"
-        f"📦 <b>TÀI KHOẢN CỦA BẠN</b>\n"
-    )
+    if lang == "en":
+        product = getattr(order, "product", None)
+        if product is not None:
+            total_str = f"{format_usdt(product.price_usdt * order.quantity)} USDT"
+        else:
+            total_str = f"{format_vnd(order.total_price)} VND"
+        header = (
+            f"✅ <b>PURCHASE SUCCESSFUL</b>\n\n"
+            f"Order: <code>{order.order_code}</code>\n"
+            f"Product: {html.escape(product_name)}\n"
+            f"Quantity: {order.quantity}\n"
+            f"Total: {total_str}\n\n"
+            f"📦 <b>YOUR ACCOUNTS</b>\n"
+        )
+        thanks = "Thank you for your purchase! 🙏"
+        more_suffix = "more account(s) (see attached file)"
+        file_order_label = "Order"
+        file_product_label = "Product"
+    else:
+        header = (
+            f"✅ <b>MUA HÀNG THÀNH CÔNG</b>\n\n"
+            f"Mã đơn: <code>{order.order_code}</code>\n"
+            f"Sản phẩm: {html.escape(product_name)}\n"
+            f"Số lượng: {order.quantity}\n"
+            f"Tổng tiền: {format_vnd(order.total_price)}đ\n\n"
+            f"📦 <b>TÀI KHOẢN CỦA BẠN</b>\n"
+        )
+        thanks = "Cảm ơn bạn đã mua hàng! 🙏"
+        more_suffix = "tài khoản nữa (xem file đính kèm)"
+        file_order_label = "Đơn hàng"
+        file_product_label = "Sản phẩm"
 
     lines = []
     for item in items:
@@ -168,11 +256,11 @@ def format_delivery_message(order, items: list, product_name: str) -> tuple:
 
     if len(items) <= 10:
         account_block = "\n".join(f"<code>{html.escape(l)}</code>" for l in lines)
-        text = header + "\n" + account_block + "\n\nCảm ơn bạn đã mua hàng! 🙏"
+        text = header + "\n" + account_block + "\n\n" + thanks
         return text, None
     else:
         # Tạo file TXT
-        file_content = f"Đơn hàng: {order.order_code}\nSản phẩm: {product_name}\n"
+        file_content = f"{file_order_label}: {order.order_code}\n{file_product_label}: {product_name}\n"
         file_content += "=" * 40 + "\n"
         file_content += "\n".join(lines)
         account_block = "\n".join(
@@ -180,29 +268,37 @@ def format_delivery_message(order, items: list, product_name: str) -> tuple:
         )
         text = (
             header + "\n" + account_block + "\n"
-            f"<i>... và {len(lines) - 3} tài khoản nữa (xem file đính kèm)</i>\n\n"
-            "Cảm ơn bạn đã mua hàng! 🙏"
+            f"<i>... {'and ' if lang == 'en' else 'và '}{len(lines) - 3} {more_suffix}</i>\n\n"
+            + thanks
         )
         return text, file_content.encode("utf-8")
 
 
-def format_partial_delivery_message(order, items: list, product_name: str) -> str:
+def format_partial_delivery_message(order, items: list, product_name: str, lang: str = "vi") -> str:
     delivered = len(items)
     missing = order.quantity - delivered
     external_code = order.external_order_code or order.external_order_id or "—"
-    header = (
-        f"⚠️ <b>GIAO HÀNG KHÔNG ĐỦ SỐ LƯỢNG</b>\n\n"
-        f"Mã đơn: <code>{order.order_code}</code>\n"
-        f"Mã đơn nguồn: <code>{external_code}</code>\n"
-        f"Đặt: {order.quantity} | Nhận được: {delivered} | Thiếu: {missing}\n\n"
-        f"📦 <b>TÀI KHOẢN ĐÃ NHẬN:</b>\n"
-    )
+    if lang == "en":
+        header = (
+            f"⚠️ <b>INCOMPLETE DELIVERY</b>\n\n"
+            f"Order: <code>{order.order_code}</code>\n"
+            f"Source order: <code>{external_code}</code>\n"
+            f"Ordered: {order.quantity} | Received: {delivered} | Missing: {missing}\n\n"
+            f"📦 <b>ACCOUNTS RECEIVED:</b>\n"
+        )
+        footer = "⏳ The source is processing the remainder. Admin will contact you soon."
+    else:
+        header = (
+            f"⚠️ <b>GIAO HÀNG KHÔNG ĐỦ SỐ LƯỢNG</b>\n\n"
+            f"Mã đơn: <code>{order.order_code}</code>\n"
+            f"Mã đơn nguồn: <code>{external_code}</code>\n"
+            f"Đặt: {order.quantity} | Nhận được: {delivered} | Thiếu: {missing}\n\n"
+            f"📦 <b>TÀI KHOẢN ĐÃ NHẬN:</b>\n"
+        )
+        footer = "⏳ Nguồn đang xử lý phần còn lại. Admin sẽ liên hệ bạn sớm."
     lines = [_item_display_value(item) for item in items]
     account_block = "\n".join(f"<code>{html.escape(l)}</code>" for l in lines)
-    return (
-        header + "\n" + account_block + "\n\n"
-        "⏳ Nguồn đang xử lý phần còn lại. Admin sẽ liên hệ bạn sớm."
-    )
+    return header + "\n" + account_block + "\n\n" + footer
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────

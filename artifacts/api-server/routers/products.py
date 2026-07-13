@@ -13,7 +13,18 @@ from models import (
     InventoryItem, InventoryStatus, Order,
 )
 from services.api_service import sync_api_products
+from services.normalize import compute_price_usdt
 from config import UPLOADS_DIR
+
+
+def _current_retail_rate(db: Session) -> float:
+    """VND-per-USDT rate used for auto-computing product.price_usdt. Reuses the
+    same admin-editable exchange rate config used for crypto payments (settings
+    key "exchange_rate_config", fixed_rate field) so there is a single source
+    of truth for "1 USDT = N VND"."""
+    from services.exchange_rate_service import get_exchange_config
+    cfg = get_exchange_config(db)
+    return float(cfg.get("fixed_rate") or 26500.0)
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +111,7 @@ async def add_product(
     request: Request,
     db: Session = Depends(get_db),
     name: str = Form(...),
+    name_en: str = Form(""),
     product_code: str = Form(...),
     description: str = Form(""),
     description_en: str = Form(""),
@@ -129,10 +141,12 @@ async def add_product(
         image_path = await _save_image(image)
         product = Product(
             name=name.strip(),
+            name_en=name_en.strip() or None,
             product_code=product_code,
             description=description,
             description_en=description_en or None,
             sale_price=sale_price,
+            price_usdt=compute_price_usdt(sale_price, _current_retail_rate(db)),
             min_quantity=min_quantity,
             telegram_icon=telegram_icon or None,
             delivery_mode=DeliveryMode(delivery_mode),
@@ -157,6 +171,7 @@ async def edit_product(
     request: Request,
     db: Session = Depends(get_db),
     name: str = Form(...),
+    name_en: str = Form(""),
     product_code: str = Form(...),
     description: str = Form(""),
     description_en: str = Form(""),
@@ -189,10 +204,12 @@ async def edit_product(
 
     try:
         product.name = name.strip()
+        product.name_en = name_en.strip() or None
         product.product_code = product_code
         product.description = description
         product.description_en = description_en or None
         product.sale_price = sale_price
+        product.price_usdt = compute_price_usdt(sale_price, _current_retail_rate(db))
         product.min_quantity = min_quantity
         product.telegram_icon = telegram_icon or None
         product.delivery_mode = DeliveryMode(delivery_mode)
@@ -312,6 +329,7 @@ async def create_product_from_source(
         # Description from source (admin can override later)
         description=ap.external_description or "",
         sale_price=final_price,
+        price_usdt=compute_price_usdt(final_price, _current_retail_rate(db)),
         min_quantity=ap.external_min_quantity or 1,
         warranty=ap.external_warranty or "",
         duration=ap.external_duration or "",

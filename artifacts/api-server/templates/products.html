@@ -38,7 +38,7 @@
               <a href="/products/id/{{ p.id }}" class="fw-semibold text-decoration-none">{{ p.name }}</a>
               <div><small class="text-muted">{{ p.product_code }}</small></div>
             </td>
-            <td>{{ "{:,.0f}".format(p.sale_price).replace(",", ".") }}đ</td>
+            <td>{{ "{:,.0f}".format(p.sale_price).replace(",", ".") }}đ<br><small class="text-muted">≈{{ "%.2f"|format(p.price_usdt or 0) }} USDT</small></td>
             <td><span class="badge {% if p.source_type.value == 'api' %}bg-info{% else %}bg-secondary{% endif %}">{{ p.source_type.value }}</span></td>
             <td>
               {% if p.delivery_mode.value == 'api_auto' %}<span class="badge bg-success">Tự động API</span>
@@ -78,8 +78,11 @@
                   <div class="modal-body">
                     <div class="row g-3">
                       <div class="col-md-6"><label class="form-label">Tên sản phẩm *</label><input type="text" name="name" class="form-control" value="{{ p.name }}" required></div>
+                      <div class="col-md-6"><label class="form-label">Tên sản phẩm (English)</label><input type="text" name="name_en" class="form-control" value="{{ p.name_en or '' }}" placeholder="Shown to English-language shoppers"></div>
                       <div class="col-md-6"><label class="form-label">Mã sản phẩm *</label><input type="text" name="product_code" class="form-control" value="{{ p.product_code }}" required></div>
-                      <div class="col-md-6"><label class="form-label">Giá bán (đ)</label><input type="number" name="sale_price" class="form-control" value="{{ p.sale_price|int }}" step="1" min="0"></div>
+                      <div class="col-md-6"><label class="form-label">Giá bán (đ)</label><input type="number" name="sale_price" class="form-control" value="{{ p.sale_price|int }}" step="1" min="0">
+                        <div class="form-text">≈ {{ "%.2f"|format(p.price_usdt or 0) }} USDT — tự động tính theo tỉ giá hiện tại</div>
+                      </div>
                       <div class="col-md-6"><label class="form-label">Số lượng tối thiểu</label><input type="number" name="min_quantity" class="form-control" value="{{ p.min_quantity or 1 }}" step="1" min="1"></div>
                       <div class="col-md-6"><label class="form-label">Chế độ giao hàng</label>
                         <select name="delivery_mode" class="form-select">
@@ -137,6 +140,7 @@
         <div class="modal-body">
           <div class="row g-3">
             <div class="col-md-6"><label class="form-label">Tên sản phẩm *</label><input type="text" name="name" class="form-control" required></div>
+            <div class="col-md-6"><label class="form-label">Tên sản phẩm (English)</label><input type="text" name="name_en" class="form-control" placeholder="Shown to English-language shoppers"></div>
             <div class="col-md-6"><label class="form-label">Mã sản phẩm *</label><input type="text" name="product_code" class="form-control" required></div>
             <div class="col-md-6"><label class="form-label">Giá bán (đ)</label><input type="number" name="sale_price" class="form-control" value="0" step="1" min="0"></div>
             <div class="col-md-6"><label class="form-label">Số lượng tối thiểu</label><input type="number" name="min_quantity" class="form-control" value="1" step="1" min="1"></div>

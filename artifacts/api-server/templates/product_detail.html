@@ -15,7 +15,7 @@
           <div>
             <h5 class="mb-1">{{ product.name }}</h5>
             <div class="text-muted small mb-1">{{ product.product_code }}</div>
-            <div class="fw-semibold">{{ "{:,.0f}".format(product.sale_price).replace(",", ".") }}đ</div>
+            <div class="fw-semibold">{{ "{:,.0f}".format(product.sale_price).replace(",", ".") }}đ <span class="text-muted small">(≈ {{ "%.2f"|format(product.price_usdt or 0) }} USDT)</span></div>
           </div>
         </div>
         <hr>
@@ -132,8 +132,11 @@
         <div class="modal-body">
           <div class="row g-3">
             <div class="col-md-6"><label class="form-label">Tên sản phẩm *</label><input type="text" name="name" class="form-control" value="{{ product.name }}" required></div>
+            <div class="col-md-6"><label class="form-label">Tên sản phẩm (English)</label><input type="text" name="name_en" class="form-control" value="{{ product.name_en or '' }}" placeholder="Shown to English-language shoppers"></div>
             <div class="col-md-6"><label class="form-label">Mã sản phẩm *</label><input type="text" name="product_code" class="form-control" value="{{ product.product_code }}" required></div>
-            <div class="col-md-6"><label class="form-label">Giá bán (đ)</label><input type="number" name="sale_price" class="form-control" value="{{ product.sale_price|int }}" step="1" min="0"></div>
+            <div class="col-md-6"><label class="form-label">Giá bán (đ)</label><input type="number" name="sale_price" class="form-control" value="{{ product.sale_price|int }}" step="1" min="0">
+              <div class="form-text">≈ {{ "%.2f"|format(product.price_usdt or 0) }} USDT — tự động tính theo tỉ giá hiện tại</div>
+            </div>
             <div class="col-md-6"><label class="form-label">Số lượng tối thiểu</label><input type="number" name="min_quantity" class="form-control" value="{{ product.min_quantity or 1 }}" step="1" min="1"></div>
             <div class="col-md-6"><label class="form-label">Chế độ giao hàng</label>
               <select name="delivery_mode" class="form-select">

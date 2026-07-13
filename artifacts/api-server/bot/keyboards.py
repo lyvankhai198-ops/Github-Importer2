@@ -1,6 +1,6 @@
 from telegram import ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
 from bot.i18n import t
-from services.normalize import format_vnd
+from services.normalize import format_vnd, format_usdt
 
 
 def main_menu_keyboard(lang: str = "vi", is_admin: bool = False) -> ReplyKeyboardMarkup:
@@ -45,18 +45,19 @@ def product_list_keyboard(products: list, lang: str = "vi",
         status = item.get("status", "in_stock")
         is_unavailable = status in ("out_of_stock", "unavailable")
 
+        display_name = p.name_en if (lang == "en" and getattr(p, "name_en", None)) else p.name
+        price_str = f"{format_vnd(p.sale_price)}đ" if lang == "vi" else f"{format_usdt(p.price_usdt)} USDT"
+
         if is_unavailable:
-            label = f"❌ {p.name} - {t(lang, 'product_list_out_of_stock')}"
+            label = f"❌ {display_name} - {t(lang, 'product_list_out_of_stock')}"
             cb = f"oos:{p.id}"
         elif status == "accepting_orders":
             icon = (getattr(p, "telegram_icon", None) or "").strip() or "📦"
-            price_str = f"{format_vnd(p.sale_price)}đ"
-            label = f"🟡 {icon} {p.name} - {price_str} ({t(lang, 'product_list_accept_order')})"
+            label = f"🟡 {icon} {display_name} - {price_str} ({t(lang, 'product_list_accept_order')})"
             cb = f"product:{p.id}"
         else:
             icon = (getattr(p, "telegram_icon", None) or "").strip() or "📦"
-            price_str = f"{format_vnd(p.sale_price)}đ"
-            label = f"{icon} {p.name} - {price_str}"
+            label = f"{icon} {display_name} - {price_str}"
             cb = f"product:{p.id}"
 
         buttons.append([InlineKeyboardButton(label, callback_data=cb)])

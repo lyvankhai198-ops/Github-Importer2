@@ -48,6 +48,8 @@ def _run_migrations():
         "ALTER TABLE products ADD COLUMN warranty VARCHAR(255)",
         "ALTER TABLE products ADD COLUMN duration VARCHAR(255)",
         "ALTER TABLE products ADD COLUMN description_en TEXT",
+        "ALTER TABLE products ADD COLUMN name_en VARCHAR(255)",
+        "ALTER TABLE products ADD COLUMN price_usdt FLOAT DEFAULT 0.0",
         # Order core new fields
         "ALTER TABLE orders ADD COLUMN source_unit_price FLOAT",
         "ALTER TABLE orders ADD COLUMN external_order_code VARCHAR(255)",
@@ -125,14 +127,39 @@ def _run_migrations():
     ]
     with engine.connect() as conn:
         ran_language_selected_migration = False
+        ran_price_usdt_migration = False
         for sql in migrations:
             try:
                 conn.execute(text(sql))
                 conn.commit()
                 if "language_selected" in sql:
                     ran_language_selected_migration = True
+                if "price_usdt" in sql:
+                    ran_price_usdt_migration = True
             except Exception:
                 pass  # column / index already exists
+
+        # Backfill price_usdt for any product where it's still 0 despite a
+        # non-zero sale_price — covers products that predate the column (they
+        # got the ALTER TABLE default of 0.0, not a real computed value) and
+        # any product created directly in the DB outside the admin UI. Safe
+        # to run on every startup: never overwrites an already-computed value.
+        try:
+            from services.exchange_rate_service import get_exchange_config
+            from services.normalize import compute_price_usdt
+            db = SessionLocal()
+            try:
+                from models import Product
+                rate = float(get_exchange_config(db).get("fixed_rate") or 26500.0)
+                stale = db.query(Product).filter(Product.price_usdt == 0.0, Product.sale_price > 0).all()
+                for product in stale:
+                    product.price_usdt = compute_price_usdt(product.sale_price, rate)
+                if stale:
+                    db.commit()
+            finally:
+                db.close()
+        except Exception:
+            logger.exception("price_usdt backfill failed")
 
         # Backward-compat: existing products stored with the old plain "manual"
         # delivery_mode become "manual_admin" (no inventory, admin delivers by hand).

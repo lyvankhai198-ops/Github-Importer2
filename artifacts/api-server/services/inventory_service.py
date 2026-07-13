@@ -359,11 +359,12 @@ async def _try_deliver_items(order: Order, product: Product, items: list, db: Se
         order.delivery_items = _json.dumps(delivery_items, ensure_ascii=False)
         db.commit()
 
-        text, file_bytes = format_delivery_message(order, delivery_items, product.name)
-        bot = bot_manager._application.bot
         from bot.keyboards import post_delivery_keyboard
         from bot.i18n import get_user_lang
         lang = get_user_lang(db, order.telegram_user_id)
+        display_name = product.name_en if (lang == "en" and getattr(product, "name_en", None)) else product.name
+        text, file_bytes = format_delivery_message(order, delivery_items, display_name, lang=lang)
+        bot = bot_manager._application.bot
         cfg = _get_bot_config(db)
         support = cfg.support_username if cfg else ""
         keyboard = post_delivery_keyboard(order.id, support, lang=lang)

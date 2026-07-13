@@ -181,10 +181,12 @@ class Product(Base):
     id = Column(Integer, primary_key=True, index=True)
     product_code = Column(String(100), unique=True, nullable=False)
     name = Column(String(255), nullable=False)
+    name_en = Column(String(255), nullable=True)    # English name (optional; falls back to name)
     description = Column(Text, nullable=True)
     description_en = Column(Text, nullable=True)   # English description (optional)
     image_path = Column(String(500), nullable=True)
     sale_price = Column(Float, default=0.0)
+    price_usdt = Column(Float, default=0.0)   # auto-computed from sale_price + current exchange rate
     min_quantity = Column(Integer, default=1)
     warranty = Column(String(255), nullable=True)
     duration = Column(String(255), nullable=True)

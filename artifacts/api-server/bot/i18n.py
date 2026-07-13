@@ -187,7 +187,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "product_low_stock": "🟡 Low stock ({count})",
         "product_out_of_stock": "🔴 Out of stock",
         "product_unavailable": "⚠️ Source unavailable",
-        "product_price": "💰 Price: <b>{price} VND/account</b>",
+        "product_price": "💰 Price: <b>{price} USDT/account</b>",
         "product_stock_label": "📊 Source stock: {stock}",
         "product_min_qty": "🛒 Minimum: {qty}",
         "product_duration": "⌛ Duration: {val}",
@@ -208,7 +208,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "product_not_found": "Product not found.",
         "product_out_of_stock_recheck": "🔴 Product is out of stock. Please choose another.",
         # ── Payment method selection ──────────────────────────────────────────
-        "choose_payment_title": "💳 <b>CHOOSE PAYMENT METHOD</b>\n\nOrder: <code>{order_code}</code>\nProduct: {product}\nQty: {qty}\nTotal: <b>{total} VND</b>",
+        "choose_payment_title": "💳 <b>CHOOSE PAYMENT METHOD</b>\n\nOrder: <code>{order_code}</code>\nProduct: {product}\nQty: {qty}\nTotal: <b>{total} USDT</b>",
         "btn_bank_transfer": "🏦 Bank transfer",
         "btn_binance_pay": "🟡 Binance Pay",
         "btn_usdt_bep20": "🟨 USDT BEP20",

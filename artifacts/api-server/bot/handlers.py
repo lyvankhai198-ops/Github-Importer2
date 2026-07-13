@@ -49,6 +49,15 @@ def _get_support_username(db) -> str:
     cfg = _get_config(db)
     return cfg.support_username if cfg and cfg.support_username else ""
 
+def _product_display_name(product, lang: str) -> str:
+    """English name if available and lang=en, else the Vietnamese name."""
+    if not product:
+        return "—"
+    if lang == "en" and getattr(product, "name_en", None):
+        return product.name_en
+    return product.name
+
+
 def _get_lang(db, tg_user_id) -> str:
     return get_user_lang(db, str(tg_user_id))
 
@@ -288,7 +297,17 @@ async def orders_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for o in orders:
             sv = o.status.value if hasattr(o.status, "value") else o.status
             st = _status_label(sv, lang)
-            price_str = f"{format_vnd(o.total_price)}đ" if lang == "vi" else f"{format_vnd(o.total_price)} VND"
+            if lang == "vi":
+                price_str = f"{format_vnd(o.total_price)}đ"
+            else:
+                from services.normalize import format_usdt
+                usdt_total = (o.product.price_usdt * o.quantity) if o.product else None
+                if usdt_total is None:
+                    from services.exchange_rate_service import get_exchange_config
+                    from services.normalize import compute_price_usdt
+                    rate = float(get_exchange_config(db).get("fixed_rate") or 26500.0)
+                    usdt_total = compute_price_usdt(o.total_price, rate)
+                price_str = f"{format_usdt(usdt_total)} USDT"
             lines.append(
                 f"• <code>{o.order_code}</code> — {st}\n"
                 f"  💰 {price_str} | {o.created_at.strftime('%d/%m/%Y')}"
@@ -422,7 +441,7 @@ async def _setup_sepay_payment(context, db, tg_user, order, lang: str, processin
     order.payment_currency = "VND"
     db.commit()
 
-    product_name = order.product.name if order.product else str(order.product_id)
+    product_name = _product_display_name(order.product, lang) if order.product else str(order.product_id)
     expiry_dt = order.payment_expires_at
     expiry_str = expiry_dt.strftime("%H:%M %d/%m/%Y") if expiry_dt else "—"
     timeout = sepay.payment_timeout_minutes or 15
@@ -540,7 +559,7 @@ async def _setup_binance_payment(context, db, tg_user, order, lang: str, process
         except Exception:
             pass
 
-    product_name = order.product.name if order.product else str(order.product_id)
+    product_name = _product_display_name(order.product, lang) if order.product else str(order.product_id)
 
     if mode == "manual":
         pay_id = bnb_cfg.get("pay_id") or "—"
@@ -830,8 +849,9 @@ async def _do_create_order(context, db, tg_user, product_id: int, quantity: int,
         db.commit()
 
     # Build payment method selection message
-    product_name = product.name
-    total_str = f"{format_vnd(total)}"
+    from services.normalize import format_usdt
+    product_name = _product_display_name(product, lang)
+    total_str = format_usdt(product.price_usdt * quantity) if lang == "en" else format_vnd(total)
     text = t(lang, "choose_payment_title",
              order_code=order.order_code,
              product=html.escape(product_name),
@@ -1061,14 +1081,27 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     api_src = src.api_product
                     break
 
-            lines = [f"📦 <b>{html.escape(p.name)}</b>\n"]
-            lines.append(t(lang, "product_price", price=f"{format_vnd(p.sale_price)}"))
+            from services.normalize import format_usdt, translate_shorthand_to_en
+
+            # Name: use English name if lang=en and available, else fall back
+            # to the Vietnamese name (never show a bare product code).
+            display_name = p.name
+            if lang == "en" and getattr(p, "name_en", None):
+                display_name = p.name_en
+
+            lines = [f"📦 <b>{html.escape(display_name)}</b>\n"]
+            if lang == "en":
+                lines.append(t(lang, "product_price", price=format_usdt(p.price_usdt)))
+            else:
+                lines.append(t(lang, "product_price", price=f"{format_vnd(p.sale_price)}"))
             lines.append(stock_text)
             lines.append(t(lang, "product_min_qty", qty=min_qty))
             if p.duration:
-                lines.append(t(lang, "product_duration", val=html.escape(p.duration)))
+                dur = translate_shorthand_to_en(p.duration) if lang == "en" else p.duration
+                lines.append(t(lang, "product_duration", val=html.escape(dur)))
             if p.warranty:
-                lines.append(t(lang, "product_warranty", val=html.escape(p.warranty)))
+                warr = translate_shorthand_to_en(p.warranty) if lang == "en" else p.warranty
+                lines.append(t(lang, "product_warranty", val=html.escape(warr)))
 
             # Description: use EN if lang=en and available
             desc = None
@@ -1077,6 +1110,8 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 desc = p.description or (api_src.external_description if api_src else None)
             if desc:
+                if lang == "en":
+                    desc = translate_shorthand_to_en(desc)
                 lines.append(t(lang, "product_description", desc=html.escape(desc)))
 
             text_msg = "\n".join(lines)
@@ -1336,7 +1371,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             order.payment_message_id = None
             db.commit()
 
-            product_name = order.product.name if order.product else "—"
+            product_name = _product_display_name(order.product, lang) if order.product else "—"
             timeout = sepay.payment_timeout_minutes or 15
             expiry_str = order.payment_expires_at.strftime("%H:%M %d/%m/%Y") if order.payment_expires_at else "—"
 
@@ -1450,7 +1485,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await query.answer(t(lang, "order_not_found"), show_alert=True)
                 return
             sv = order.status.value if hasattr(order.status, "value") else order.status
-            product_name = order.product.name if order.product else "—"
+            product_name = _product_display_name(order.product, lang) if order.product else "—"
             ext_code = order.external_order_code or order.external_order_id or "—"
             text = (
                 f"📦 <b>Chi tiết đơn hàng</b>\n\n"
@@ -1492,8 +1527,8 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await query.answer("Chưa có dữ liệu giao hàng.", show_alert=True)
                 return
 
-            product_name = order.product.name if order.product else "—"
-            text, file_bytes = format_delivery_message(order, items, product_name)
+            product_name = _product_display_name(order.product, lang) if order.product else "—"
+            text, file_bytes = format_delivery_message(order, items, product_name, lang=lang)
             support = _get_support_username(db)
 
             if file_bytes:

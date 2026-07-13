@@ -582,7 +582,8 @@ async def save_exchange_rate(
     if not check_auth(request):
         return RedirectResponse(url="/login", status_code=302)
     from services.exchange_rate_service import get_exchange_config
-    from models import Setting
+    from services.normalize import compute_price_usdt
+    from models import Setting, Product
     cfg = {
         "mode": rate_mode,
         "fixed_rate": fixed_rate,
@@ -593,8 +594,18 @@ async def save_exchange_rate(
         s = Setting(key="exchange_rate_config")
         db.add(s)
     s.value = json.dumps(cfg)
+
+    # The retail "1 USDT = N VND" rate feeds every product's auto-computed
+    # price_usdt (shown to English-language shoppers). Whenever the fixed rate
+    # changes, recompute price_usdt for every existing product so displayed
+    # USDT prices never drift from the current rate.
+    updated = 0
+    for product in db.query(Product).all():
+        product.price_usdt = compute_price_usdt(product.sale_price, fixed_rate)
+        updated += 1
+
     db.commit()
-    flash(request, "Cài đặt tỉ giá đã được lưu!")
+    flash(request, f"Cài đặt tỉ giá đã được lưu! Đã cập nhật giá USDT cho {updated} sản phẩm.")
     return RedirectResponse(url="/settings?tab=exchange_rate", status_code=302)
 
 

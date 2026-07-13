@@ -46,7 +46,10 @@ async def notify_user_delivery(bot, chat_id: str, order: Order, support_username
         finally:
             db.close()
 
-        product_name = order.product.name if order.product else str(order.product_id)
+        if order.product and lang == "en" and getattr(order.product, "name_en", None):
+            product_name = order.product.name_en
+        else:
+            product_name = order.product.name if order.product else str(order.product_id)
         items = get_delivery_items(order)
         if not items:
             await bot.send_message(
@@ -64,7 +67,7 @@ async def notify_user_delivery(bot, chat_id: str, order: Order, support_username
             )
             return
 
-        text, file_bytes = format_delivery_message(order, items, product_name)
+        text, file_bytes = format_delivery_message(order, items, product_name, lang=lang)
         keyboard = post_delivery_keyboard(order.id, support_username, lang=lang)
 
         if file_bytes:
