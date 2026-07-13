@@ -1,0 +1,689 @@
+SỬA LUỒNG API KHÁCH HÀNG THÀNH PREPAID WALLET.
+
+Không tạo project mới.
+Không xóa database, người dùng, API key, số dư ví, đơn hàng hoặc sản phẩm hiện có.
+
+MỤC TIÊU:
+
+Khách bắt buộc phải có số dư trong ví trước khi gọi API mua hàng.
+
+Phần 🔗 API chỉ dùng để hiển thị API Key, tài liệu và endpoint.
+Không hiển thị nút Nạp ví, Đơn hàng API hoặc Thu hồi API Key tại màn hình API.
+
+Các thông tin quản lý API, ví và lịch sử đơn được đặt trong menu 👤 Thông tin tài khoản, 👛 Ví và 📦 Đơn hàng tương ứng.
+
+==================================================
+1. QUY TẮC CHUNG
+==================================================
+
+API chỉ cho phép:
+
+- xem sản phẩm
+- xem số dư
+- xem đơn hàng
+- mua hàng bằng số dư ví
+
+Không hỗ trợ mua trước trả sau.
+Không cho số dư âm.
+Không cho gọi purchase nếu số dư không đủ.
+
+Khách phải nạp tiền vào ví trước khi gọi API mua hàng.
+
+==================================================
+2. HIỂN THỊ TRONG BOT
+==================================================
+
+Khi khách bấm:
+
+🔗 API
+hoặc
+/api
+
+Hiển thị:
+
+🔗 LIÊN KẾT API
+
+API Key của bạn:
+<code>{api_key}</code>
+
+⚠️ API hoạt động theo cơ chế trả trước.
+Bạn phải có số dư trong ví trước khi gọi API mua hàng.
+
+Tài liệu:
+{swagger_url}
+
+Các endpoint hỗ trợ:
+
+GET /api/v1/products
+GET /api/v1/balance
+POST /api/v1/orders
+GET /api/v1/orders
+GET /api/v1/orders/{order_id}
+
+Chỉ hiển thị các nút:
+
+📘 Mở Swagger
+♻️ Tạo lại API Key
+⬅️ Quay lại
+
+Không hiển thị tại màn hình API:
+
+- 👛 Nạp ví
+- 📦 Đơn hàng API
+- 🗑 Thu hồi API Key
+- số dư VND
+- số dư USDT
+- tổng đơn API
+- tổng tiền đã sử dụng
+
+English:
+
+🔗 API CONNECTION
+
+Your API Key:
+<code>{api_key}</code>
+
+⚠️ This API uses a prepaid wallet system.
+You must have sufficient wallet balance before using the purchase API.
+
+Documentation:
+{swagger_url}
+
+Supported endpoints:
+
+GET /api/v1/products
+GET /api/v1/balance
+POST /api/v1/orders
+GET /api/v1/orders
+GET /api/v1/orders/{order_id}
+
+Buttons:
+
+📘 Open Swagger
+♻️ Regenerate API Key
+⬅️ Back
+
+==================================================
+3. MENU THÔNG TIN TÀI KHOẢN
+==================================================
+
+Thêm hoặc cập nhật menu:
+
+👤 Thông tin
+hoặc
+👤 Tài khoản
+
+Tiếng Việt hiển thị:
+
+👤 THÔNG TIN TÀI KHOẢN
+
+Tên: {full_name}
+Username: @{username}
+Chat ID: {chat_id}
+Ngôn ngữ: {language}
+
+👛 Số dư VND: {balance_vnd}
+💵 Số dư USDT: {balance_usdt}
+
+🔗 Trạng thái API: {api_status}
+🔑 API Key: {api_key_masked}
+📅 Ngày tạo API: {api_created_at}
+📦 Tổng đơn API: {api_order_count}
+💳 Tổng chi qua API: {api_total_spent}
+
+📦 Tổng đơn hàng: {total_orders}
+✅ Đơn hoàn thành: {completed_orders}
+
+Các nút:
+
+👛 Ví
+📦 Đơn hàng
+📜 Lịch sử ví
+📘 Tài liệu API
+⬅️ Quay lại
+
+English:
+
+👤 ACCOUNT INFORMATION
+
+Name: {full_name}
+Username: @{username}
+Chat ID: {chat_id}
+Language: {language}
+
+👛 VND balance: {balance_vnd}
+💵 USDT balance: {balance_usdt}
+
+🔗 API status: {api_status}
+🔑 API Key: {api_key_masked}
+📅 API created at: {api_created_at}
+📦 API orders: {api_order_count}
+💳 Total API spending: {api_total_spent}
+
+📦 Total orders: {total_orders}
+✅ Completed orders: {completed_orders}
+
+Buttons:
+
+👛 Wallet
+📦 Orders
+📜 Wallet History
+📘 API Documentation
+⬅️ Back
+
+Không hiển thị đầy đủ API Key trong menu Thông tin.
+Chỉ hiển thị dạng che:
+
+tgb_a0cada33...c544fd970
+
+Muốn xem đầy đủ hoặc tạo lại key, khách phải vào menu 🔗 API.
+
+==================================================
+4. NẠP VÍ VÀ ĐƠN HÀNG
+==================================================
+
+Phần nạp ví chỉ nằm trong:
+
+👛 Ví
+→ ➕ Nạp tiền
+
+Phần đơn hàng API nằm chung trong:
+
+📦 Đơn hàng
+
+Có bộ lọc:
+
+- Tất cả
+- Đơn mua trên bot
+- Đơn mua qua API
+- Đang xử lý
+- Hoàn thành
+- Thất bại
+
+Không tạo nút Đơn hàng API riêng trong menu API.
+
+==================================================
+5. ENDPOINT KIỂM TRA SỐ DƯ
+==================================================
+
+GET /api/v1/balance
+
+Response:
+
+{
+  "success": true,
+  "balance_vnd": 100000,
+  "balance_usdt": "8.44"
+}
+
+Yêu cầu:
+
+- xác thực X-API-Key
+- chỉ trả số dư của chính API client
+- không trả thông tin người dùng khác
+
+==================================================
+6. API MUA HÀNG
+==================================================
+
+POST /api/v1/orders
+
+Body:
+
+{
+  "product_id": "PRODUCT_ID",
+  "quantity": 1,
+  "client_order_id": "CLIENT-001",
+  "currency": "VND"
+}
+
+Trước khi gọi API nguồn phải:
+
+1. Xác thực API Key.
+2. Kiểm tra API client đang active.
+3. Kiểm tra sản phẩm tồn tại và đang bán.
+4. Đồng bộ tồn kho mới nhất từ nguồn.
+5. Kiểm tra số lượng yêu cầu hợp lệ.
+6. Tính tổng tiền.
+7. Kiểm tra đúng loại ví.
+8. Khóa bản ghi ví trong database transaction.
+9. Kiểm tra lại số dư lần cuối.
+10. Từ chối nếu số dư không đủ.
+11. Trừ tiền ví.
+12. Tạo wallet_transaction type = api_purchase.
+13. Tạo đơn processing.
+14. Commit.
+15. Sau đó mới gọi nguồn lấy hàng.
+
+Không gọi API nguồn trước khi kiểm tra và trừ số dư.
+
+==================================================
+7. KHÔNG ĐỦ SỐ DƯ
+==================================================
+
+Nếu không đủ tiền, trả HTTP 402:
+
+{
+  "success": false,
+  "error": "INSUFFICIENT_BALANCE",
+  "message": "Số dư ví không đủ. Vui lòng nạp thêm tiền.",
+  "required_amount": 100000,
+  "current_balance": 50000,
+  "currency": "VND"
+}
+
+English:
+
+{
+  "success": false,
+  "error": "INSUFFICIENT_BALANCE",
+  "message": "Insufficient wallet balance. Please deposit funds first.",
+  "required_amount": "10.00",
+  "current_balance": "5.00",
+  "currency": "USDT"
+}
+
+Khi không đủ số dư:
+
+- không tạo đơn paid
+- không tạo đơn processing
+- không gọi API nguồn
+- không giữ tiền
+- không giao hàng
+- không thay đổi số dư
+
+==================================================
+8. ĐƠN API THÀNH CÔNG
+==================================================
+
+Nếu giao hàng thành công:
+
+{
+  "success": true,
+  "order_id": "ORD-ABC123",
+  "client_order_id": "CLIENT-001",
+  "status": "completed",
+  "total": 100000,
+  "currency": "VND",
+  "accounts": [
+    "user1|pass1"
+  ],
+  "balance_after": 250000
+}
+
+Yêu cầu:
+
+- tài khoản giao đúng số lượng
+- đơn chỉ hoàn thành một lần
+- không trả secret của API nguồn
+- không trả raw response nhạy cảm của nhà cung cấp
+
+==================================================
+9. NGUỒN GIAO HÀNG LỖI
+==================================================
+
+Nếu đã trừ ví nhưng nguồn giao thất bại:
+
+Trong database transaction:
+
+- đổi order.status = failed hoặc waiting_admin
+- hoàn đúng số tiền vào đúng loại ví
+- tạo wallet_transaction type = api_refund
+- lưu lý do
+- cập nhật refunded_at
+- không giao tài khoản
+
+Response:
+
+{
+  "success": false,
+  "error": "DELIVERY_FAILED",
+  "message": "Không thể giao hàng. Số tiền đã được hoàn lại vào ví.",
+  "refunded": true
+}
+
+English:
+
+{
+  "success": false,
+  "error": "DELIVERY_FAILED",
+  "message": "Delivery failed. The payment has been refunded to your wallet.",
+  "refunded": true
+}
+
+Nếu trạng thái nguồn chưa xác định:
+
+- không hoàn ngay nếu có khả năng đơn nguồn vẫn đang xử lý
+- chuyển order.status = pending_supplier
+- kiểm tra lại theo scheduler
+- chỉ hoàn ví khi chắc chắn đơn nguồn thất bại
+
+==================================================
+10. CHỐNG TRỪ TIỀN HAI LẦN
+==================================================
+
+client_order_id phải unique theo từng API client.
+
+Tạo unique index:
+
+api_client_id + client_order_id
+
+Nếu khách gửi lại cùng client_order_id:
+
+- không trừ tiền lần nữa
+- không gọi nguồn lần nữa
+- trả lại kết quả đơn cũ
+
+Nếu đơn cũ đang processing:
+
+{
+  "success": true,
+  "order_id": "ORD-ABC123",
+  "client_order_id": "CLIENT-001",
+  "status": "processing"
+}
+
+Nếu đơn cũ completed:
+
+- trả lại kết quả completed hiện có
+- không phát sinh giao hàng lần hai
+
+==================================================
+11. LOẠI TIỀN
+==================================================
+
+Nếu currency = VND:
+
+- dùng balance_vnd
+- dùng price_vnd
+- số tiền là số nguyên
+- không có phần thập phân
+
+Nếu currency = USDT:
+
+- dùng balance_usdt
+- dùng price_usdt
+- dùng Decimal
+- không dùng float
+
+Không tự đổi loại ví khi mua.
+Không tự lấy USDT bù cho VND.
+Không tự lấy VND bù cho USDT.
+
+Nếu sản phẩm không có giá theo currency yêu cầu:
+
+{
+  "success": false,
+  "error": "CURRENCY_NOT_SUPPORTED"
+}
+
+==================================================
+12. NẠP VÍ
+==================================================
+
+Khách có thể nạp ví tại menu 👛 Ví bằng:
+
+- SePay → cộng balance_vnd
+- Binance Pay → cộng balance_usdt
+- USDT BEP20 → cộng balance_usdt
+- USDT TRC20 → cộng balance_usdt
+- Admin cộng thủ công trên web
+
+Sau khi nạp thành công:
+
+- cập nhật ví ngay
+- tạo wallet_transaction
+- API có thể sử dụng số dư mới ngay
+- không cần tạo lại API Key
+- không cần restart bot
+
+Không hiển thị nút nạp ví trong menu 🔗 API.
+
+==================================================
+13. WEB NGƯỜI DÙNG
+==================================================
+
+Trong trang Người dùng hiển thị:
+
+- Chat ID
+- Username
+- Họ tên
+- Số dư VND
+- Số dư USDT
+- Trạng thái API
+- API key prefix
+- Ngày tạo API
+- Số đơn API
+- Tổng chi qua API
+- Lần sử dụng API gần nhất
+- Trạng thái người dùng
+
+Các nút:
+
+➕ Cộng ví
+➖ Trừ ví
+🔑 Xem API
+📜 Lịch sử API
+📜 Lịch sử ví
+📦 Đơn hàng
+✉️ Gửi tin nhắn
+🔒 Khóa hoặc mở khóa
+
+Phần cộng/trừ ví giữ giao diện hiện tại như ảnh mẫu:
+
+- Loại ví: VND hoặc USDT
+- Thao tác: Nạp vào ví hoặc Trừ khỏi ví
+- Chọn người mua
+- Nhập số tiền
+- Hưởng khuyến mãi
+- Ghi chú
+- Nút xác nhận
+
+Mọi thao tác cộng/trừ phải:
+
+- tạo wallet_transaction
+- lưu balance_before
+- lưu balance_after
+- lưu admin thực hiện
+- gửi thông báo cho khách nếu được bật
+
+==================================================
+14. QUẢN LÝ API TRÊN WEB
+==================================================
+
+Trong trang người dùng hoặc trang chi tiết user có:
+
+- trạng thái API
+- API prefix
+- rate limit
+- tổng request
+- tổng đơn
+- tổng chi
+- lần dùng gần nhất
+
+Admin có thể:
+
+- khóa API
+- mở API
+- tạo lại API Key
+- xem log API
+
+Không cần hiển thị nút thu hồi API cho khách trên bot.
+
+Nếu admin khóa API:
+
+- các request tiếp theo trả 403
+- số dư ví vẫn giữ nguyên
+- tài khoản Telegram vẫn hoạt động bình thường
+
+==================================================
+15. SWAGGER
+==================================================
+
+Trong Swagger phải ghi rõ:
+
+Authentication:
+X-API-Key
+
+Purchase policy:
+Prepaid wallet only.
+
+Before purchasing:
+
+1. Deposit funds into your wallet.
+2. Check balance using GET /api/v1/balance.
+3. Submit an order using POST /api/v1/orders.
+4. Use a unique client_order_id for each order.
+
+Bổ sung mã lỗi:
+
+- 400 INVALID_REQUEST
+- 401 INVALID_API_KEY
+- 402 INSUFFICIENT_BALANCE
+- 403 API_SUSPENDED
+- 404 PRODUCT_NOT_FOUND
+- 409 DUPLICATE_ORDER
+- 422 OUT_OF_STOCK
+- 429 RATE_LIMITED
+- 500 DELIVERY_FAILED
+
+==================================================
+16. API KEY
+==================================================
+
+API Key chỉ hiển thị đầy đủ khi:
+
+- tạo lần đầu
+- tạo lại API Key
+
+Lưu database:
+
+- api_key_hash
+- api_key_prefix
+- created_at
+- last_used_at
+- status
+
+Không lưu plaintext API Key.
+Không ghi API Key đầy đủ vào log.
+
+Khi khách bấm:
+
+♻️ Tạo lại API Key
+
+Phải hỏi xác nhận:
+
+⚠️ API Key cũ sẽ ngừng hoạt động ngay sau khi tạo key mới. Bạn có chắc chắn không?
+
+Sau khi xác nhận:
+
+- revoke key cũ
+- tạo key mới
+- hiển thị key mới đúng một lần
+
+==================================================
+17. RATE LIMIT
+==================================================
+
+Áp dụng rate limit theo từng API client.
+
+Mặc định:
+
+- products: 60 request/phút
+- balance: 30 request/phút
+- orders GET: 30 request/phút
+- purchase POST: 10 request/phút
+
+Nếu vượt giới hạn:
+
+HTTP 429
+
+{
+  "success": false,
+  "error": "RATE_LIMITED",
+  "message": "Too many requests. Please try again later."
+}
+
+==================================================
+18. TEST BẮT BUỘC
+==================================================
+
+1. Mở menu API:
+
+- chỉ có Mở Swagger
+- Tạo lại API Key
+- Quay lại
+- không có Nạp ví
+- không có Đơn hàng API
+- không có Thu hồi API Key
+
+2. Menu Thông tin:
+
+- hiển thị số dư
+- trạng thái API
+- API Key dạng che
+- tổng đơn API
+- tổng chi API
+
+3. Số dư 0:
+
+- purchase trả 402
+- không gọi nguồn
+
+4. Số dư thiếu:
+
+- trả required/current balance
+- không trừ tiền
+
+5. Số dư đủ:
+
+- trừ đúng
+- giao đúng
+- lưu lịch sử
+
+6. Gọi lại cùng client_order_id:
+
+- không trừ lần hai
+- không gọi nguồn lần hai
+
+7. Nguồn lỗi chắc chắn:
+
+- hoàn ví tự động
+- tạo api_refund
+
+8. Hai request mua đồng thời:
+
+- không làm âm ví
+- không giao trùng
+- khóa ví đúng cách
+
+9. API Key bị khóa:
+
+- trả 403
+- không trừ tiền
+
+10. Tạo lại API Key:
+
+- key cũ ngừng hoạt động
+- key mới chỉ hiển thị một lần
+
+11. Sau khi hoàn tất:
+
+- restart bot
+- test API thật
+- test Swagger
+- chạy migration an toàn
+- commit
+- push GitHub
+
+Commit message:
+
+feat: enforce prepaid API wallet and simplify API bot menu
+
+Sau khi push phải báo:
+
+- commit hash
+- branch
+- số file thay đổi
+- migration đã chạy hay chưa
+- kết quả test
