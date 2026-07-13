@@ -21,6 +21,9 @@ async def sync_api_products(db: Session, api_connection_id: int) -> dict:
         products = await adapter.get_products()
         now = datetime.utcnow()
         synced = 0
+        created_count = 0
+        updated_count = 0
+        error_count = 0
         # Track pre-sync stock for api_auto-linked products so we can detect
         # restock / out-of-stock transitions after this loop updates them.
         from models import ProductSource, DeliveryMode
@@ -32,47 +35,65 @@ async def sync_api_products(db: Session, api_connection_id: int) -> dict:
             if src.api_product
         }
         for p in products:
-            ext_id = str(p.get("id", ""))
-            if not ext_id:
-                continue
-            existing = db.query(ApiProduct).filter(
-                ApiProduct.api_connection_id == api_connection_id,
-                ApiProduct.external_product_id == ext_id
-            ).first()
-            raw = json.dumps(p.get("raw", p), ensure_ascii=False)
-            if existing:
-                existing.external_name = p.get("name", "")
-                existing.external_description = p.get("description", "")
-                existing.external_price = p.get("price", 0)
-                existing.external_stock = p.get("stock", 0)
-                existing.external_min_quantity = p.get("min_quantity", 1)
-                existing.external_max_quantity = p.get("max_quantity")
-                existing.external_warranty = p.get("warranty", "")
-                existing.external_duration = p.get("duration", "")
-                existing.external_image_url = p.get("image_url", "")
-                existing.external_status = p.get("status", "")
-                existing.raw_json = raw
-                existing.last_sync_at = now
-                existing.updated_at = now
-            else:
-                new_prod = ApiProduct(
-                    api_connection_id=api_connection_id,
-                    external_product_id=ext_id,
-                    external_name=p.get("name", ""),
-                    external_description=p.get("description", ""),
-                    external_price=p.get("price", 0),
-                    external_stock=p.get("stock", 0),
-                    external_min_quantity=p.get("min_quantity", 1),
-                    external_max_quantity=p.get("max_quantity"),
-                    external_warranty=p.get("warranty", ""),
-                    external_duration=p.get("duration", ""),
-                    external_image_url=p.get("image_url", ""),
-                    external_status=p.get("status", ""),
-                    raw_json=raw,
-                    last_sync_at=now,
-                )
-                db.add(new_prod)
-            synced += 1
+            # Guard per-item so one malformed item (bad price, unexpected
+            # shape, etc.) can't abort the whole sync — it's just counted
+            # as an error and the rest of the products still sync normally.
+            try:
+                ext_id = str(p.get("id", ""))
+                if not ext_id:
+                    continue
+                existing = db.query(ApiProduct).filter(
+                    ApiProduct.api_connection_id == api_connection_id,
+                    ApiProduct.external_product_id == ext_id
+                ).first()
+                raw = json.dumps(p.get("raw", p), ensure_ascii=False)
+                if existing:
+                    existing.external_name = p.get("name", "")
+                    existing.external_description = p.get("description", "")
+                    existing.external_price = p.get("price", 0)
+                    existing.external_stock = p.get("stock", 0)
+                    existing.external_min_quantity = p.get("min_quantity", 1)
+                    existing.external_max_quantity = p.get("max_quantity")
+                    existing.external_warranty = p.get("warranty", "")
+                    existing.external_duration = p.get("duration", "")
+                    existing.external_image_url = p.get("image_url", "")
+                    existing.external_status = p.get("status", "")
+                    if "item_type" in p:
+                        existing.external_item_type = p.get("item_type")
+                    if "seller" in p:
+                        existing.external_seller = p.get("seller")
+                    if "category" in p:
+                        existing.external_category = p.get("category")
+                    existing.raw_json = raw
+                    existing.last_sync_at = now
+                    existing.updated_at = now
+                    updated_count += 1
+                else:
+                    new_prod = ApiProduct(
+                        api_connection_id=api_connection_id,
+                        external_product_id=ext_id,
+                        external_name=p.get("name", ""),
+                        external_description=p.get("description", ""),
+                        external_price=p.get("price", 0),
+                        external_stock=p.get("stock", 0),
+                        external_min_quantity=p.get("min_quantity", 1),
+                        external_max_quantity=p.get("max_quantity"),
+                        external_warranty=p.get("warranty", ""),
+                        external_duration=p.get("duration", ""),
+                        external_image_url=p.get("image_url", ""),
+                        external_status=p.get("status", ""),
+                        external_item_type=p.get("item_type"),
+                        external_seller=p.get("seller"),
+                        external_category=p.get("category"),
+                        raw_json=raw,
+                        last_sync_at=now,
+                    )
+                    db.add(new_prod)
+                    created_count += 1
+                synced += 1
+            except Exception as item_err:
+                error_count += 1
+                logger.error(f"API_SYNC_ITEM_ERROR: connection_id={api_connection_id} item={p} error={item_err}")
 
         # Also update ProductSource.last_stock for linked products, and
         # propagate image/description/warranty/duration onto the linked
@@ -108,7 +129,10 @@ async def sync_api_products(db: Session, api_connection_id: int) -> dict:
         conn.last_success_at = now
         conn.last_error = None
         db.commit()
-        logger.info(f"API_SYNC_COMPLETED: connection_id={api_connection_id} synced={synced}")
+        logger.info(
+            f"API_SYNC_COMPLETED: connection_id={api_connection_id} synced={synced} "
+            f"created={created_count} updated={updated_count} errors={error_count}"
+        )
 
         for product_id, back_in_stock in transitions:
             if back_in_stock:
@@ -120,7 +144,15 @@ async def sync_api_products(db: Session, api_connection_id: int) -> dict:
             except Exception as e:
                 logger.error(f"[api_service] stock transition handler error for product {product_id}: {e}")
 
-        return {"success": True, "synced": synced, "message": f"Synced {synced} products"}
+        return {
+            "success": True,
+            "synced": synced,
+            "created": created_count,
+            "updated": updated_count,
+            "errors": error_count,
+            "message": f"Synced {synced} products ({created_count} new, {updated_count} updated"
+                       + (f", {error_count} errors" if error_count else "") + ")",
+        }
     except Exception as e:
         conn.last_sync_at = datetime.utcnow()
         conn.last_error = str(e)

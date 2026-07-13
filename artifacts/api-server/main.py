@@ -188,6 +188,13 @@ def _run_migrations():
         "CREATE INDEX IF NOT EXISTS ix_wallet_deposits_status ON wallet_deposits (status)",
         "ALTER TABLE payment_transactions ADD COLUMN matched_deposit_id INTEGER",
         "ALTER TABLE crypto_transactions ADD COLUMN matched_deposit_id INTEGER",
+        # CanBoSo Market supplier integration: item_type distinguishes
+        # instantly-delivered "account" products from "slot" products (which
+        # only create a pending request for the seller to fulfill), plus the
+        # seller/category tags this supplier's product listing exposes.
+        "ALTER TABLE api_products ADD COLUMN external_item_type VARCHAR(20)",
+        "ALTER TABLE api_products ADD COLUMN external_seller VARCHAR(255)",
+        "ALTER TABLE api_products ADD COLUMN external_category VARCHAR(100)",
     ]
     with engine.connect() as conn:
         ran_language_selected_migration = False

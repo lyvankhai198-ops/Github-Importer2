@@ -11,8 +11,19 @@ from services.api_service import (
     start_sync_scheduler, stop_sync_scheduler,
 )
 from integrations.manager import api_manager
+from integrations.canboso import CanBosoAdapter
 
 router = APIRouter()
+
+
+def _resolve_base_url(base_url: str, api_type: str) -> str:
+    """Fall back to the CanBoSo Market default base URL server-side if the
+    admin picked that API type but left the field blank (safety net behind
+    the client-side auto-fill in the add/edit connection form)."""
+    base_url = (base_url or "").strip()
+    if not base_url and api_type == ApiType.canboso_market.value:
+        return CanBosoAdapter.DEFAULT_BASE_URL
+    return base_url
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
 
 
@@ -43,7 +54,7 @@ async def add_connection(
     request: Request,
     db: Session = Depends(get_db),
     name: str = Form(...),
-    base_url: str = Form(...),
+    base_url: str = Form(""),
     api_key: str = Form(""),
     auth_type: str = Form("x_api_key"),
     api_type: str = Form("zampto_standard"),
@@ -52,6 +63,7 @@ async def add_connection(
 ):
     if not check_auth(request):
         return RedirectResponse(url="/login", status_code=302)
+    base_url = _resolve_base_url(base_url, api_type)
     conn = ApiConnection(
         name=name,
         base_url=base_url.rstrip("/"),
@@ -78,7 +90,7 @@ async def edit_connection(
     request: Request,
     db: Session = Depends(get_db),
     name: str = Form(...),
-    base_url: str = Form(...),
+    base_url: str = Form(""),
     api_key: str = Form(""),
     auth_type: str = Form("x_api_key"),
     api_type: str = Form("zampto_standard"),
@@ -91,6 +103,7 @@ async def edit_connection(
     if not conn:
         flash(request, "Không tìm thấy kết nối!", "error")
         return RedirectResponse(url="/api-connections", status_code=302)
+    base_url = _resolve_base_url(base_url, api_type)
     conn.name = name
     conn.base_url = base_url.rstrip("/")
     if api_key:

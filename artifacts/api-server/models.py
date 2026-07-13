@@ -41,6 +41,7 @@ class AuthType(str, enum.Enum):
 class ApiType(str, enum.Enum):
     zampto_standard = "zampto_standard"
     custom = "custom"
+    canboso_market = "canboso_market"
 
 
 class OrderStatus(str, enum.Enum):
@@ -56,6 +57,7 @@ class OrderStatus(str, enum.Enum):
     paid_waiting_stock = "paid_waiting_stock"  # paid but source ran out of stock
     waiting_manual_verification = "waiting_manual_verification"  # waiting admin approval (Binance manual)
     delivery_failed = "delivery_failed"        # paid, stock reserved, but Telegram delivery failed
+    pending_seller_fulfillment = "pending_seller_fulfillment"  # paid; slot-type API item awaiting seller processing
 
 
 class PaymentStatus(str, enum.Enum):
@@ -342,6 +344,14 @@ class ApiProduct(Base):
     external_duration = Column(String(255), nullable=True)
     external_image_url = Column(String(1000), nullable=True)
     external_status = Column(String(100), nullable=True)
+    # ── Supplier-specific fields (e.g. CanBoSo Market) ──────────────────────
+    # item_type distinguishes "account" (delivered instantly on purchase)
+    # from "slot" (purchase just creates a request the seller must fulfill).
+    # Left NULL for suppliers that don't have this concept — treated as
+    # "account" (the pre-existing instant-delivery behavior) everywhere.
+    external_item_type = Column(String(20), nullable=True)
+    external_seller = Column(String(255), nullable=True)
+    external_category = Column(String(100), nullable=True)  # category or emoji tag
     raw_json = Column(Text, nullable=True)
     last_sync_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=now)

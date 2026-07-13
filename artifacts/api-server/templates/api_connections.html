@@ -55,9 +55,10 @@
             </select>
           </div>
           <div class="mb-3"><label class="form-label">Loại API</label>
-            <select name="api_type" class="form-select">
+            <select name="api_type" class="form-select" onchange="applyApiTypeDefaults(this)">
               <option value="zampto_standard" {% if c.api_type.value=='zampto_standard' %}selected{% endif %}>Zampto Standard</option>
               <option value="custom" {% if c.api_type.value=='custom' %}selected{% endif %}>Custom</option>
+              <option value="canboso_market" {% if c.api_type.value=='canboso_market' %}selected{% endif %}>CanBoSo Market</option>
             </select>
           </div>
           <div class="mb-3"><label class="form-label">Sync mỗi (phút)</label><input type="number" name="sync_interval_minutes" class="form-control" value="{{ c.sync_interval_minutes }}" min="1"></div>
@@ -101,9 +102,10 @@
           </select>
         </div>
         <div class="mb-3"><label class="form-label">Loại API</label>
-          <select name="api_type" class="form-select">
+          <select name="api_type" class="form-select" onchange="applyApiTypeDefaults(this)">
             <option value="zampto_standard">Zampto Standard</option>
             <option value="custom">Custom</option>
+            <option value="canboso_market">CanBoSo Market</option>
           </select>
         </div>
         <div class="mb-3"><label class="form-label">Sync mỗi (phút)</label><input type="number" name="sync_interval_minutes" class="form-control" value="60" min="1"></div>
@@ -125,6 +127,19 @@ function showToast(title, body, success) {
   t.className = 'toast border-' + (success ? 'success' : 'danger');
   bootstrap.Toast.getOrCreateInstance(t).show();
 }
+const API_TYPE_DEFAULTS = {
+  canboso_market: { base_url: 'https://canboso.com/api/public/market', auth_type: 'x_api_key' },
+};
+function applyApiTypeDefaults(select) {
+  const defaults = API_TYPE_DEFAULTS[select.value];
+  if (!defaults) return;
+  const form = select.closest('form');
+  if (!form) return;
+  const baseUrlInput = form.querySelector('input[name="base_url"]');
+  const authTypeSelect = form.querySelector('select[name="auth_type"]');
+  if (baseUrlInput && !baseUrlInput.value) baseUrlInput.value = defaults.base_url;
+  if (authTypeSelect) authTypeSelect.value = defaults.auth_type;
+}
 async function testConn(id, btn) {
   btn.disabled = true;
   const r = await fetch(`/api-connections/${id}/test`, {method:'POST'});
@@ -144,7 +159,11 @@ async function syncConn(id, btn) {
   const r = await fetch(`/api-connections/${id}/sync`, {method:'POST'});
   const d = await r.json();
   btn.disabled = false;
-  showToast('Đồng bộ', d.message, d.success);
+  let msg = d.message;
+  if (d.success && (d.created !== undefined)) {
+    msg = `Tạo mới: ${d.created} • Cập nhật: ${d.updated} • Lỗi: ${d.errors}`;
+  }
+  showToast('Đồng bộ', msg, d.success);
 }
 async function toggleConn(id, btn) {
   const r = await fetch(`/api-connections/${id}/toggle`, {method:'POST'});

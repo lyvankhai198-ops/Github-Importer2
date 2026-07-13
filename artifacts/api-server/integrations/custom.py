@@ -36,7 +36,7 @@ class CustomAdapter(BaseAdapter):
         except Exception as e:
             return {"success": False, "message": str(e), "balance": 0, "currency": "VND"}
 
-    async def get_products(self) -> list:
+    async def get_products(self, **filters) -> list:
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 r = await client.get(f"{self.base_url}/products", headers=self._headers())
@@ -53,7 +53,7 @@ class CustomAdapter(BaseAdapter):
         except Exception:
             return []
 
-    async def buy_product(self, product_id: str, quantity: int, idempotency_key: str) -> dict:
+    async def buy_product(self, product_id: str, quantity: int, idempotency_key: str, **kwargs) -> dict:
         try:
             payload = {"product_id": product_id, "quantity": quantity}
             async with httpx.AsyncClient(timeout=self.timeout) as client:

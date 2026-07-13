@@ -663,10 +663,16 @@ async def process_paid_order(order_id: int):
 
         try:
             adapter = api_manager.get_adapter(source.api_product.connection)
+            # CanBoSo Market (and any other email-requiring supplier) needs a
+            # buyer email on every purchase; the bot doesn't collect one from
+            # shoppers, so a deterministic per-user placeholder is used.
+            # Adapters that don't need it (Zampto/Custom) simply ignore it.
+            buyer_email = f"tguser{order.telegram_user_id}@aicenter-orders.local"
             buy_result = await adapter.buy_product(
                 product_id=source.api_product.external_product_id,
                 quantity=order.quantity,
                 idempotency_key=idem_key,
+                buyer_email=buyer_email,
             )
 
             attempt = OrderSourceAttempt(
@@ -694,47 +700,80 @@ async def process_paid_order(order_id: int):
                 return
 
             raw_data = buy_result.get("data", {})
-            items = normalize_delivery_items(raw_data)
 
-            if not items and buy_result.get("order_id"):
-                polled_data, items = await _poll_source_order(adapter, buy_result["order_id"])
-                if polled_data:
-                    raw_data = polled_data
+            # "slot"-type items (currently only CanBoSo Market) are never
+            # delivered instantly — the purchase just files a request the
+            # seller must fulfill by hand. Skip item extraction/polling and
+            # go straight to the seller-pending status. Any supplier without
+            # this concept (external_item_type is None) keeps the original
+            # "account" behavior below, unchanged.
+            is_slot_item = (source.api_product.external_item_type or "").lower() == "slot"
 
-            order_data = raw_data.get("order", raw_data)
-            external_order_code = (
-                order_data.get("order_code") or
-                order_data.get("order_id") or
-                buy_result.get("order_id") or ""
-            )
-
-            if items and len(items) < order.quantity:
-                order.status = OrderStatus.partial_delivery
-                order.partial_count = len(items)
-            elif items:
-                order.status = OrderStatus.completed
+            if is_slot_item:
+                items = []
+                order_data = raw_data.get("order", raw_data)
+                external_order_code = (
+                    order_data.get("order_code") or
+                    order_data.get("order_id") or
+                    buy_result.get("order_id") or ""
+                )
+                order.status = OrderStatus.pending_seller_fulfillment
+                order.api_connection_id = source.api_product.api_connection_id
+                order.external_order_id = buy_result.get("order_id")
+                order.external_order_code = external_order_code
+                order.source_unit_price = source.api_product.external_price
+                safe_data = {k: v for k, v in raw_data.items() if k not in ("balance_after", "balance")}
+                order.delivery_data = json.dumps(safe_data, ensure_ascii=False)
+                order.delivery_items = json.dumps([], ensure_ascii=False)
+                order.updated_at = datetime.utcnow()
+                db.commit()
+                db.refresh(order)
             else:
-                order.status = OrderStatus.pending_manual
+                items = normalize_delivery_items(raw_data)
 
-            order.api_connection_id = source.api_product.api_connection_id
-            order.external_order_id = buy_result.get("order_id")
-            order.external_order_code = external_order_code
-            order.source_unit_price = source.api_product.external_price
-            safe_data = {k: v for k, v in raw_data.items() if k not in ("balance_after", "balance")}
-            order.delivery_data = json.dumps(safe_data, ensure_ascii=False)
-            order.delivery_items = json.dumps(items, ensure_ascii=False)
-            order.updated_at = datetime.utcnow()
-            db.commit()
-            db.refresh(order)
+                if not items and buy_result.get("order_id"):
+                    polled_data, items = await _poll_source_order(adapter, buy_result["order_id"])
+                    if polled_data:
+                        raw_data = polled_data
+
+                order_data = raw_data.get("order", raw_data)
+                external_order_code = (
+                    order_data.get("order_code") or
+                    order_data.get("order_id") or
+                    buy_result.get("order_id") or ""
+                )
+
+                if items and len(items) < order.quantity:
+                    order.status = OrderStatus.partial_delivery
+                    order.partial_count = len(items)
+                elif items:
+                    order.status = OrderStatus.completed
+                else:
+                    order.status = OrderStatus.pending_manual
+
+                order.api_connection_id = source.api_product.api_connection_id
+                order.external_order_id = buy_result.get("order_id")
+                order.external_order_code = external_order_code
+                order.source_unit_price = source.api_product.external_price
+                safe_data = {k: v for k, v in raw_data.items() if k not in ("balance_after", "balance")}
+                order.delivery_data = json.dumps(safe_data, ensure_ascii=False)
+                order.delivery_items = json.dumps(items, ensure_ascii=False)
+                order.updated_at = datetime.utcnow()
+                db.commit()
+                db.refresh(order)
 
         finally:
             _processing_keys.discard(idem_key)
 
-        await _deliver_to_user(order, db)
-
         if product:
             product.sold_count = (product.sold_count or 0) + order.quantity
             db.commit()
+
+        if order.status == OrderStatus.pending_seller_fulfillment:
+            await _notify_pending_seller_fulfillment(order, db)
+            return
+
+        await _deliver_to_user(order, db)
 
     except Exception as e:
         logger.error(f"[payment] process_paid_order {order_id} error: {e}")
@@ -844,6 +883,43 @@ async def _notify_paid_waiting_stock(order: Order, db: Session):
             )
     except Exception as e:
         logger.error(f"[payment] _notify_paid_waiting_stock error: {e}")
+
+
+async def _notify_pending_seller_fulfillment(order: Order, db: Session):
+    """Payment received; this is a slot-type item (e.g. CanBoSo Market) —
+    the purchase just filed a request the seller still has to fulfill."""
+    try:
+        from services.bot_service import bot_manager
+        if not bot_manager.is_running():
+            return
+        from bot.i18n import t, get_user_lang
+        cfg = db.query(TelegramBotConfig).first()
+        admin_id = cfg.admin_telegram_id if cfg else ""
+        bot = bot_manager._application.bot
+        lang = get_user_lang(db, order.telegram_user_id)
+        chat_id = order.payment_chat_id or order.telegram_user_id
+        await cleanup_payment_qr(bot, order, db)
+        await bot.send_message(
+            chat_id=int(chat_id),
+            text=t(lang, "pending_seller_fulfillment_user"),
+            parse_mode="HTML",
+        )
+        if admin_id:
+            import html
+            product_name = order.product.name if order.product else str(order.product_id)
+            await bot.send_message(
+                chat_id=int(admin_id),
+                text=(
+                    f"⏳ <b>ĐƠN SLOT CHỜ SELLER XỬ LÝ</b>\n\n"
+                    f"📋 Đơn: <code>{order.order_code}</code>\n"
+                    f"📦 Sản phẩm: {html.escape(product_name)}\n"
+                    f"👤 User: <code>{order.telegram_user_id}</code>\n"
+                    f"🔗 Mã đơn nguồn: <code>{order.external_order_code or order.external_order_id or '—'}</code>"
+                ),
+                parse_mode="HTML",
+            )
+    except Exception as e:
+        logger.error(f"[payment] _notify_pending_seller_fulfillment error: {e}")
 
 
 async def _notify_admin_manual_needed(order: Order, db: Session):

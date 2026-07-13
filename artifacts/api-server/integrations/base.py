@@ -17,11 +17,11 @@ class BaseAdapter(ABC):
         pass
 
     @abstractmethod
-    async def get_products(self) -> list:
+    async def get_products(self, **filters) -> list:
         pass
 
     @abstractmethod
-    async def buy_product(self, product_id: str, quantity: int, idempotency_key: str) -> dict:
+    async def buy_product(self, product_id: str, quantity: int, idempotency_key: str, **kwargs) -> dict:
         pass
 
     @abstractmethod

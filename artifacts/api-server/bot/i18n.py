@@ -164,6 +164,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "⚠️ Sản phẩm vừa hết hàng tại nguồn.\n"
             "Đơn đã chuyển sang chờ admin xử lý."
         ),
+        "pending_seller_fulfillment_user": (
+            "✅ Đã nhận thanh toán.\n\n"
+            "⏳ Sản phẩm này cần người bán xử lý (loại slot).\n"
+            "Đơn của bạn đang chờ người bán xác nhận, chúng tôi sẽ thông báo ngay khi có kết quả."
+        ),
         # ── Error ─────────────────────────────────────────────────────────────
         "payment_not_configured": "❌ Hệ thống thanh toán chưa được cấu hình.",
         "payment_method_disabled": "❌ Phương thức thanh toán này hiện không khả dụng.",
@@ -498,6 +503,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "✅ Payment received.\n\n"
             "⚠️ Product just went out of stock at the source.\n"
             "Your order has been moved to manual processing."
+        ),
+        "pending_seller_fulfillment_user": (
+            "✅ Payment received.\n\n"
+            "⏳ This product requires seller processing (slot type).\n"
+            "Your order is waiting for the seller to confirm — we'll notify you as soon as it's ready."
         ),
         # ── Error ─────────────────────────────────────────────────────────────
         "payment_not_configured": "❌ Payment system is not configured.",
