@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+from collections import defaultdict
 from datetime import datetime
 from sqlalchemy.orm import Session
 from models import ApiConnection, ApiProduct, SourceType
@@ -27,13 +28,14 @@ async def sync_api_products(db: Session, api_connection_id: int) -> dict:
         # Track pre-sync stock for api_auto-linked products so we can detect
         # restock / out-of-stock transitions after this loop updates them.
         from models import ProductSource, DeliveryMode
-        pre_sync_stock = {
-            src.product_id: (src.api_product.external_stock or 0)
-            for src in db.query(ProductSource).join(ApiProduct).filter(
-                ApiProduct.api_connection_id == api_connection_id
-            ).all()
-            if src.api_product
-        }
+        # Aggregated per-product (a product can have several sources on this
+        # same connection) so restock/out-of-stock detection reflects the
+        # product's total stock, not just a single source's.
+        pre_sync_stock = defaultdict(int)
+        for src in db.query(ProductSource).join(ApiProduct).filter(
+                ApiProduct.api_connection_id == api_connection_id).all():
+            if src.api_product:
+                pre_sync_stock[src.product_id] += (src.api_product.external_stock or 0)
         for p in products:
             # Guard per-item so one malformed item (bad price, unexpected
             # shape, etc.) can't abort the whole sync — it's just counted
@@ -99,23 +101,21 @@ async def sync_api_products(db: Session, api_connection_id: int) -> dict:
         # propagate image/description/warranty/duration onto the linked
         # Product itself — skipping any field the admin has manually edited
         # (see services/product_sync.py).
-        from services.product_sync import sync_product_from_api_product, ensure_en_fields
+        from services.product_sync import sync_product_from_api_product, ensure_en_fields, auto_assign_icon_if_unlocked
         from models import DeliveryMode
         sources = db.query(ProductSource).join(ApiProduct).filter(
             ApiProduct.api_connection_id == api_connection_id
         ).all()
         transitions = []  # (product_id, back_in_stock: bool)
+        restocks = []      # (product_id, added_qty, new_total) — any increase, not just 0→N
+        post_sync_stock = defaultdict(int)
         for src in sources:
             if not src.api_product:
                 continue
-            old_stock = pre_sync_stock.get(src.product_id, 0)
             new_stock = src.api_product.external_stock or 0
             src.last_stock = new_stock
             src.last_cost = src.api_product.external_price
-            if old_stock <= 0 and new_stock > 0:
-                transitions.append((src.product_id, True))
-            elif old_stock > 0 and new_stock <= 0:
-                transitions.append((src.product_id, False))
+            post_sync_stock[src.product_id] += new_stock
 
             if src.product and src.product.source_type == SourceType.api and \
                     src.product.delivery_mode == DeliveryMode.api_auto:
@@ -124,6 +124,18 @@ async def sync_api_products(db: Session, api_connection_id: int) -> dict:
                 # just-updated) Vietnamese text, unless the admin has locked
                 # either field with a hand-typed value.
                 ensure_en_fields(src.product)
+                # Auto-assign a name-keyword emoji unless the admin already
+                # chose one manually.
+                auto_assign_icon_if_unlocked(src.product)
+
+        for product_id, new_total in post_sync_stock.items():
+            old_total = pre_sync_stock.get(product_id, 0)
+            if old_total <= 0 and new_total > 0:
+                transitions.append((product_id, True))
+            elif old_total > 0 and new_total <= 0:
+                transitions.append((product_id, False))
+            if new_total > old_total:
+                restocks.append((product_id, new_total - old_total, new_total))
 
         conn.last_sync_at = now
         conn.last_success_at = now
@@ -143,6 +155,16 @@ async def sync_api_products(db: Session, api_connection_id: int) -> dict:
                 await _handle_api_stock_transition(product_id, back_in_stock)
             except Exception as e:
                 logger.error(f"[api_service] stock transition handler error for product {product_id}: {e}")
+
+        # Broadcast a "🔄 ĐÃ BỔ SUNG HÀNG" announcement to all active users
+        # for every genuine stock increase (separate from the admin-only /
+        # waiting-list-only notification above).
+        from services.broadcast_service import notify_restock_broadcast
+        for product_id, added_qty, new_total in restocks:
+            try:
+                await notify_restock_broadcast(product_id, added_qty, new_total)
+            except Exception as e:
+                logger.error(f"[api_service] restock broadcast error for product {product_id}: {e}")
 
         return {
             "success": True,

@@ -146,6 +146,13 @@ class TelegramBotConfig(Base):
     # Local inventory ("kho tài khoản") settings
     notify_users_when_restocked = Column(Boolean, default=False)
     allow_partial_delivery = Column(Boolean, default=False)
+    # Broadcast-style "new product" / "restock" announcements to ALL active
+    # users (distinct from notify_users_when_restocked above, which only
+    # pings users with a paid_waiting_stock order for that product).
+    notify_new_products = Column(Boolean, default=True)
+    notify_restock = Column(Boolean, default=True)
+    broadcast_batch_size = Column(Integer, default=25)
+    broadcast_delay_ms = Column(Integer, default=300)
     created_at = Column(DateTime, default=now)
     updated_at = Column(DateTime, default=now, onupdate=now)
 

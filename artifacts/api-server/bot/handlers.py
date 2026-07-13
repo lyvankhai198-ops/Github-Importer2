@@ -582,55 +582,6 @@ async def cancel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db.close()
 
 
-async def back_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Persistent "⬅️ Quay lại / Back" reply-keyboard button. Never disappears.
-    If the shopper is mid quantity-entry, this cancels that step (instead of
-    /cancel) and returns them to the product list page they were browsing.
-    Otherwise it just re-shows the main menu.
-    """
-    state = context.user_data.get("state")
-    db = SessionLocal()
-    try:
-        lang = _get_lang(db, update.effective_user.id)
-        admin_id = _get_admin_id(db)
-        is_admin = str(update.effective_user.id) == str(admin_id)
-
-        if state == "waiting_quantity":
-            prompt_id = context.user_data.get("quantity_prompt_message_id")
-            if prompt_id:
-                await _safe_del(context.bot, update.effective_chat.id, prompt_id)
-            context.user_data.pop("state", None)
-            context.user_data.pop("buying_product_id", None)
-            context.user_data.pop("quantity_prompt_message_id", None)
-            context.user_data.pop("processing_order", None)
-
-            show_oos = _get_show_out_of_stock(db)
-            per_page = _get_products_per_page(db)
-            products = get_active_products_for_bot(db, show_out_of_stock=show_oos)
-            page = context.user_data.get("last_products_page", 0)
-            if products:
-                await update.message.reply_text(
-                    t(lang, "product_list_title"),
-                    parse_mode="HTML",
-                    reply_markup=product_list_keyboard(products, lang=lang, page=page, per_page=per_page),
-                )
-            else:
-                await update.message.reply_text(
-                    t(lang, "product_list_empty"),
-                    reply_markup=main_menu_keyboard(lang=lang, is_admin=is_admin),
-                )
-            return
-
-        welcome = _get_welcome_message(db)
-        await update.message.reply_text(
-            welcome,
-            reply_markup=main_menu_keyboard(lang=lang, is_admin=is_admin),
-        )
-    finally:
-        db.close()
-
-
 # ── Payment setup helpers ─────────────────────────────────────────────────────
 
 async def _setup_sepay_payment(context, db, tg_user, order, lang: str, processing_msg=None):

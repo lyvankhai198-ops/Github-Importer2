@@ -12,10 +12,6 @@ def main_menu_keyboard(lang: str = "vi", is_admin: bool = False) -> ReplyKeyboar
     ]
     if is_admin:
         buttons.append([t(lang, "menu_admin")])
-    # Persistent row — "☰ Menu" / "⬅️ Quay lại" must always be present and never
-    # removed, so every reply_markup in the bot should use this keyboard (never
-    # ReplyKeyboardRemove) to keep it visible across the whole conversation.
-    buttons.append([t(lang, "menu_persistent"), t(lang, "menu_back")])
     return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
 
 

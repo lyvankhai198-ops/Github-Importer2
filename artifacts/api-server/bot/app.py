@@ -5,7 +5,7 @@ from telegram.ext import (
 from bot.handlers import (
     start_handler, products_handler, orders_handler, support_handler,
     admin_panel_handler, callback_handler, message_handler, language_menu_handler,
-    menu_handler, myid_handler, _set_bot_commands, cancel_handler, back_button_handler,
+    menu_handler, myid_handler, _set_bot_commands, cancel_handler,
     unknown_command_handler, wallet_handler, api_handler, account_info_handler,
 )
 
@@ -41,7 +41,6 @@ async def setup_application(token: str, db_session_factory):
     app.add_handler(MessageHandler(filters.Regex(r"^🌐 Ngôn ngữ$"),        language_menu_handler))
     app.add_handler(MessageHandler(filters.Regex(r"^🌐 Mở trang quản trị$"), admin_panel_handler))
     app.add_handler(MessageHandler(filters.Regex(r"(?i)^(❌\s*)?(hủy|huỷ|hủy bỏ|huỷ bỏ)$"), cancel_handler))
-    app.add_handler(MessageHandler(filters.Regex(r"^⬅️ Quay lại$"), back_button_handler))
 
     # ── EN menu buttons ───────────────────────────────────────────────────────
     app.add_handler(MessageHandler(filters.Regex(r"^🛍 Products$"),    products_handler))
@@ -52,10 +51,6 @@ async def setup_application(token: str, db_session_factory):
     app.add_handler(MessageHandler(filters.Regex(r"^🌐 Language$"),    language_menu_handler))
     app.add_handler(MessageHandler(filters.Regex(r"^🌐 Admin panel$"), admin_panel_handler))
     app.add_handler(MessageHandler(filters.Regex(r"(?i)^(❌\s*)?cancel$"), cancel_handler))
-    app.add_handler(MessageHandler(filters.Regex(r"^⬅️ Back$"), back_button_handler))
-
-    # ── Persistent green-menu buttons (VI + EN share the same "☰ Menu" label) ──
-    app.add_handler(MessageHandler(filters.Regex(r"^☰ Menu$"), menu_handler))
 
     # ── Inline keyboard callbacks ─────────────────────────────────────────────
     app.add_handler(CallbackQueryHandler(callback_handler))

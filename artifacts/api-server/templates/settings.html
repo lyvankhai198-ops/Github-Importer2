@@ -108,6 +108,31 @@
                   </select>
                 </div>
               </div>
+              <hr class="my-3">
+              <h6 class="text-muted mb-3">📢 Thông báo tự động sản phẩm mới / bổ sung hàng</h6>
+              <div class="row g-3">
+                <div class="col-sm-6">
+                  <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" name="notify_new_products" id="notifyNewProducts" {{ 'checked' if cfg.notify_new_products is not false else '' }}>
+                    <label class="form-check-label" for="notifyNewProducts">Báo tất cả khách khi có sản phẩm mới</label>
+                  </div>
+                </div>
+                <div class="col-sm-6">
+                  <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" name="notify_restock" id="notifyRestockAll" {{ 'checked' if cfg.notify_restock is not false else '' }}>
+                    <label class="form-check-label" for="notifyRestockAll">Báo tất cả khách khi có hàng bổ sung</label>
+                  </div>
+                </div>
+                <div class="col-sm-6">
+                  <label class="form-label">Số tin nhắn mỗi đợt gửi</label>
+                  <input type="number" name="broadcast_batch_size" class="form-control" value="{{ cfg.broadcast_batch_size or 25 }}" min="1" max="100">
+                  <div class="form-text">Giới hạn tốc độ gửi để tránh bị Telegram chặn.</div>
+                </div>
+                <div class="col-sm-6">
+                  <label class="form-label">Độ trễ giữa các đợt (ms)</label>
+                  <input type="number" name="broadcast_delay_ms" class="form-control" value="{{ cfg.broadcast_delay_ms if cfg.broadcast_delay_ms is not none else 300 }}" min="0" max="10000">
+                </div>
+              </div>
             </div>
             <div class="card-footer d-flex gap-2 flex-wrap">
               <button type="submit" class="btn btn-primary">💾 Lưu cài đặt</button>

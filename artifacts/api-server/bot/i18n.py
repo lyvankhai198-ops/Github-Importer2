@@ -13,8 +13,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "menu_support": "💬 Hỗ trợ",
         "menu_btn_account": "👤 Thông tin",
         "menu_admin": "🌐 Mở trang quản trị",
-        "menu_persistent": "☰ Menu",
-        "menu_back": "⬅️ Quay lại",
         # ── Language selection ────────────────────────────────────────────────
         "choose_lang": "🌐 Chọn ngôn ngữ / Choose language",
         "lang_vi": "🇻🇳 Tiếng Việt",
@@ -353,8 +351,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "menu_support": "💬 Support",
         "menu_btn_account": "👤 Account",
         "menu_admin": "🌐 Admin panel",
-        "menu_persistent": "☰ Menu",
-        "menu_back": "⬅️ Back",
         # ── Language selection ────────────────────────────────────────────────
         "choose_lang": "🌐 Chọn ngôn ngữ / Choose language",
         "lang_vi": "🇻🇳 Tiếng Việt",

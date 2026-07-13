@@ -138,7 +138,7 @@ async def add_product(
         return RedirectResponse(url="/products", status_code=302)
 
     try:
-        from services.product_sync import ensure_en_fields
+        from services.product_sync import ensure_en_fields, apply_admin_icon_edit, auto_assign_icon_if_unlocked
 
         image_path = await _save_image(image)
         name_en_clean = name_en.strip() or None
@@ -154,13 +154,16 @@ async def add_product(
             sale_price=sale_price,
             price_usdt=compute_price_usdt(sale_price, _current_retail_rate(db)),
             min_quantity=min_quantity,
-            telegram_icon=telegram_icon or None,
             delivery_mode=DeliveryMode(delivery_mode),
             allow_manual_order=bool(allow_manual_order),
             is_active=(is_active == "true"),
             image_path=image_path,
             source_type=SourceType.manual,
         )
+        # Admin-entered icon locks it against auto-assignment; otherwise
+        # auto-assign one from the name-keyword mapping (e.g. "Grok" → 🤖).
+        apply_admin_icon_edit(product, telegram_icon)
+        auto_assign_icon_if_unlocked(product)
         # Auto-translate name/description into English wherever the admin
         # left the English field blank, so bilingual display never falls
         # back to raw untranslated Vietnamese text.
@@ -168,6 +171,9 @@ async def add_product(
         db.add(product)
         db.commit()
         flash(request, "Sản phẩm đã được thêm thành công!")
+        if product.is_active:
+            from services.broadcast_service import notify_new_product_broadcast
+            await notify_new_product_broadcast(product)
     except Exception:
         db.rollback()
         logger.error("add_product failed:\n" + traceback.format_exc())
@@ -215,7 +221,10 @@ async def edit_product(
         return RedirectResponse(url="/products", status_code=302)
 
     try:
-        from services.product_sync import apply_admin_edit, apply_admin_en_edit, ensure_en_fields
+        from services.product_sync import (
+            apply_admin_edit, apply_admin_en_edit, ensure_en_fields,
+            apply_admin_icon_edit, auto_assign_icon_if_unlocked,
+        )
 
         product.name = name.strip()
         product.product_code = product_code
@@ -227,7 +236,10 @@ async def edit_product(
         product.sale_price = sale_price
         product.price_usdt = compute_price_usdt(sale_price, _current_retail_rate(db))
         product.min_quantity = min_quantity
-        product.telegram_icon = telegram_icon or None
+        # Admin-entered icon locks it against auto-assignment; clearing it
+        # back to blank unlocks auto-assignment from the name again.
+        apply_admin_icon_edit(product, telegram_icon)
+        auto_assign_icon_if_unlocked(product)
         product.delivery_mode = DeliveryMode(delivery_mode)
         product.allow_manual_order = bool(allow_manual_order)
         product.is_active = (is_active == "true")
@@ -380,6 +392,8 @@ async def create_product_from_source(
     # Use sale_price if admin set it; otherwise default to source price
     final_price = sale_price if sale_price > 0 else (ap.external_price or 0.0)
 
+    from services.normalize import auto_assign_emoji
+
     product = Product(
         name=ap.external_name or code,
         product_code=code,
@@ -390,6 +404,7 @@ async def create_product_from_source(
         min_quantity=ap.external_min_quantity or 1,
         warranty=ap.external_warranty or "",
         duration=ap.external_duration or "",
+        telegram_icon=auto_assign_emoji(ap.external_name or code),
         source_type=SourceType.api,
         delivery_mode=DeliveryMode.api_auto,
         is_active=True,
@@ -407,6 +422,9 @@ async def create_product_from_source(
     db.add(source)
     db.commit()
     flash(request, "Sản phẩm đã được tạo từ nguồn API!")
+    if product.is_active:
+        from services.broadcast_service import notify_new_product_broadcast
+        await notify_new_product_broadcast(product)
     return RedirectResponse(url="/products/api-sources", status_code=302)
 
 
@@ -571,6 +589,15 @@ async def inventory_import(
                         f" Đã thông báo cho {notify_result['notified']} khách hàng"
                         f" ({notify_result['audience']})."
                     )
+            # Auto "🔄 ĐÃ BỔ SUNG HÀNG" broadcast to all active users whenever
+            # stock genuinely increased (any top-up, not just 0 → positive).
+            if result["after_count"] > result["before_count"]:
+                from services.broadcast_service import notify_restock_broadcast
+                await notify_restock_broadcast(
+                    product_id,
+                    result["after_count"] - result["before_count"],
+                    result["after_count"],
+                )
             await process_waiting_orders_for_product(product_id)
 
         flash(request, summary)

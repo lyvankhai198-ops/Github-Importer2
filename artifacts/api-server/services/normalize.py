@@ -514,3 +514,64 @@ def _safe_int(val) -> int:
         return int(val)
     except (TypeError, ValueError):
         return 0
+
+
+# ── Telegram icon auto-assignment (name keyword → emoji) ────────────────────
+# Order matters: more specific brand names are checked before generic terms
+# (e.g. "chatgpt" before "api"), matching the priority given in the spec.
+_EMOJI_KEYWORDS = [
+    ("grok", "🤖"),
+    ("chatgpt", "🟢"),
+    ("openai", "🟢"),
+    ("claude", "🧠"),
+    ("gemini", "✨"),
+    ("canva", "🎨"),
+    ("capcut", "🎬"),
+    ("adobe", "🅰️"),
+    ("cursor", "🖥️"),
+    ("veo", "🎥"),
+    ("kling", "🎞️"),
+    ("microsoft", "🪟"),
+    ("office", "🪟"),
+    ("binance", "🟡"),
+    ("api", "🔌"),
+    ("token", "🔌"),
+    ("key", "🔑"),
+    ("license", "🔑"),
+]
+_DEFAULT_ICON = "📦"
+
+
+def auto_assign_emoji(name: str | None) -> str:
+    """
+    Return an emoji for a product based on keyword matches in its name,
+    falling back to a generic box icon when nothing matches. Never touches
+    the DB — callers decide whether/when to apply the result (see
+    services/product_sync.py auto_assign_icon_if_unlocked, which skips this
+    entirely when the admin has manually chosen an icon).
+    """
+    if not name:
+        return _DEFAULT_ICON
+    lname = name.lower()
+    for keyword, emoji in _EMOJI_KEYWORDS:
+        if keyword in lname:
+            return emoji
+    return _DEFAULT_ICON
+
+
+# ── Brand grouping key ───────────────────────────────────────────────────────
+
+_BRAND_KEY_RE = re.compile(r"[A-Za-zÀ-ỹ0-9]+")
+
+
+def compute_brand_key(name: str | None) -> str:
+    """
+    Normalized brand grouping key derived from a product's first significant
+    word, lowercased. e.g. "GROK SUPER 1 YEAR" and "Grok Super 3 Months" both
+    produce "grok", so variants of the same brand sort contiguously in the
+    bot's product list regardless of casing/duration suffixes.
+    """
+    if not name:
+        return ""
+    m = _BRAND_KEY_RE.match(name.strip())
+    return m.group(0).lower() if m else ""

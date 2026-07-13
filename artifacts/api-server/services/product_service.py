@@ -87,15 +87,21 @@ def get_active_products_for_bot(db: Session, show_out_of_stock: bool = True) -> 
             "status": status,
         })
 
+    from services.normalize import compute_brand_key
+
     def _sort_key(item):
         p = item["product"]
         status = item["status"]
         # Group: 0 = available/unavailable/accepting_orders (shown first), 1 = out_of_stock
         group = 1 if status == "out_of_stock" else 0
-        pinned = 0 if getattr(p, "is_pinned", False) else 1   # pinned=True → 0 sorts first
-        sold = -(p.sold_count or 0)                            # higher sold_count first
-        name = p.name.lower()
-        return (group, pinned, sold, name)
+        # Within a group: brand_key ASC, then product name ASC, then duration
+        # ASC when detectable — keeps every variant of the same brand
+        # (e.g. all "Grok ..." products) contiguous, never interleaved with
+        # another brand.
+        brand_key = compute_brand_key(p.name)
+        name = (p.name or "").lower()
+        duration = (p.duration or "").lower()
+        return (group, brand_key, name, duration)
 
     result.sort(key=_sort_key)
     return result

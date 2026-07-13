@@ -195,6 +195,11 @@ def _run_migrations():
         "ALTER TABLE api_products ADD COLUMN external_item_type VARCHAR(20)",
         "ALTER TABLE api_products ADD COLUMN external_seller VARCHAR(255)",
         "ALTER TABLE api_products ADD COLUMN external_category VARCHAR(100)",
+
+        "ALTER TABLE telegram_bot_config ADD COLUMN notify_new_products BOOLEAN DEFAULT 1",
+        "ALTER TABLE telegram_bot_config ADD COLUMN notify_restock BOOLEAN DEFAULT 1",
+        "ALTER TABLE telegram_bot_config ADD COLUMN broadcast_batch_size INTEGER DEFAULT 25",
+        "ALTER TABLE telegram_bot_config ADD COLUMN broadcast_delay_ms INTEGER DEFAULT 300",
     ]
     with engine.connect() as conn:
         ran_language_selected_migration = False

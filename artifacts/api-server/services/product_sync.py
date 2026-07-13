@@ -115,6 +115,44 @@ def ensure_en_fields(product) -> bool:
     return changed
 
 
+def apply_admin_icon_edit(product, new_icon: str | None) -> bool:
+    """
+    Apply an admin-submitted telegram_icon value. A non-blank value locks
+    the icon against future auto-assignment (auto_assign_icon_if_unlocked
+    below); clearing it back to blank unlocks it so keyword-based
+    auto-assignment can populate it again on the next save/sync.
+    Returns True if the stored icon value changed.
+    """
+    edited = parse_edited_fields(product.manually_edited_fields)
+    new_icon = (new_icon or "").strip() or None
+    changed = new_icon != (product.telegram_icon or None)
+    product.telegram_icon = new_icon
+    if new_icon:
+        edited.add("telegram_icon")
+    else:
+        edited.discard("telegram_icon")
+    product.manually_edited_fields = serialize_edited_fields(edited)
+    return changed
+
+
+def auto_assign_icon_if_unlocked(product) -> bool:
+    """
+    Fill product.telegram_icon from the name-keyword mapping unless the
+    admin has manually chosen one (locked via apply_admin_icon_edit above).
+    Safe to call on every product save/API sync — never overwrites a
+    manually-set emoji. Returns True if the icon changed.
+    """
+    from services.normalize import auto_assign_emoji
+    edited = parse_edited_fields(product.manually_edited_fields)
+    if "telegram_icon" in edited:
+        return False
+    assigned = auto_assign_emoji(product.name)
+    if assigned != (product.telegram_icon or None):
+        product.telegram_icon = assigned
+        return True
+    return False
+
+
 def sync_product_from_api_product(product, ap) -> bool:
     """
     Copy image/description/warranty/duration from `ap` (ApiProduct) onto
