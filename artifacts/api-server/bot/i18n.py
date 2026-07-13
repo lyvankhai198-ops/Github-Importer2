@@ -50,7 +50,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "out_of_stock_title": "🔴 SẢN PHẨM ĐÃ HẾT HÀNG",
         "out_of_stock_body": "Sản phẩm này hiện không còn hàng tại nguồn.\nVui lòng quay lại sau hoặc chọn sản phẩm khác.",
         # ── Quantity prompt ───────────────────────────────────────────────────
-        "enter_quantity": "🔢 Nhập số lượng bạn muốn mua:\n(Bấm ⬅️ Quay lại hoặc ☰ Menu để hủy bỏ)",
+        "enter_quantity": "🔢 Nhập số lượng bạn muốn mua:",
         "qty_invalid": "❌ Vui lòng nhập số lượng hợp lệ (số nguyên dương).",
         "qty_below_min": "❌ Số lượng tối thiểu là <b>{min}</b>.",
         "qty_exceeds_stock": "⚠️ Số lượng còn lại không đủ.\n\nKho hiện có: <b>{stock}</b>\nBạn yêu cầu: <b>{qty}</b>",
@@ -239,7 +239,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "out_of_stock_title": "🔴 OUT OF STOCK",
         "out_of_stock_body": "This product is currently out of stock at the source.\nPlease come back later or choose another product.",
         # ── Quantity prompt ───────────────────────────────────────────────────
-        "enter_quantity": "🔢 Enter the quantity you want to buy:\n(Tap ⬅️ Back or ☰ Menu to abort)",
+        "enter_quantity": "🔢 Enter the quantity you want to buy:",
         "qty_invalid": "❌ Please enter a valid quantity (positive integer).",
         "qty_below_min": "❌ Minimum quantity is <b>{min}</b>.",
         "qty_exceeds_stock": "⚠️ Not enough stock.\n\nAvailable: <b>{stock}</b>\nYou requested: <b>{qty}</b>",
