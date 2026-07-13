@@ -94,6 +94,17 @@
                       <div class="col-md-6"><label class="form-label">Icon Telegram (emoji)</label><input type="text" name="telegram_icon" class="form-control" value="{{ p.telegram_icon or '' }}" placeholder="📦"></div>
                       <div class="col-12"><label class="form-label">Mô tả</label><textarea name="description" class="form-control" rows="3">{{ p.description or '' }}</textarea></div>
                       <div class="col-12"><label class="form-label">Mô tả (English)</label><textarea name="description_en" class="form-control" rows="2">{{ p.description_en or '' }}</textarea></div>
+                      <div class="col-md-6"><label class="form-label">Bảo hành</label><input type="text" name="warranty" class="form-control" value="{{ p.warranty or '' }}" placeholder="VD: 30 ngày"></div>
+                      <div class="col-md-6"><label class="form-label">Thời hạn</label><input type="text" name="duration" class="form-control" value="{{ p.duration or '' }}" placeholder="VD: 1 năm"></div>
+                      {% if p.source_type.value == 'api' %}
+                      <div class="col-12">
+                        <div class="form-text">
+                          🔒 Trường đã sửa tay sẽ không bị ghi đè bởi lần đồng bộ API tiếp theo:
+                          {% set edited = (p.manually_edited_fields or '').split(',') %}
+                          {% if edited and edited[0] %}{{ edited|join(', ') }}{% else %}chưa có{% endif %}
+                        </div>
+                      </div>
+                      {% endif %}
                       <div class="col-md-6"><label class="form-label">Ảnh sản phẩm</label><input type="file" name="image" class="form-control" accept="image/*"></div>
                       <div class="col-md-3"><label class="form-label">Trạng thái</label>
                         <select name="is_active" class="form-select">

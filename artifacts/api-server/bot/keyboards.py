@@ -95,6 +95,7 @@ def product_detail_keyboard(product_id: int, lang: str = "vi") -> InlineKeyboard
 def out_of_stock_keyboard(product_id: int, lang: str = "vi") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(t(lang, "btn_check_again"), callback_data=f"product:{product_id}")],
+        [InlineKeyboardButton(t(lang, "btn_notify_restock"), callback_data=f"notify_restock:{product_id}")],
         [InlineKeyboardButton(t(lang, "btn_back"), callback_data="back_products")],
         [InlineKeyboardButton(t(lang, "btn_home"), callback_data="home")],
     ])

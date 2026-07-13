@@ -115,6 +115,13 @@
             <label class="form-label">Giá vốn mỗi tài khoản (đ, tuỳ chọn)</label>
             <input type="number" name="cost_price" class="form-control" value="0" step="1" min="0" style="max-width:200px">
           </div>
+          <div class="mt-3 form-check">
+            <input class="form-check-input" type="checkbox" name="notify_users" value="1" id="notifyUsersCheck" checked>
+            <label class="form-check-label" for="notifyUsersCheck">
+              📦 Thông báo cho khách hàng khi có hàng trở lại
+            </label>
+            <div class="form-text">Chỉ gửi khi sản phẩm chuyển từ hết hàng sang có hàng trở lại (không gửi khi chỉ nhập thêm hàng vào sản phẩm đang còn tồn kho). Nếu có khách đăng ký "Báo khi có hàng" cho sản phẩm này, chỉ họ sẽ nhận thông báo. Nếu chưa ai đăng ký, tất cả khách hàng bot sẽ được thông báo.</div>
+          </div>
         </div>
         <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button><button type="submit" class="btn btn-primary">Nhập vào kho</button></div>
       </form>
@@ -148,6 +155,17 @@
             <div class="col-md-6"><label class="form-label">Icon Telegram (emoji)</label><input type="text" name="telegram_icon" class="form-control" value="{{ product.telegram_icon or '' }}" placeholder="📦"></div>
             <div class="col-12"><label class="form-label">Mô tả</label><textarea name="description" class="form-control" rows="3">{{ product.description or '' }}</textarea></div>
             <div class="col-12"><label class="form-label">Mô tả (English)</label><textarea name="description_en" class="form-control" rows="2">{{ product.description_en or '' }}</textarea></div>
+            <div class="col-md-6"><label class="form-label">Bảo hành</label><input type="text" name="warranty" class="form-control" value="{{ product.warranty or '' }}" placeholder="VD: 30 ngày"></div>
+            <div class="col-md-6"><label class="form-label">Thời hạn</label><input type="text" name="duration" class="form-control" value="{{ product.duration or '' }}" placeholder="VD: 1 năm"></div>
+            {% if product.source_type.value == 'api' %}
+            <div class="col-12">
+              <div class="form-text">
+                🔒 Trường đã sửa tay sẽ không bị ghi đè bởi lần đồng bộ API tiếp theo:
+                {% set edited = (product.manually_edited_fields or '').split(',') %}
+                {% if edited and edited[0] %}{{ edited|join(', ') }}{% else %}chưa có{% endif %}
+              </div>
+            </div>
+            {% endif %}
             <div class="col-md-6"><label class="form-label">Ảnh sản phẩm</label><input type="file" name="image" class="form-control" accept="image/*"></div>
             <div class="col-md-3"><label class="form-label">Trạng thái</label>
               <select name="is_active" class="form-select">

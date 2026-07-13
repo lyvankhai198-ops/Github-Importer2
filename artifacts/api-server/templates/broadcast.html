@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Thông báo Bot - AI Center{% endblock %}
+{% block page_title %}📢 Thông báo Bot{% endblock %}
+{% block content %}
+
+<div class="row g-3">
+  <div class="col-12 col-lg-7">
+    <div class="card">
+      <div class="card-header"><h6 class="mb-0">Soạn thông báo gửi tới toàn bộ khách hàng bot</h6></div>
+      <form action="/broadcast/send" method="post" enctype="multipart/form-data">
+        <div class="card-body">
+          <div class="mb-3">
+            <label class="form-label">Tiêu đề *</label>
+            <input type="text" name="title" class="form-control" placeholder="VD: Khuyến mãi cuối tuần!" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Nội dung *</label>
+            <textarea name="content" class="form-control" rows="6" placeholder="Nội dung thông báo..." required></textarea>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Hình ảnh (tuỳ chọn)</label>
+            <input type="file" name="image" class="form-control" accept="image/*">
+          </div>
+          <div class="form-text">Sẽ gửi tới <b>{{ total_users }}</b> người dùng bot hiện có.</div>
+        </div>
+        <div class="card-footer">
+          <button type="submit" class="btn btn-primary" onclick="return confirm('Gửi thông báo này tới toàn bộ khách hàng?')">
+            <i class="bi bi-send"></i> Gửi
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="col-12 col-lg-5">
+    {% if result %}
+    <div class="card">
+      <div class="card-header"><h6 class="mb-0">Kết quả gửi gần nhất</h6></div>
+      <div class="card-body">
+        <div class="row g-2 text-center">
+          <div class="col-4"><div class="fw-bold fs-4">{{ result.total }}</div><small class="text-muted">Tổng số</small></div>
+          <div class="col-4"><div class="fw-bold fs-4 text-success">{{ result.sent }}</div><small class="text-muted">Thành công</small></div>
+          <div class="col-4"><div class="fw-bold fs-4 text-danger">{{ result.failed }}</div><small class="text-muted">Thất bại</small></div>
+        </div>
+      </div>
+    </div>
+    {% else %}
+    <div class="card">
+      <div class="card-body text-muted small">
+        Thông báo sẽ được gửi ngay lập tức tới tất cả người dùng chưa bị cấm. Sau khi gửi, kết quả (số lượng thành công/thất bại) sẽ hiển thị ở đây.
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -904,6 +904,34 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer(text=popup_text[:200], show_alert=True)
         return
 
+    # ── notify_restock: shopper opts into the per-product "back in stock" waiting list ──
+    if data.startswith("notify_restock:"):
+        product_id = int(data.split(":")[1])
+        db = SessionLocal()
+        try:
+            lang = _get_lang(db, update.effective_user.id)
+            from models import RestockSubscription
+            existing = db.query(RestockSubscription).filter(
+                RestockSubscription.product_id == product_id,
+                RestockSubscription.telegram_user_id == str(update.effective_user.id),
+            ).first()
+            if existing:
+                popup_text = t(lang, "notify_restock_already")
+            else:
+                db.add(RestockSubscription(
+                    product_id=product_id,
+                    telegram_user_id=str(update.effective_user.id),
+                ))
+                db.commit()
+                popup_text = t(lang, "notify_restock_subscribed")
+        except Exception:
+            db.rollback()
+            popup_text = t(lang, "notify_restock_already")
+        finally:
+            db.close()
+        await query.answer(text=popup_text[:200], show_alert=True)
+        return
+
     # ── noop (pagination page indicator button) ──
     if data == "noop":
         await query.answer()

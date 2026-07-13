@@ -181,6 +181,8 @@ async def edit_product(
     delivery_mode: str = Form("manual_admin"),
     allow_manual_order: str = Form(None),
     is_active: str = Form("true"),
+    warranty: str = Form(""),
+    duration: str = Form(""),
     image: UploadFile = File(None),
 ):
     if not check_auth(request):
@@ -203,10 +205,11 @@ async def edit_product(
         return RedirectResponse(url="/products", status_code=302)
 
     try:
+        from services.product_sync import apply_admin_edit
+
         product.name = name.strip()
         product.name_en = name_en.strip() or None
         product.product_code = product_code
-        product.description = description
         product.description_en = description_en or None
         product.sale_price = sale_price
         product.price_usdt = compute_price_usdt(sale_price, _current_retail_rate(db))
@@ -216,9 +219,20 @@ async def edit_product(
         product.allow_manual_order = bool(allow_manual_order)
         product.is_active = (is_active == "true")
 
+        # description/warranty/duration: only flag as "manually edited" (and
+        # thus frozen against future API sync) when the admin actually
+        # changed the value — resubmitting the same text leaves it untouched.
+        apply_admin_edit(product, {
+            "description": description,
+            "warranty": warranty,
+            "duration": duration,
+        })
+
         image_path = await _save_image(image)
         if image_path:
             product.image_path = image_path
+            from services.product_sync import mark_fields_edited
+            mark_fields_edited(product, {"image_path"})
 
         db.commit()
         db.refresh(product)
@@ -473,6 +487,7 @@ async def inventory_import(
     db: Session = Depends(get_db),
     raw_text: str = Form(...),
     cost_price: float = Form(0.0),
+    notify_users: str = Form(None),
 ):
     if not check_auth(request):
         return RedirectResponse(url="/login", status_code=302)
@@ -485,6 +500,7 @@ async def inventory_import(
         return RedirectResponse(url=f"/products/id/{product_id}", status_code=302)
 
     from services.inventory_service import parse_bulk_accounts, add_inventory_items, notify_restock_if_enabled, process_waiting_orders_for_product
+    from services.restock_notify_service import notify_restock_waiting_list
 
     try:
         parsed = parse_bulk_accounts(raw_text)
@@ -497,12 +513,24 @@ async def inventory_import(
             f"{parsed['errors']} dòng lỗi). "
             f"Tồn kho hiện tại: {result['after_count']}."
         )
-        flash(request, summary)
 
         if result["inserted"] > 0:
             if result["back_in_stock"]:
                 await notify_restock_if_enabled(product_id, back_in_stock=True)
+                # Only an actual 0 → positive stock transition counts as a
+                # "restock" for the explicit notify-checkbox path — a routine
+                # top-up of an already-in-stock product must never trigger a
+                # mass notification (falls back to "notify all users" when
+                # there's no per-product waiting list, so this gate matters).
+                if notify_users:
+                    notify_result = await notify_restock_waiting_list(product_id)
+                    summary += (
+                        f" Đã thông báo cho {notify_result['notified']} khách hàng"
+                        f" ({notify_result['audience']})."
+                    )
             await process_waiting_orders_for_product(product_id)
+
+        flash(request, summary)
 
     except Exception:
         db.rollback()

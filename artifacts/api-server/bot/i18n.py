@@ -184,6 +184,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         # ── out-of-stock popup (query.answer show_alert) ──────────────────────
         "oos_popup": "⚠️ Sản phẩm tạm hết hàng. Vui lòng liên hệ admin.\n\n✈️ Telegram: @{support}",
         "oos_popup_no_support": "⚠️ Sản phẩm tạm hết hàng. Vui lòng quay lại sau.",
+        "btn_notify_restock": "🔔 Báo khi có hàng",
+        "notify_restock_subscribed": "🔔 Đã đăng ký! Bạn sẽ được thông báo khi sản phẩm có hàng trở lại.",
+        "notify_restock_already": "🔔 Bạn đã đăng ký thông báo cho sản phẩm này rồi.",
         # ── user status labels ────────────────────────────────────────────────
         "user_status_active": "Hoạt động",
         "user_status_banned": "Bị khóa",
@@ -368,6 +371,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         # ── out-of-stock popup (query.answer show_alert) ──────────────────────
         "oos_popup": "⚠️ This product is temporarily out of stock.\nPlease contact admin.\n\n✈️ Telegram: @{support}",
         "oos_popup_no_support": "⚠️ This product is temporarily out of stock. Please check back later.",
+        "btn_notify_restock": "🔔 Notify me when back in stock",
+        "notify_restock_subscribed": "🔔 Subscribed! You'll be notified when this product is back in stock.",
+        "notify_restock_already": "🔔 You're already subscribed for this product.",
         # ── user status labels ────────────────────────────────────────────────
         "user_status_active": "Active",
         "user_status_banned": "Banned",

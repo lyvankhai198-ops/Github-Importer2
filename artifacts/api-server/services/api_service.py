@@ -3,7 +3,7 @@ import json
 import logging
 from datetime import datetime
 from sqlalchemy.orm import Session
-from models import ApiConnection, ApiProduct
+from models import ApiConnection, ApiProduct, SourceType
 from integrations.manager import api_manager
 from database import SessionLocal
 from services.normalize import normalize_product_data
@@ -74,7 +74,12 @@ async def sync_api_products(db: Session, api_connection_id: int) -> dict:
                 db.add(new_prod)
             synced += 1
 
-        # Also update ProductSource.last_stock for linked products
+        # Also update ProductSource.last_stock for linked products, and
+        # propagate image/description/warranty/duration onto the linked
+        # Product itself — skipping any field the admin has manually edited
+        # (see services/product_sync.py).
+        from services.product_sync import sync_product_from_api_product
+        from models import DeliveryMode
         sources = db.query(ProductSource).join(ApiProduct).filter(
             ApiProduct.api_connection_id == api_connection_id
         ).all()
@@ -90,6 +95,10 @@ async def sync_api_products(db: Session, api_connection_id: int) -> dict:
                 transitions.append((src.product_id, True))
             elif old_stock > 0 and new_stock <= 0:
                 transitions.append((src.product_id, False))
+
+            if src.product and src.product.source_type == SourceType.api and \
+                    src.product.delivery_mode == DeliveryMode.api_auto:
+                sync_product_from_api_product(src.product, src.api_product)
 
         conn.last_sync_at = now
         conn.last_success_at = now

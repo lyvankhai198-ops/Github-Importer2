@@ -124,6 +124,18 @@ def _run_migrations():
         "CREATE INDEX IF NOT EXISTS ix_inventory_items_product_status ON inventory_items (product_id, status)",
         # Forced language-picker gate for brand-new users (see User.language_selected)
         "ALTER TABLE users ADD COLUMN language_selected BOOLEAN DEFAULT 0",
+        # Manual-edit-safe API sync: tracks which Product fields an admin has
+        # hand-edited so the next API sync never silently overwrites them.
+        "ALTER TABLE products ADD COLUMN manually_edited_fields TEXT",
+        # Per-product "notify me when back in stock" waiting list.
+        """CREATE TABLE IF NOT EXISTS restock_subscriptions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            product_id INTEGER NOT NULL,
+            telegram_user_id VARCHAR(50) NOT NULL,
+            created_at DATETIME,
+            FOREIGN KEY(product_id) REFERENCES products(id),
+            UNIQUE(product_id, telegram_user_id)
+        )""",
     ]
     with engine.connect() as conn:
         ran_language_selected_migration = False

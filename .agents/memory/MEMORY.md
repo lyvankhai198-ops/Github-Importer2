@@ -11,3 +11,5 @@
 - [Bot watchdog/reconnect pattern](bot-watchdog-reconnect.md) — supervisor loop with 5/15/30/60s x10 then 5min backoff; fatal auth errors (bad token) must skip retries, not loop forever
 - [Reset persisted process-state on boot](bot-status-reset-on-boot.md) — DB-stored runtime status (bot_status) must reset to a safe baseline at boot; it describes a task from the previous process, not this one
 - [Language-gate needs its own flag](language-gate-flag.md) — a nullable-looking column with a non-null DB default (User.language_code default "vi") can't represent "unset"; add a separate boolean instead of checking the value
+- [Manual-edit-safe field sync](manual-edit-safe-sync.md) — track which admin-edited fields to freeze via a diff-on-save comparison, not a "was this form submitted" flag
+- [Two distinct restock-notify audiences](restock-notify-audiences.md) — don't conflate paid_waiting_stock buyers with a browsing "notify me" opt-in list; they're different users needing different triggers

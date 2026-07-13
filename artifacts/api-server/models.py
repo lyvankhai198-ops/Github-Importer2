@@ -197,12 +197,35 @@ class Product(Base):
     telegram_icon = Column(String(100), nullable=True)     # emoji/icon shown in bot list
     allow_manual_order = Column(Boolean, default=False)     # allow ordering while out of stock (manual_admin-style)
     sold_count = Column(Integer, default=0)
+    # Comma-separated subset of {"description", "image_path", "warranty", "duration"}.
+    # Any field name in this set was explicitly edited by an admin and must
+    # never be silently overwritten by the next automatic API sync.
+    manually_edited_fields = Column(Text, nullable=True)
     created_at = Column(DateTime, default=now)
     updated_at = Column(DateTime, default=now, onupdate=now)
 
     sources = relationship("ProductSource", back_populates="product", cascade="all, delete-orphan")
     orders = relationship("Order", back_populates="product")
     inventory_items = relationship("InventoryItem", back_populates="product", cascade="all, delete-orphan")
+
+
+class RestockSubscription(Base):
+    """
+    Per-product "notify me when back in stock" waiting list. Created when a
+    shopper taps "🔔 Báo khi có hàng" on an out-of-stock product; consumed
+    (deleted) once the admin restocks and the targeted notification is sent.
+    """
+    __tablename__ = "restock_subscriptions"
+    id = Column(Integer, primary_key=True, index=True)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
+    telegram_user_id = Column(String(50), nullable=False)
+    created_at = Column(DateTime, default=now)
+
+    product = relationship("Product")
+
+    __table_args__ = (
+        UniqueConstraint("product_id", "telegram_user_id", name="uq_restock_sub_product_user"),
+    )
 
 
 class InventoryItem(Base):
