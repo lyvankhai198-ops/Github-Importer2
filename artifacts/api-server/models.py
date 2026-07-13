@@ -90,6 +90,12 @@ class WalletDepositStatus(str, enum.Enum):
     cancelled = "cancelled"  # shopper cancelled before admin acted
 
 
+class ApiClientStatus(str, enum.Enum):
+    active = "active"    # can authenticate + place orders
+    locked = "locked"    # admin-suspended, key kept, can be unlocked
+    revoked = "revoked"  # permanently disabled (regenerate needed to use again)
+
+
 def now():
     return datetime.utcnow()
 
@@ -408,6 +414,14 @@ class Order(Base):
     # buyer's wallet_vnd after a fulfillment failure. Only ever set for orders
     # paid via payment_method == "wallet"; prevents double-refunding.
     refunded_to_wallet = Column(Boolean, default=False, nullable=False)
+    # ── Customer API fields ──────────────────────────────────────────────────
+    # Set only for orders placed through the inbound customer REST API
+    # (payment_method == "api_key"). client_order_id is the caller-supplied
+    # idempotency key; uniqueness is enforced by a partial index (see
+    # migrations in main.py) rather than a table-level UniqueConstraint,
+    # since SQLite can't add one via ALTER TABLE on an existing table.
+    api_client_id = Column(Integer, ForeignKey("api_clients.id"), nullable=True)
+    client_order_id = Column(String(200), nullable=True)
     # ─────────────────────────────────────────────────────────────────────────
     created_at = Column(DateTime, default=now)
     updated_at = Column(DateTime, default=now, onupdate=now)
@@ -529,6 +543,51 @@ class WalletDeposit(Base):
     confirmed_by = Column(String(100), nullable=True)
 
     user = relationship("User", foreign_keys=[telegram_user_id])
+
+
+class ApiClient(Base):
+    """
+    One row per customer who has generated a programmatic API key (bot menu
+    "🔗 API"). A customer may only have one active client at a time — the
+    same row is reused across generate/regenerate/revoke.
+    key_hash is an HMAC-SHA256 digest (see services/api_key_service.py),
+    never the raw key — the raw value is shown to the customer exactly once,
+    at generation/regeneration time, and cannot be recovered afterwards.
+    """
+    __tablename__ = "api_clients"
+    id = Column(Integer, primary_key=True, index=True)
+    telegram_user_id = Column(String(50), ForeignKey("users.telegram_id"), nullable=False, index=True)
+    name = Column(String(100), nullable=True)
+    key_hash = Column(String(128), nullable=True, unique=True, index=True)
+    key_prefix = Column(String(20), nullable=True)   # shown in masked form, e.g. "sk_live_ab12"
+    status = Column(SAEnum(ApiClientStatus), default=ApiClientStatus.active, nullable=False)
+    permissions = Column(Text, nullable=True)  # JSON list, e.g. ["products:read","orders:read","orders:create"]
+    rate_limit_per_minute = Column(Integer, default=30, nullable=False)
+    daily_limit = Column(Integer, default=2000, nullable=False)
+    total_requests = Column(Integer, default=0, nullable=False)
+    total_orders = Column(Integer, default=0, nullable=False)
+    total_revenue_vnd = Column(Float, default=0.0, nullable=False)
+    total_revenue_usdt = Column(Float, default=0.0, nullable=False)
+    last_used_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=now)
+    updated_at = Column(DateTime, default=now, onupdate=now)
+
+    user = relationship("User", foreign_keys=[telegram_user_id])
+
+
+class ApiRequestLog(Base):
+    """One row per inbound customer-API request, written by the logging
+    middleware right after the response is produced (see main.py)."""
+    __tablename__ = "api_request_logs"
+    id = Column(Integer, primary_key=True, index=True)
+    api_client_id = Column(Integer, ForeignKey("api_clients.id"), nullable=False, index=True)
+    method = Column(String(10), nullable=True)
+    endpoint = Column(String(255), nullable=True)
+    status_code = Column(Integer, nullable=True)
+    ip_address = Column(String(64), nullable=True)
+    created_at = Column(DateTime, default=now, index=True)
+
+    client = relationship("ApiClient")
 
 
 class OrderSourceAttempt(Base):

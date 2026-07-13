@@ -483,3 +483,33 @@ async def notify_user_api_failed_after_payment(bot, chat_id: str, order: Order, 
         await bot.send_message(chat_id=int(chat_id), text=text, parse_mode="HTML")
     except Exception as e:
         logger.error(f"notify_user_api_failed_after_payment error: {e}")
+
+
+# ── Customer programmatic API ────────────────────────────────────────────────
+
+async def notify_admin_api_order_result(bot, order: Order, admin_telegram_id: str, success: bool):
+    if not admin_telegram_id:
+        return
+    try:
+        from bot.i18n import t
+        amount = f"{format_vnd(order.total_price)}đ" if order.payment_currency == "VND" else f"{order.total_price} USDT"
+        if success:
+            text = t("vi", "api_admin_order_success", order_code=order.order_code,
+                      client_id=order.api_client_id, amount=amount)
+        else:
+            text = t("vi", "api_admin_order_failed", order_code=order.order_code,
+                      client_id=order.api_client_id, status=order.status.value)
+        await bot.send_message(chat_id=int(admin_telegram_id), text=text, parse_mode="HTML")
+    except Exception as e:
+        logger.error(f"notify_admin_api_order_result error: {e}")
+
+
+async def notify_admin_api_client_lockout(bot, client, admin_telegram_id: str):
+    if not admin_telegram_id:
+        return
+    try:
+        from bot.i18n import t
+        text = t("vi", "api_admin_client_locked", client_id=client.id, tg_id=client.telegram_user_id)
+        await bot.send_message(chat_id=int(admin_telegram_id), text=text, parse_mode="HTML")
+    except Exception as e:
+        logger.error(f"notify_admin_api_client_lockout error: {e}")

@@ -249,6 +249,73 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "btn_pay_wallet": "💼 Thanh toán bằng Ví",
         "wallet_insufficient_balance": "❌ Số dư ví không đủ.\nCần: <b>{needed}đ</b>\nHiện có: <b>{have}đ</b>\n\nVui lòng nạp thêm tiền vào ví.",
         "wallet_purchase_debited": "✅ Đã thanh toán <b>{amount}đ</b> từ Ví.\nSố dư còn lại: <b>{balance}đ</b>",
+        # ── Customer API ──────────────────────────────────────────────────────
+        "menu_btn_api": "🔗 API",
+        "api_menu_title": "🔗 <b>API CỦA TÔI</b>",
+        "api_menu_no_key": "Bạn chưa có API key.\nTạo key để lấy sản phẩm và đặt hàng qua API.",
+        "api_menu_status": "📶 Trạng thái: <b>{status}</b>",
+        "api_menu_key": "🔑 Key: <code>{key}</code>",
+        "api_menu_balance": "💰 Số dư: <b>{vnd}đ</b> | <b>{usdt} USDT</b>",
+        "api_menu_usage": "📊 Đã dùng: {requests} request, {orders} đơn hàng",
+        "api_menu_permissions": "🔐 Quyền: {permissions}",
+        "api_menu_created": "📅 Ngày tạo: {date}",
+        "api_status_active": "✅ Đang hoạt động",
+        "api_status_locked": "⏸ Đã bị khóa (do admin)",
+        "api_status_revoked": "🚫 Đã thu hồi",
+        "btn_api_generate": "🆕 Tạo API key",
+        "btn_api_regenerate": "🔄 Cấp lại key",
+        "btn_api_revoke": "🗑 Thu hồi key",
+        "btn_api_history": "📜 Lịch sử request",
+        "btn_api_guide": "📘 Hướng dẫn dùng API",
+        "api_key_generated": (
+            "✅ <b>API key đã được tạo!</b>\n\n"
+            "<code>{key}</code>\n\n"
+            "⚠️ Đây là LẦN DUY NHẤT bạn thấy key này — hãy lưu lại ngay.\n"
+            "Nếu mất key, dùng \"🔄 Cấp lại key\" để tạo key mới (key cũ sẽ bị hủy)."
+        ),
+        "api_key_regenerated": (
+            "✅ <b>Key mới đã được tạo!</b>\n\n"
+            "<code>{key}</code>\n\n"
+            "⚠️ Key cũ đã ngừng hoạt động ngay lập tức. Lưu key mới này lại."
+        ),
+        "api_key_revoked": "🗑 Đã thu hồi API key. Bạn có thể tạo key mới bất cứ lúc nào.",
+        "api_confirm_regenerate": "Cấp lại key mới sẽ vô hiệu hóa key cũ ngay lập tức. Tiếp tục?",
+        "api_confirm_revoke": "Thu hồi key sẽ dừng mọi request đang dùng key này. Tiếp tục?",
+        "api_history_title": "📜 <b>LỊCH SỬ REQUEST (20 gần nhất)</b>\n",
+        "api_history_empty": "Chưa có request nào.",
+        "api_guide_title": "📘 <b>HƯỚNG DẪN DÙNG API</b>",
+        "api_guide_body": (
+            "Gửi header <code>X-API-Key: &lt;key_của_bạn&gt;</code> trong mọi request.\n\n"
+            "<b>Danh sách sản phẩm:</b>\n"
+            "<code>curl {base}/api/v1/products \\\n"
+            "  -H \"X-API-Key: YOUR_KEY\"</code>\n\n"
+            "<b>Số dư:</b>\n"
+            "<code>curl {base}/api/v1/balance \\\n"
+            "  -H \"X-API-Key: YOUR_KEY\"</code>\n\n"
+            "<b>Đặt hàng:</b>\n"
+            "<code>curl -X POST {base}/api/v1/orders \\\n"
+            "  -H \"X-API-Key: YOUR_KEY\" \\\n"
+            "  -H \"Content-Type: application/json\" \\\n"
+            "  -d '{{\"product_id\": 1, \"quantity\": 1, \"currency\": \"VND\", \"client_order_id\": \"my-unique-id-1\"}}'</code>\n\n"
+            "<b>Xem đơn hàng:</b>\n"
+            "<code>curl {base}/api/v1/orders/ORD-XXXXXXXX \\\n"
+            "  -H \"X-API-Key: YOUR_KEY\"</code>\n\n"
+            "⚠️ <code>client_order_id</code> phải là duy nhất cho mỗi đơn — gửi lại cùng ID sẽ trả về kết quả đơn cũ, KHÔNG bị trừ tiền lần 2.\n"
+            "Giới hạn: {rate_limit} request/phút, {daily_limit} request/ngày."
+        ),
+        "api_key_missing_to_show": "Bạn chưa có key nào để hiển thị. Hãy tạo key trước.",
+        "api_admin_key_created": "🔗 Khách hàng <code>{tg_id}</code> đã tạo API key mới.",
+        "api_admin_order_success": (
+            "✅ <b>Đơn API thành công</b>\n"
+            "📋 <code>{order_code}</code> | Client #{client_id}\n"
+            "💰 {amount}"
+        ),
+        "api_admin_order_failed": (
+            "🚨 <b>Đơn API gặp lỗi sau thanh toán</b>\n"
+            "📋 <code>{order_code}</code> | Client #{client_id}\n"
+            "Trạng thái: {status}"
+        ),
+        "api_admin_client_locked": "⏸ API client #{client_id} (<code>{tg_id}</code>) đã bị khóa bởi admin.",
     },
 
     "en": {
@@ -495,6 +562,73 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "btn_pay_wallet": "💼 Pay with Wallet",
         "wallet_insufficient_balance": "❌ Insufficient wallet balance.\nNeeded: <b>{needed} VND</b>\nYou have: <b>{have} VND</b>\n\nPlease top up your wallet.",
         "wallet_purchase_debited": "✅ Paid <b>{amount} VND</b> from your Wallet.\nRemaining balance: <b>{balance} VND</b>",
+        # ── Customer API ──────────────────────────────────────────────────────
+        "menu_btn_api": "🔗 API",
+        "api_menu_title": "🔗 <b>MY API</b>",
+        "api_menu_no_key": "You don't have an API key yet.\nGenerate one to fetch products and place orders via API.",
+        "api_menu_status": "📶 Status: <b>{status}</b>",
+        "api_menu_key": "🔑 Key: <code>{key}</code>",
+        "api_menu_balance": "💰 Balance: <b>{vnd} VND</b> | <b>{usdt} USDT</b>",
+        "api_menu_usage": "📊 Usage: {requests} requests, {orders} orders",
+        "api_menu_permissions": "🔐 Permissions: {permissions}",
+        "api_menu_created": "📅 Created: {date}",
+        "api_status_active": "✅ Active",
+        "api_status_locked": "⏸ Locked (by admin)",
+        "api_status_revoked": "🚫 Revoked",
+        "btn_api_generate": "🆕 Generate API key",
+        "btn_api_regenerate": "🔄 Regenerate key",
+        "btn_api_revoke": "🗑 Revoke key",
+        "btn_api_history": "📜 Request history",
+        "btn_api_guide": "📘 Usage guide",
+        "api_key_generated": (
+            "✅ <b>API key generated!</b>\n\n"
+            "<code>{key}</code>\n\n"
+            "⚠️ This is the ONLY TIME you'll see this key — save it now.\n"
+            "If you lose it, use \"🔄 Regenerate key\" to create a new one (the old one will stop working)."
+        ),
+        "api_key_regenerated": (
+            "✅ <b>New key generated!</b>\n\n"
+            "<code>{key}</code>\n\n"
+            "⚠️ The old key stopped working immediately. Save this new one."
+        ),
+        "api_key_revoked": "🗑 API key revoked. You can generate a new one anytime.",
+        "api_confirm_regenerate": "Regenerating will immediately invalidate the old key. Continue?",
+        "api_confirm_revoke": "Revoking will stop all requests using this key. Continue?",
+        "api_history_title": "📜 <b>REQUEST HISTORY (last 20)</b>\n",
+        "api_history_empty": "No requests yet.",
+        "api_guide_title": "📘 <b>API USAGE GUIDE</b>",
+        "api_guide_body": (
+            "Send header <code>X-API-Key: &lt;your_key&gt;</code> on every request.\n\n"
+            "<b>List products:</b>\n"
+            "<code>curl {base}/api/v1/products \\\n"
+            "  -H \"X-API-Key: YOUR_KEY\"</code>\n\n"
+            "<b>Balance:</b>\n"
+            "<code>curl {base}/api/v1/balance \\\n"
+            "  -H \"X-API-Key: YOUR_KEY\"</code>\n\n"
+            "<b>Create order:</b>\n"
+            "<code>curl -X POST {base}/api/v1/orders \\\n"
+            "  -H \"X-API-Key: YOUR_KEY\" \\\n"
+            "  -H \"Content-Type: application/json\" \\\n"
+            "  -d '{{\"product_id\": 1, \"quantity\": 1, \"currency\": \"VND\", \"client_order_id\": \"my-unique-id-1\"}}'</code>\n\n"
+            "<b>Check order:</b>\n"
+            "<code>curl {base}/api/v1/orders/ORD-XXXXXXXX \\\n"
+            "  -H \"X-API-Key: YOUR_KEY\"</code>\n\n"
+            "⚠️ <code>client_order_id</code> must be unique per order — resubmitting the same ID returns the original result and is NEVER charged twice.\n"
+            "Limits: {rate_limit} requests/min, {daily_limit} requests/day."
+        ),
+        "api_key_missing_to_show": "You don't have a key to show yet. Generate one first.",
+        "api_admin_key_created": "🔗 Customer <code>{tg_id}</code> generated a new API key.",
+        "api_admin_order_success": (
+            "✅ <b>API order succeeded</b>\n"
+            "📋 <code>{order_code}</code> | Client #{client_id}\n"
+            "💰 {amount}"
+        ),
+        "api_admin_order_failed": (
+            "🚨 <b>API order failed after payment</b>\n"
+            "📋 <code>{order_code}</code> | Client #{client_id}\n"
+            "Status: {status}"
+        ),
+        "api_admin_client_locked": "⏸ API client #{client_id} (<code>{tg_id}</code>) was locked by admin.",
     },
 }
 

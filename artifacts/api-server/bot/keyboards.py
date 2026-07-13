@@ -7,7 +7,7 @@ def main_menu_keyboard(lang: str = "vi", is_admin: bool = False) -> ReplyKeyboar
     buttons = [
         [t(lang, "menu_products"), t(lang, "menu_orders")],
         [t(lang, "menu_btn_wallet"), t(lang, "menu_support")],
-        [t(lang, "menu_language")],
+        [t(lang, "menu_btn_api"), t(lang, "menu_language")],
     ]
     if is_admin:
         buttons.append([t(lang, "menu_admin")])
@@ -178,6 +178,34 @@ def wallet_insufficient_balance_keyboard(order_id: int, lang: str = "vi") -> Inl
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(t(lang, "btn_wallet_deposit"), callback_data="wallet_deposit")],
         [InlineKeyboardButton(t(lang, "btn_cancel_order"), callback_data=f"cancel_pending:{order_id}")],
+    ])
+
+
+# ── Customer API ─────────────────────────────────────────────────────────────
+
+def api_menu_keyboard(lang: str = "vi", has_key: bool = False) -> InlineKeyboardMarkup:
+    rows = []
+    if has_key:
+        rows.append([InlineKeyboardButton(t(lang, "btn_api_regenerate"), callback_data="api_regenerate")])
+        rows.append([InlineKeyboardButton(t(lang, "btn_api_revoke"), callback_data="api_revoke")])
+    else:
+        rows.append([InlineKeyboardButton(t(lang, "btn_api_generate"), callback_data="api_generate")])
+    rows.append([InlineKeyboardButton(t(lang, "btn_api_history"), callback_data="api_history")])
+    rows.append([InlineKeyboardButton(t(lang, "btn_api_guide"), callback_data="api_guide")])
+    rows.append([InlineKeyboardButton(t(lang, "btn_home"), callback_data="home")])
+    return InlineKeyboardMarkup(rows)
+
+
+def api_back_keyboard(lang: str = "vi") -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(t(lang, "btn_back"), callback_data="api_home")],
+    ])
+
+
+def api_confirm_keyboard(action: str, lang: str = "vi") -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("✅ OK", callback_data=f"api_confirm:{action}")],
+        [InlineKeyboardButton(t(lang, "btn_back"), callback_data="api_home")],
     ])
 
 

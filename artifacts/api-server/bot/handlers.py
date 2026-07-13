@@ -14,6 +14,7 @@ from bot.keyboards import (
     confirm_order_keyboard,
     wallet_menu_keyboard, wallet_deposit_currency_keyboard, wallet_deposit_method_keyboard,
     wallet_insufficient_balance_keyboard,
+    api_menu_keyboard, api_back_keyboard, api_confirm_keyboard,
 )
 from bot.i18n import t, get_user_lang
 from services.product_service import (
@@ -28,9 +29,11 @@ from services.payment_service import (
     generate_payment_code, process_paid_order,
 )
 from services import wallet_service
+from services import api_client_service
 from models import (
     Order, TelegramBotConfig, OrderStatus, PaymentStatus, User,
     WalletCurrency, WalletTxType, WalletDeposit, WalletDepositStatus,
+    ApiClient, ApiClientStatus, ApiRequestLog,
 )
 from database import SessionLocal
 
@@ -385,6 +388,59 @@ async def wallet_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         tg_user = update.effective_user
         get_or_create_user(db, str(tg_user.id), tg_user.username, tg_user.first_name, tg_user.last_name)
         await _send_wallet_menu(update.message, None, db, tg_user, lang, edit=False)
+    finally:
+        db.close()
+
+
+def _api_base_url() -> str:
+    import os
+    domain = os.environ.get("REPLIT_DEV_DOMAIN") or os.environ.get("REPLIT_DOMAINS", "").split(",")[0]
+    return f"https://{domain}" if domain else "https://your-domain.example.com"
+
+
+async def _send_api_menu(bot_or_query, db, tg_user, lang: str, edit=False):
+    client = api_client_service.get_client_for_user(db, str(tg_user.id))
+    lines = [t(lang, "api_menu_title"), ""]
+    if not client:
+        lines.append(t(lang, "api_menu_no_key"))
+    else:
+        status_key = {
+            ApiClientStatus.active: "api_status_active",
+            ApiClientStatus.locked: "api_status_locked",
+            ApiClientStatus.revoked: "api_status_revoked",
+        }.get(client.status, "api_status_active")
+        user = db.query(User).filter(User.telegram_id == str(tg_user.id)).first()
+        vnd = wallet_service.get_balance(user, WalletCurrency.VND) if user else 0.0
+        usdt = wallet_service.get_balance(user, WalletCurrency.USDT) if user else 0.0
+        lines += [
+            t(lang, "api_menu_status", status=t(lang, status_key)),
+            t(lang, "api_menu_key", key=f"{client.key_prefix}••••" if client.key_prefix else "—"),
+            t(lang, "api_menu_balance", vnd=format_vnd(vnd), usdt=f"{usdt:.2f}"),
+            t(lang, "api_menu_usage", requests=client.total_requests, orders=client.total_orders),
+            t(lang, "api_menu_permissions", permissions=", ".join(api_client_service.get_permissions(client))),
+            t(lang, "api_menu_created", date=client.created_at.strftime("%d/%m/%Y") if client.created_at else "—"),
+        ]
+    text = "\n".join(lines)
+    kbd = api_menu_keyboard(lang=lang, has_key=bool(client and client.status != ApiClientStatus.revoked))
+    if edit:
+        try:
+            await bot_or_query.message.edit_text(text, parse_mode="HTML", reply_markup=kbd)
+        except Exception:
+            await bot_or_query.message.reply_text(text, parse_mode="HTML", reply_markup=kbd)
+    else:
+        await bot_or_query.reply_text(text, parse_mode="HTML", reply_markup=kbd)
+
+
+async def api_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handler for /api command and 🔗 API menu button."""
+    db = SessionLocal()
+    try:
+        if not await _require_language_selected(update, db):
+            return
+        lang = _get_lang(db, update.effective_user.id)
+        tg_user = update.effective_user
+        get_or_create_user(db, str(tg_user.id), tg_user.username, tg_user.first_name, tg_user.last_name)
+        await _send_api_menu(update.message, db, tg_user, lang, edit=False)
     finally:
         db.close()
 
@@ -1278,6 +1334,158 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await query.message.edit_text(t(lang, prompt_key))
             except Exception:
                 await context.bot.send_message(chat_id=tg_user.id, text=t(lang, prompt_key))
+        finally:
+            db.close()
+        return
+
+    # ── API key menu ──
+    if data == "api_home":
+        db = SessionLocal()
+        try:
+            tg_user = update.effective_user
+            lang = _get_lang(db, tg_user.id)
+            await _send_api_menu(query, db, tg_user, lang, edit=True)
+        finally:
+            db.close()
+        return
+
+    if data == "api_generate":
+        db = SessionLocal()
+        try:
+            tg_user = update.effective_user
+            lang = _get_lang(db, tg_user.id)
+            client, full_key = api_client_service.generate_key_for_user(db, str(tg_user.id))
+            try:
+                await query.message.edit_text(
+                    t(lang, "api_key_generated", key=full_key),
+                    parse_mode="HTML", reply_markup=api_back_keyboard(lang=lang),
+                )
+            except Exception:
+                await context.bot.send_message(
+                    chat_id=tg_user.id, text=t(lang, "api_key_generated", key=full_key),
+                    parse_mode="HTML", reply_markup=api_back_keyboard(lang=lang),
+                )
+            admin_id = _get_admin_id(db)
+            if admin_id:
+                try:
+                    await context.bot.send_message(
+                        chat_id=int(admin_id),
+                        text=t("vi", "api_admin_key_created", tg_id=tg_user.id),
+                        parse_mode="HTML",
+                    )
+                except Exception as e:
+                    logger.error(f"api_admin_key_created notify failed: {e}")
+        finally:
+            db.close()
+        return
+
+    if data == "api_regenerate":
+        db = SessionLocal()
+        try:
+            lang = _get_lang(db, update.effective_user.id)
+            try:
+                await query.message.edit_text(
+                    t(lang, "api_confirm_regenerate"),
+                    reply_markup=api_confirm_keyboard("regenerate", lang=lang),
+                )
+            except Exception:
+                pass
+        finally:
+            db.close()
+        return
+
+    if data == "api_revoke":
+        db = SessionLocal()
+        try:
+            lang = _get_lang(db, update.effective_user.id)
+            try:
+                await query.message.edit_text(
+                    t(lang, "api_confirm_revoke"),
+                    reply_markup=api_confirm_keyboard("revoke", lang=lang),
+                )
+            except Exception:
+                pass
+        finally:
+            db.close()
+        return
+
+    if data.startswith("api_confirm:"):
+        action = data.split(":")[1]
+        db = SessionLocal()
+        try:
+            tg_user = update.effective_user
+            lang = _get_lang(db, tg_user.id)
+            client = api_client_service.get_client_for_user(db, str(tg_user.id))
+            if not client:
+                await query.message.edit_text(t(lang, "api_key_missing_to_show"), reply_markup=api_back_keyboard(lang=lang))
+                return
+            if action == "regenerate":
+                full_key = api_client_service.regenerate_key(db, client)
+                await query.message.edit_text(
+                    t(lang, "api_key_regenerated", key=full_key),
+                    parse_mode="HTML", reply_markup=api_back_keyboard(lang=lang),
+                )
+            elif action == "revoke":
+                api_client_service.revoke_key(db, client)
+                await query.message.edit_text(
+                    t(lang, "api_key_revoked"), reply_markup=api_back_keyboard(lang=lang),
+                )
+        finally:
+            db.close()
+        return
+
+    if data == "api_history":
+        db = SessionLocal()
+        try:
+            tg_user = update.effective_user
+            lang = _get_lang(db, tg_user.id)
+            client = api_client_service.get_client_for_user(db, str(tg_user.id))
+            if not client:
+                lines = [t(lang, "api_history_title"), "", t(lang, "api_history_empty")]
+            else:
+                logs = (
+                    db.query(ApiRequestLog)
+                    .filter(ApiRequestLog.api_client_id == client.id)
+                    .order_by(ApiRequestLog.created_at.desc())
+                    .limit(20)
+                    .all()
+                )
+                if not logs:
+                    lines = [t(lang, "api_history_title"), "", t(lang, "api_history_empty")]
+                else:
+                    lines = [t(lang, "api_history_title")]
+                    for lg in logs:
+                        lines.append(
+                            f"• {lg.method} <code>{lg.endpoint}</code> — {lg.status_code} "
+                            f"({lg.created_at.strftime('%d/%m %H:%M')})"
+                        )
+            try:
+                await query.message.edit_text(
+                    "\n".join(lines), parse_mode="HTML", reply_markup=api_back_keyboard(lang=lang),
+                )
+            except Exception:
+                pass
+        finally:
+            db.close()
+        return
+
+    if data == "api_guide":
+        db = SessionLocal()
+        try:
+            tg_user = update.effective_user
+            lang = _get_lang(db, tg_user.id)
+            client = api_client_service.get_client_for_user(db, str(tg_user.id))
+            rate_limit = client.rate_limit_per_minute if client else 30
+            daily_limit = client.daily_limit if client else 2000
+            text = "\n".join([
+                t(lang, "api_guide_title"), "",
+                t(lang, "api_guide_body", base=_api_base_url(), rate_limit=rate_limit, daily_limit=daily_limit),
+            ])
+            try:
+                await query.message.edit_text(text, parse_mode="HTML", reply_markup=api_back_keyboard(lang=lang))
+            except Exception:
+                await context.bot.send_message(chat_id=tg_user.id, text=text, parse_mode="HTML",
+                                                 reply_markup=api_back_keyboard(lang=lang))
         finally:
             db.close()
         return

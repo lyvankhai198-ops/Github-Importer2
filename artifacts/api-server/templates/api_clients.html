@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}API Clients - AI Center{% endblock %}
+{% block page_title %}🔗 API Clients — Khách hàng dùng API{% endblock %}
+{% block content %}
+
+<div class="card">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm mb-0 align-middle">
+        <thead>
+          <tr>
+            <th>Owner</th>
+            <th>Key</th>
+            <th>Trạng thái</th>
+            <th>Requests</th>
+            <th>Orders</th>
+            <th>Doanh thu</th>
+            <th>Lần dùng cuối</th>
+            <th>Ngày tạo</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in clients %}
+          {% set u = user_map.get(c.telegram_user_id) %}
+          <tr>
+            <td>
+              <a href="/users/{{ c.telegram_user_id }}">
+                {{ u.first_name if u else '' }} {{ ('@' + u.username) if u and u.username else '' }}
+              </a>
+              <div class="text-muted small">{{ c.telegram_user_id }}</div>
+            </td>
+            <td><code>{{ c.key_prefix or '—' }}••••</code></td>
+            <td>
+              {% if c.status.value == "active" %}<span class="badge bg-success">Đang hoạt động</span>
+              {% elif c.status.value == "locked" %}<span class="badge bg-warning text-dark">Đã khóa</span>
+              {% else %}<span class="badge bg-secondary">Đã thu hồi</span>{% endif %}
+            </td>
+            <td>{{ c.total_requests }}</td>
+            <td>{{ c.total_orders }}</td>
+            <td class="small">
+              {% if c.total_revenue_vnd %}{{ "{:,.0f}".format(c.total_revenue_vnd).replace(",", ".") }}đ<br>{% endif %}
+              {% if c.total_revenue_usdt %}{{ "%.2f"|format(c.total_revenue_usdt) }} USDT{% endif %}
+              {% if not c.total_revenue_vnd and not c.total_revenue_usdt %}—{% endif %}
+            </td>
+            <td><small>{{ c.last_used_at.strftime('%d/%m/%Y %H:%M') if c.last_used_at else 'Chưa dùng' }}</small></td>
+            <td><small>{{ c.created_at.strftime('%d/%m/%Y') }}</small></td>
+            <td><a href="/api-clients/{{ c.id }}" class="btn btn-sm btn-outline-primary">Xem</a></td>
+          </tr>
+          {% else %}
+          <tr><td colspan="9" class="text-center text-muted py-4">Chưa có khách hàng nào tạo API key</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

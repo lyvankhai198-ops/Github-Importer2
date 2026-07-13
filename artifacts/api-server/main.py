@@ -157,6 +157,15 @@ def _run_migrations():
         "ALTER TABLE users ADD COLUMN wallet_vnd FLOAT DEFAULT 0.0",
         "ALTER TABLE users ADD COLUMN wallet_usdt FLOAT DEFAULT 0.0",
         "ALTER TABLE orders ADD COLUMN refunded_to_wallet BOOLEAN DEFAULT 0",
+        # Customer programmatic API (api_clients / api_request_logs tables are
+        # new and created automatically by Base.metadata.create_all).
+        "ALTER TABLE orders ADD COLUMN api_client_id INTEGER",
+        "ALTER TABLE orders ADD COLUMN client_order_id VARCHAR(200)",
+        # Enforces per-client idempotency for API-originated orders. Partial
+        # index (SQLite supports WHERE on CREATE INDEX) — a table-level
+        # UniqueConstraint can't be added via ALTER TABLE on an existing table.
+        "CREATE UNIQUE INDEX IF NOT EXISTS ux_orders_api_client_order "
+        "ON orders (api_client_id, client_order_id) WHERE client_order_id IS NOT NULL",
     ]
     with engine.connect() as conn:
         ran_language_selected_migration = False
@@ -350,6 +359,38 @@ app = FastAPI(title="AI Center Web Bot Manager", lifespan=lifespan)
 async def health_check():
     return {"status": "ok"}
 
+@app.middleware("http")
+async def api_request_logger(request, call_next):
+    """
+    Logs every inbound /api/v1/* request once it's identified to a client
+    (see routers/customer_api.require_api_client, which sets
+    request.state.api_client_id as soon as the key resolves — before any
+    locked/revoked/rate-limit check, so those rejections get logged too).
+    Unresolvable keys (unknown/missing) are never attributed to a client
+    and are intentionally not logged here.
+    """
+    response = await call_next(request)
+    client_id = getattr(request.state, "api_client_id", None)
+    if client_id:
+        try:
+            from models import ApiRequestLog
+            db = SessionLocal()
+            try:
+                db.add(ApiRequestLog(
+                    api_client_id=client_id,
+                    method=request.method,
+                    endpoint=request.url.path,
+                    status_code=response.status_code,
+                    ip_address=request.client.host if request.client else None,
+                ))
+                db.commit()
+            finally:
+                db.close()
+        except Exception:
+            logger.exception("api_request_logger failed")
+    return response
+
+
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY, max_age=86400 * 30)
 app.add_middleware(GZipMiddleware)
 
@@ -359,6 +400,7 @@ app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
 
 from routers import auth, dashboard, products, orders, api_connections, users, settings, wallet
 from routers import webhooks  # public endpoints — no session auth
+from routers import api_clients, customer_api
 
 app.include_router(auth.router)
 app.include_router(dashboard.router)
@@ -368,7 +410,9 @@ app.include_router(api_connections.router)
 app.include_router(users.router)
 app.include_router(settings.router)
 app.include_router(wallet.router)
+app.include_router(api_clients.router)
 app.include_router(webhooks.router)  # POST /webhooks/sepay
+app.include_router(customer_api.router)  # public inbound customer REST API (X-API-Key auth)
 
 
 if __name__ == "__main__":
