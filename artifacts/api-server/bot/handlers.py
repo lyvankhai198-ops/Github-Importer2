@@ -365,6 +365,21 @@ async def admin_panel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     await update.message.reply_text("🌐 Truy cập trang quản trị tại địa chỉ máy chủ của bạn.")
 
 
+async def unknown_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Fallback for any /command that isn't matched by a registered
+    CommandHandler above (e.g. /abc, /test123, or the old /product typo).
+    Never stays silent — always tells the shopper what commands exist,
+    in their own language.
+    """
+    db = SessionLocal()
+    try:
+        lang = _get_lang(db, update.effective_user.id)
+    finally:
+        db.close()
+    await update.message.reply_text(t(lang, "invalid_command"), parse_mode="HTML")
+
+
 async def cancel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     /cancel (also triggered by "❌ Hủy bỏ" / "❌ Cancel" free text) — universal

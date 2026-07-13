@@ -192,6 +192,16 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         # ── user status labels ────────────────────────────────────────────────
         "user_status_active": "Hoạt động",
         "user_status_banned": "Bị khóa",
+        # ── invalid command ───────────────────────────────────────────────────
+        "invalid_command": (
+            "⚠️ Lệnh không hợp lệ. Các lệnh được hỗ trợ:\n\n"
+            "/start – Bắt đầu và xem menu\n"
+            "/menu – Mở menu chính\n"
+            "/products – Xem sản phẩm\n"
+            "/orders – Xem đơn hàng\n"
+            "/language – Đổi ngôn ngữ\n"
+            "/support – Hỗ trợ"
+        ),
     },
 
     "en": {
@@ -381,6 +391,16 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         # ── user status labels ────────────────────────────────────────────────
         "user_status_active": "Active",
         "user_status_banned": "Banned",
+        # ── invalid command ───────────────────────────────────────────────────
+        "invalid_command": (
+            "⚠️ Invalid command. Supported commands:\n\n"
+            "/start – Start and open menu\n"
+            "/menu – Open the main menu\n"
+            "/products – Show products\n"
+            "/orders – Show orders\n"
+            "/language – Change language\n"
+            "/support – Open support"
+        ),
     },
 }
 

@@ -6,6 +6,7 @@ from bot.handlers import (
     start_handler, products_handler, orders_handler, support_handler,
     admin_panel_handler, callback_handler, message_handler, language_menu_handler,
     menu_handler, myid_handler, _set_bot_commands, cancel_handler, back_button_handler,
+    unknown_command_handler,
 )
 
 
@@ -20,6 +21,7 @@ async def setup_application(token: str, db_session_factory):
     app.add_handler(CommandHandler("start",    start_handler))
     app.add_handler(CommandHandler("menu",     menu_handler))
     app.add_handler(CommandHandler("product",  products_handler))
+    app.add_handler(CommandHandler("products", products_handler))
     app.add_handler(CommandHandler("orders",   orders_handler))
     app.add_handler(CommandHandler("language", language_menu_handler))
     app.add_handler(CommandHandler("support",  support_handler))
@@ -52,5 +54,9 @@ async def setup_application(token: str, db_session_factory):
 
     # ── Free-text input (quantity, etc.) ─────────────────────────────────────
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
+
+    # ── Unknown command fallback (must be last: only fires if no command
+    #    handler above matched) ────────────────────────────────────────────────
+    app.add_handler(MessageHandler(filters.COMMAND, unknown_command_handler))
 
     return app
