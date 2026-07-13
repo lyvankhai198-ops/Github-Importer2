@@ -269,15 +269,21 @@ async def generate_en_preview(
 ):
     """
     "🌐 Tạo bản tiếng Anh" — returns an auto-translated EN name/description
-    preview (via the same dictionary used for auto-sync) for the admin to
-    review and edit before saving. Does not touch the database.
+    preview (name via the fixed shorthand table, description via the LLM
+    translator — see services.translation_service) for the admin to review
+    and edit before saving. Does not touch the database. Also doubles as
+    "Dịch lại mô tả tiếng Anh" for an existing product: the edit modal opens
+    pre-filled with the current Vietnamese/English text, and clicking this
+    button regenerates the English preview from the current Vietnamese
+    description for the admin to review before saving.
     """
     if not check_auth(request):
         return JSONResponse({"error": "Unauthorized"}, status_code=401)
-    from services.normalize import translate_product_name_to_en, normalize_and_translate_description
+    from services.normalize import translate_product_name_to_en
+    from services.translation_service import translate_description_with_fallback
     return JSONResponse({
         "name_en": translate_product_name_to_en(name) if name else "",
-        "description_en": normalize_and_translate_description(description) if description else "",
+        "description_en": translate_description_with_fallback(description) if description else "",
     })
 
 

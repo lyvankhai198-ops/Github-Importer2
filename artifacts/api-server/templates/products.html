@@ -96,8 +96,8 @@
                       <div class="col-12">
                         <label class="form-label">Mô tả (English) {% if p.description_en_locked %}<span class="badge bg-secondary">🔒 đã sửa tay</span>{% endif %}</label>
                         <textarea name="description_en" class="form-control en-out-desc" rows="2">{{ p.description_en or '' }}</textarea>
-                        <button type="button" class="btn btn-sm btn-outline-info mt-1 gen-en-btn">🌐 Tạo bản tiếng Anh</button>
-                        <div class="form-text">Tự dịch từ tên/mô tả tiếng Việt — bạn có thể chỉnh lại trước khi lưu.</div>
+                        <button type="button" class="btn btn-sm btn-outline-info mt-1 gen-en-btn">🌐 Dịch lại mô tả tiếng Anh</button>
+                        <div class="form-text">Tự dịch từ tên/mô tả tiếng Việt bằng AI — bạn có thể chỉnh lại trước khi lưu.</div>
                       </div>
                       <div class="col-md-6"><label class="form-label">Bảo hành</label><input type="text" name="warranty" class="form-control" value="{{ p.warranty or '' }}" placeholder="VD: 30 ngày"></div>
                       <div class="col-md-6"><label class="form-label">Thời hạn</label><input type="text" name="duration" class="form-control" value="{{ p.duration or '' }}" placeholder="VD: 1 năm"></div>

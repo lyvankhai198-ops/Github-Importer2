@@ -141,6 +141,11 @@ def _run_migrations():
         # overwriting it on the next save/sync.
         "ALTER TABLE products ADD COLUMN name_en_locked BOOLEAN DEFAULT 0",
         "ALTER TABLE products ADD COLUMN description_en_locked BOOLEAN DEFAULT 0",
+        # Remembers the exact Vietnamese source text that was last translated
+        # into description_en, so auto-translation can tell "source changed,
+        # needs re-translating" apart from "already translated, nothing to do"
+        # without re-calling the translator (and re-billing) on every sync.
+        "ALTER TABLE products ADD COLUMN description_en_source TEXT",
     ]
     with engine.connect() as conn:
         ran_language_selected_migration = False

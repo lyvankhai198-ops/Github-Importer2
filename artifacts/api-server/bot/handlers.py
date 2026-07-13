@@ -1107,22 +1107,14 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 warr = translate_shorthand_to_en(p.warranty) if lang == "en" else p.warranty
                 lines.append(t(lang, "product_warranty", val=html.escape(warr)))
 
-            # Description: description_en is the source of truth for English
-            # shoppers. It is generated once (on save or on API sync — see
-            # services.product_sync.ensure_en_fields) and reused as-is here;
-            # it is NEVER re-translated word-by-word on every product view.
-            # The generate-and-persist call below only fires for the rare
-            # legacy product whose description_en was never backfilled.
-            if lang == "en":
-                if not getattr(p, "description_en", None) and not p.description_en_locked:
-                    src_desc = p.description or (api_src.external_description if api_src else None)
-                    if src_desc:
-                        from services.normalize import normalize_and_translate_description
-                        p.description_en = normalize_and_translate_description(src_desc)
-                        db.commit()
-                desc = p.description_en
-            else:
-                desc = p.description or (api_src.external_description if api_src else None)
+            # Description: single source of truth for language-correct
+            # description text — see services.localization. description_en
+            # is generated once (on save, on API sync, or the first time an
+            # English shopper views it) and reused as-is afterwards; English
+            # shoppers NEVER see a fallback to the Vietnamese text.
+            from services.localization import get_localized_product_description
+            external_desc = api_src.external_description if api_src else None
+            desc = get_localized_product_description(p, lang, db=db, external_description=external_desc)
             if desc:
                 lines.append(t(lang, "product_description", desc=html.escape(desc)))
 

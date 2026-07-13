@@ -11,7 +11,8 @@ Product, so there is nothing to "protect" for it.
 """
 import logging
 
-from services.normalize import translate_product_name_to_en, normalize_and_translate_description
+from services.normalize import translate_product_name_to_en
+from services.translation_service import translate_description_with_fallback
 
 logger = logging.getLogger(__name__)
 
@@ -84,11 +85,15 @@ def ensure_en_fields(product) -> bool:
     """
     Keep Product.name_en/description_en auto-translated from the
     Vietnamese name/description, but only for fields NOT locked by an
-    admin edit. Unlocked fields are re-derived every call (not just when
-    blank) so an improved translator automatically fixes previously
-    auto-generated text on the next save/sync — an admin edit is the only
-    thing that freezes a field (see apply_admin_en_edit). Safe to call on
-    every sync. Returns True if anything changed.
+    admin edit. name_en is cheap (regex table) and re-derived every call so
+    an improved translator automatically fixes previously auto-generated
+    text. description_en goes through the LLM translator (see
+    translation_service), which is not free — it is only (re)generated when
+    it is missing or the Vietnamese source has actually changed since the
+    last translation (tracked via description_en_source), so a periodic API
+    sync never re-translates unchanged descriptions. An admin edit is the
+    only thing that freezes a field (see apply_admin_en_edit). Safe to call
+    on every sync. Returns True if anything changed.
     """
     changed = False
     if not product.name_en_locked and product.name:
@@ -97,10 +102,16 @@ def ensure_en_fields(product) -> bool:
             product.name_en = translated
             changed = True
     if not product.description_en_locked and product.description:
-        translated = normalize_and_translate_description(product.description)
-        if translated and translated != product.description_en:
-            product.description_en = translated
-            changed = True
+        needs_translation = (
+            not product.description_en
+            or product.description != (product.description_en_source or None)
+        )
+        if needs_translation:
+            translated = translate_description_with_fallback(product.description)
+            if translated and translated != product.description_en:
+                product.description_en = translated
+                product.description_en_source = product.description
+                changed = True
     return changed
 
 

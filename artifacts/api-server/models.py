@@ -207,6 +207,10 @@ class Product(Base):
     # this False so it can still be regenerated/filled in later.
     name_en_locked = Column(Boolean, default=False)
     description_en_locked = Column(Boolean, default=False)
+    # The exact Vietnamese `description` text that was last translated into
+    # description_en. Lets auto-translation detect "source changed since we
+    # last translated it" without re-calling the translator on every sync.
+    description_en_source = Column(Text, nullable=True)
     created_at = Column(DateTime, default=now)
     updated_at = Column(DateTime, default=now, onupdate=now)
 
