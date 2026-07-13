@@ -11,14 +11,16 @@ from services.normalize import normalize_product_data
 logger = logging.getLogger(__name__)
 
 
-async def sync_api_products(db: Session, api_connection_id: int) -> dict:
+async def sync_api_products(db: Session, api_connection_id: int, limit: int = None) -> dict:
     conn = db.query(ApiConnection).filter(ApiConnection.id == api_connection_id).first()
     if not conn:
         return {"success": False, "message": "Connection not found"}
     adapter = api_manager.get_adapter(conn)
-    logger.info(f"API_SYNC_STARTED: connection_id={api_connection_id}")
+    logger.info(f"API_SYNC_STARTED: connection_id={api_connection_id} limit={limit}")
     try:
         products = await adapter.get_products()
+        if limit:
+            products = products[:limit]
         now = datetime.utcnow()
         synced = 0
         created_count = 0
@@ -218,6 +220,45 @@ async def _handle_api_stock_transition(product_id: int, back_in_stock: bool):
 
 
 async def test_api_connection(db: Session, api_connection_id: int) -> dict:
+    conn = db.query(ApiConnection).filter(ApiConnection.id == api_connection_id).first()
+    if not conn:
+        return {"success": False, "message": "Connection not found"}
+    api_manager.invalidate(api_connection_id)
+    adapter = api_manager.get_adapter(conn)
+    return await adapter.test_connection()
+
+
+async def preview_test_request(db: Session, api_connection_id: int) -> dict:
+    """
+    Build (but never send) the request the generic engine would make for
+    "Test kết nối" — used by the "Xem request preview" button. The API key
+    is never included in the returned headers/query.
+    """
+    conn = db.query(ApiConnection).filter(ApiConnection.id == api_connection_id).first()
+    if not conn:
+        return {"success": False, "message": "Connection not found"}
+    api_manager.invalidate(api_connection_id)
+    adapter = api_manager.get_adapter(conn)
+    client = adapter.client
+    endpoint = client.config.get("test_endpoint") or client.config.get("products_endpoint")
+    method = client.config.get("test_method") or "GET"
+    query_template = client.config.get("test_query_params")
+    url, method, headers, params, body = client.build_request(endpoint, method, query_template, None, {})
+    safe_headers = {k: ("***" if k.lower() in ("authorization", (client.config.get("auth_header_name") or "").lower()) else v) for k, v in headers.items()}
+    safe_params = {k: ("***" if k == (client.config.get("auth_query_name") or "api_key") else v) for k, v in params.items()}
+    return {
+        "success": True,
+        "url": client.redact_url(url + (("?" + "&".join(f"{k}={v}" for k, v in safe_params.items())) if safe_params else "")),
+        "method": method,
+        "headers": safe_headers,
+        "query_params": safe_params,
+        "body": body,
+    }
+
+
+async def preview_test_response(db: Session, api_connection_id: int) -> dict:
+    """Actually calls the test endpoint and returns the raw response for
+    inspection — same call as "Test kết nối" but surfaces the full body."""
     conn = db.query(ApiConnection).filter(ApiConnection.id == api_connection_id).first()
     if not conn:
         return {"success": False, "message": "Connection not found"}

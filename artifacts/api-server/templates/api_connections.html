@@ -25,9 +25,12 @@
         {% if c.last_error %}<div class="text-danger small mt-1"><i class="bi bi-exclamation-triangle"></i> {{ c.last_error[:60] }}</div>{% endif %}
       </div>
       <div class="card-footer d-flex gap-1 flex-wrap">
-        <button class="btn btn-xs btn-outline-primary" onclick="testConn({{ c.id }}, this)" title="Test"><i class="bi bi-wifi"></i></button>
+        <button class="btn btn-xs btn-outline-primary" onclick="testConn({{ c.id }}, this)" title="Test kết nối"><i class="bi bi-wifi"></i></button>
+        <button class="btn btn-xs btn-outline-dark" onclick="previewReq({{ c.id }}, this)" title="Xem request preview"><i class="bi bi-code-slash"></i></button>
+        <button class="btn btn-xs btn-outline-dark" onclick="previewResp({{ c.id }}, this)" title="Xem response preview"><i class="bi bi-braces"></i></button>
         <button class="btn btn-xs btn-outline-info" onclick="getBalance({{ c.id }}, this)" title="Balance"><i class="bi bi-wallet2"></i></button>
-        <button class="btn btn-xs btn-outline-success" onclick="syncConn({{ c.id }}, this)" title="Sync"><i class="bi bi-arrow-repeat"></i></button>
+        <button class="btn btn-xs btn-outline-success" onclick="syncOne({{ c.id }}, this)" title="Đồng bộ thử 1 sản phẩm"><i class="bi bi-1-circle"></i></button>
+        <button class="btn btn-xs btn-outline-success" onclick="syncConn({{ c.id }}, this)" title="Đồng bộ toàn bộ"><i class="bi bi-arrow-repeat"></i></button>
         <a href="/api-connections/{{ c.id }}/products" class="btn btn-xs btn-outline-secondary" title="Products"><i class="bi bi-box-seam"></i></a>
         <a href="/api-connections/{{ c.id }}/orders" class="btn btn-xs btn-outline-secondary" title="Orders"><i class="bi bi-receipt"></i></a>
         <button class="btn btn-xs btn-outline-warning" data-bs-toggle="modal" data-bs-target="#editConnModal{{ c.id }}" title="Edit"><i class="bi bi-pencil"></i></button>
@@ -41,34 +44,10 @@
 
   <!-- Edit Modal -->
   <div class="modal fade" id="editConnModal{{ c.id }}" tabindex="-1">
-    <div class="modal-dialog"><div class="modal-content">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content">
       <div class="modal-header"><h5 class="modal-title">Sửa: {{ c.name }}</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
-      <form action="/api-connections/{{ c.id }}/edit" method="post">
-        <div class="modal-body">
-          <div class="mb-3"><label class="form-label">Tên *</label><input type="text" name="name" class="form-control" value="{{ c.name }}" required></div>
-          <div class="mb-3"><label class="form-label">Base URL *</label><input type="text" name="base_url" class="form-control" value="{{ c.base_url }}" required></div>
-          <div class="mb-3"><label class="form-label">API Key (để trống nếu không thay đổi)</label><input type="password" name="api_key" class="form-control" placeholder="Nhập key mới..."></div>
-          <div class="mb-3"><label class="form-label">Loại xác thực</label>
-            <select name="auth_type" class="form-select">
-              <option value="x_api_key" {% if c.auth_type.value=='x_api_key' %}selected{% endif %}>X-API-Key</option>
-              <option value="bearer" {% if c.auth_type.value=='bearer' %}selected{% endif %}>Bearer Token</option>
-            </select>
-          </div>
-          <div class="mb-3"><label class="form-label">Loại API</label>
-            <select name="api_type" class="form-select" onchange="applyApiTypeDefaults(this)">
-              <option value="zampto_standard" {% if c.api_type.value=='zampto_standard' %}selected{% endif %}>Zampto Standard</option>
-              <option value="custom" {% if c.api_type.value=='custom' %}selected{% endif %}>Custom</option>
-              <option value="canboso_market" {% if c.api_type.value=='canboso_market' %}selected{% endif %}>CanBoSo Market</option>
-            </select>
-          </div>
-          <div class="mb-3"><label class="form-label">Sync mỗi (phút)</label><input type="number" name="sync_interval_minutes" class="form-control" value="{{ c.sync_interval_minutes }}" min="1"></div>
-          <div class="mb-3"><label class="form-label">Trạng thái</label>
-            <select name="is_active" class="form-select">
-              <option value="true" {% if c.is_active %}selected{% endif %}>Active</option>
-              <option value="false" {% if not c.is_active %}selected{% endif %}>Inactive</option>
-            </select>
-          </div>
-        </div>
+      <form action="/api-connections/{{ c.id }}/edit" method="post" class="conn-form">
+        {% include "_api_connection_form_fields.html" with context %}
         <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button><button type="submit" class="btn btn-primary">Lưu</button></div>
       </form>
     </div></div>
@@ -82,37 +61,17 @@
 <div class="position-fixed bottom-0 end-0 p-3" style="z-index:9999">
   <div id="apiToast" class="toast" role="alert">
     <div class="toast-header"><strong class="me-auto" id="toastTitle">Kết quả</strong><button type="button" class="btn-close" data-bs-dismiss="toast"></button></div>
-    <div class="toast-body" id="toastBody"></div>
+    <div class="toast-body" id="toastBody" style="white-space:pre-wrap; max-height:300px; overflow:auto;"></div>
   </div>
 </div>
 
 <!-- Add Connection Modal -->
 <div class="modal fade" id="addConnModal" tabindex="-1">
-  <div class="modal-dialog"><div class="modal-content">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content">
     <div class="modal-header"><h5 class="modal-title">Thêm kết nối API</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
-    <form action="/api-connections/add" method="post">
-      <div class="modal-body">
-        <div class="mb-3"><label class="form-label">Tên *</label><input type="text" name="name" class="form-control" required></div>
-        <div class="mb-3"><label class="form-label">Base URL *</label><input type="text" name="base_url" class="form-control" placeholder="https://api.example.com" required></div>
-        <div class="mb-3"><label class="form-label">API Key</label><input type="password" name="api_key" class="form-control"></div>
-        <div class="mb-3"><label class="form-label">Loại xác thực</label>
-          <select name="auth_type" class="form-select">
-            <option value="x_api_key">X-API-Key</option>
-            <option value="bearer">Bearer Token</option>
-          </select>
-        </div>
-        <div class="mb-3"><label class="form-label">Loại API</label>
-          <select name="api_type" class="form-select" onchange="applyApiTypeDefaults(this)">
-            <option value="zampto_standard">Zampto Standard</option>
-            <option value="custom">Custom</option>
-            <option value="canboso_market">CanBoSo Market</option>
-          </select>
-        </div>
-        <div class="mb-3"><label class="form-label">Sync mỗi (phút)</label><input type="number" name="sync_interval_minutes" class="form-control" value="60" min="1"></div>
-        <div class="mb-3"><label class="form-label">Trạng thái</label>
-          <select name="is_active" class="form-select"><option value="true">Active</option><option value="false">Inactive</option></select>
-        </div>
-      </div>
+    <form action="/api-connections/add" method="post" class="conn-form">
+      {% set c = None %}
+      {% include "_api_connection_form_fields.html" with context %}
       <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button><button type="submit" class="btn btn-primary">Thêm</button></div>
     </form>
   </div></div>
@@ -120,26 +79,32 @@
 {% endblock %}
 {% block scripts %}
 <script>
+const PRESETS = {{ presets | tojson }};
+
 function showToast(title, body, success) {
   document.getElementById('toastTitle').textContent = title;
-  document.getElementById('toastBody').textContent = body;
+  document.getElementById('toastBody').textContent = typeof body === 'string' ? body : JSON.stringify(body, null, 2);
   const t = document.getElementById('apiToast');
   t.className = 'toast border-' + (success ? 'success' : 'danger');
   bootstrap.Toast.getOrCreateInstance(t).show();
 }
-const API_TYPE_DEFAULTS = {
-  canboso_market: { base_url: 'https://canboso.com/api/public/market', auth_type: 'x_api_key' },
-};
+
 function applyApiTypeDefaults(select) {
-  const defaults = API_TYPE_DEFAULTS[select.value];
-  if (!defaults) return;
+  const preset = PRESETS[select.value];
   const form = select.closest('form');
   if (!form) return;
-  const baseUrlInput = form.querySelector('input[name="base_url"]');
+  if (!preset) return;
+  for (const [key, value] of Object.entries(preset)) {
+    const el = form.querySelector(`[name="${key}"]`);
+    if (!el) continue;
+    // Never clobber a value the admin already typed for this field.
+    if (el.value) continue;
+    el.value = value;
+  }
   const authTypeSelect = form.querySelector('select[name="auth_type"]');
-  if (baseUrlInput && !baseUrlInput.value) baseUrlInput.value = defaults.base_url;
-  if (authTypeSelect) authTypeSelect.value = defaults.auth_type;
+  if (authTypeSelect && preset.auth_type) authTypeSelect.value = preset.auth_type;
 }
+
 async function testConn(id, btn) {
   btn.disabled = true;
   const r = await fetch(`/api-connections/${id}/test`, {method:'POST'});
@@ -147,6 +112,31 @@ async function testConn(id, btn) {
   btn.disabled = false;
   showToast('Test kết nối', d.message + (d.latency_ms ? ` (${d.latency_ms}ms)` : ''), d.success);
 }
+
+async function previewReq(id, btn) {
+  btn.disabled = true;
+  const r = await fetch(`/api-connections/${id}/preview-request`, {method:'POST'});
+  const d = await r.json();
+  btn.disabled = false;
+  showToast('Request preview', d, d.success !== false);
+}
+
+async function previewResp(id, btn) {
+  btn.disabled = true;
+  const r = await fetch(`/api-connections/${id}/preview-response`, {method:'POST'});
+  const d = await r.json();
+  btn.disabled = false;
+  showToast('Response preview', d, d.success);
+}
+
+async function syncOne(id, btn) {
+  btn.disabled = true;
+  const r = await fetch(`/api-connections/${id}/sync-one`, {method:'POST'});
+  const d = await r.json();
+  btn.disabled = false;
+  showToast('Đồng bộ thử 1 sản phẩm', d.message, d.success);
+}
+
 async function getBalance(id, btn) {
   btn.disabled = true;
   const r = await fetch(`/api-connections/${id}/balance`, {method:'POST'});
