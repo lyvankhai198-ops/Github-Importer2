@@ -15,3 +15,4 @@
 - [Two distinct restock-notify audiences](restock-notify-audiences.md) — don't conflate paid_waiting_stock buyers with a browsing "notify me" opt-in list; they're different users needing different triggers
 - [Wallet ledger & atomicity design](wallet-ledger-design.md) — wallet balance mutations always go through wallet_service credit/debit (BEGIN IMMEDIATE lock + Decimal quantize); never write wallet_vnd/usdt directly
 - [Customer programmatic API design](customer-programmatic-api.md) — HMAC key hashing, SQLite partial-unique-index idempotency, log-table rate limiting, ASGI middleware logging, atomic API-order debit
+- [CanBoSo Market integration](canboso-market-integration.md) — account-vs-slot item type is a source-column, not a Product column; slot purchases need their own OrderStatus + synthetic buyer email
