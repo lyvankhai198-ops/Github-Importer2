@@ -161,6 +161,10 @@ async def start_bot(request: Request, db: Session = Depends(get_db)):
     token = decrypt(cfg.bot_token_encrypted) if cfg.bot_token_encrypted else ""
     if not token:
         return JSONResponse({"success": False, "message": "Chưa cấu hình token bot"})
+    # Persist intent: an admin-requested start means the bot should also come
+    # back up automatically the next time the web app boots.
+    cfg.is_enabled = True
+    db.commit()
     import asyncio
     asyncio.create_task(bot_manager.start_bot(token))
     return JSONResponse({"success": True, "message": "Bot đang khởi động..."})
@@ -170,6 +174,9 @@ async def start_bot(request: Request, db: Session = Depends(get_db)):
 async def stop_bot(request: Request, db: Session = Depends(get_db)):
     if not check_auth(request):
         return JSONResponse({"success": False, "message": "Unauthorized"}, status_code=401)
+    cfg = get_or_create_bot_config(db)
+    cfg.is_enabled = False
+    db.commit()
     await bot_manager.stop_bot()
     return JSONResponse({"success": True, "message": "Bot đã dừng"})
 
@@ -182,6 +189,8 @@ async def restart_bot(request: Request, db: Session = Depends(get_db)):
     token = decrypt(cfg.bot_token_encrypted) if cfg.bot_token_encrypted else ""
     if not token:
         return JSONResponse({"success": False, "message": "Chưa cấu hình token bot"})
+    cfg.is_enabled = True
+    db.commit()
     import asyncio
     asyncio.create_task(bot_manager.restart_bot(token))
     return JSONResponse({"success": True, "message": "Bot đang khởi động lại..."})
