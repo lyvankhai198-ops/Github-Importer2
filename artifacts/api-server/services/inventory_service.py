@@ -345,7 +345,12 @@ async def _try_deliver_items(order: Order, product: Product, items: list, db: Se
         if not bot_manager.is_running():
             return False
         from services.normalize import format_delivery_message
+        from services.payment_service import cleanup_payment_qr
         import json as _json
+
+        # The invoice is about to be sent — safe to remove the QR/instruction
+        # message now (payment_status is already paid/overpaid at this point).
+        await cleanup_payment_qr(bot_manager._application.bot, order, db)
 
         delivery_items = [
             {
@@ -399,11 +404,13 @@ async def _notify_inventory_waiting_stock(order: Order, db: Session):
             return
         from bot.notifier import notify_user_paid_waiting_stock, notify_admin_paid_waiting_stock
         from bot.i18n import get_user_lang
+        from services.payment_service import cleanup_payment_qr
         cfg = _get_bot_config(db)
         admin_id = cfg.admin_telegram_id if cfg else ""
         bot = bot_manager._application.bot
         lang = get_user_lang(db, order.telegram_user_id)
         chat_id = order.payment_chat_id or order.telegram_user_id
+        await cleanup_payment_qr(bot, order, db)
         await notify_user_paid_waiting_stock(bot, chat_id, order, lang=lang)
         if admin_id:
             await notify_admin_paid_waiting_stock(bot, order, admin_id)
@@ -432,9 +439,11 @@ async def _notify_inventory_delivery_failed(order: Order, db: Session):
         from services.bot_service import bot_manager
         if not bot_manager.is_running():
             return
+        from services.payment_service import cleanup_payment_qr
         cfg = _get_bot_config(db)
         admin_id = cfg.admin_telegram_id if cfg else ""
         bot = bot_manager._application.bot
+        await cleanup_payment_qr(bot, order, db)
         product_name = order.product.name if order.product else str(order.product_id)
         if admin_id:
             import html

@@ -138,6 +138,80 @@ async def _scan_bep20_via_rpc(
     logger.debug("[bep20] RPC fallback scan (limited — configure BSCScan API key for full coverage)")
 
 
+# ── ERC20 (Ethereum mainnet) ────────────────────────────────────────────────────
+
+async def _check_erc20_transfers(cfg: dict, db) -> None:
+    """Scan ERC20 USDT transfers to the configured wallet (via Etherscan)."""
+    wallet = (cfg.get("wallet_address") or "").strip().lower()
+    contract = (cfg.get("usdt_contract") or "").strip().lower()
+    etherscan_key = cfg.get("etherscan_api_key") or ""
+    required_conf = int(cfg.get("required_confirmations") or 12)
+
+    if not wallet or not contract or not etherscan_key:
+        return
+
+    from models import Order, OrderStatus, PaymentStatus
+
+    pending = (
+        db.query(Order)
+        .filter(
+            Order.payment_network == "ERC20",
+            Order.payment_status.in_([
+                PaymentStatus.pending.value,
+                PaymentStatus.detected.value,
+                PaymentStatus.confirming.value,
+            ]),
+            Order.status.in_([OrderStatus.pending_payment.value]),
+        )
+        .all()
+    )
+    if not pending:
+        return
+
+    try:
+        import httpx
+        url = (
+            f"https://api.etherscan.io/api?module=account&action=tokentx"
+            f"&contractaddress={contract}&address={wallet}"
+            f"&sort=desc&apikey={etherscan_key}&page=1&offset=100"
+        )
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.get(url)
+        data = r.json()
+        if data.get("status") != "1":
+            return
+        txs = data.get("result", [])
+        for tx in txs:
+            if tx.get("to", "").lower() != wallet:
+                continue
+            if tx.get("contractAddress", "").lower() != contract:
+                continue
+            decimals = int(tx.get("tokenDecimal") or 18)
+            amount = int(tx.get("value") or 0) / (10 ** decimals)
+            txid = tx.get("hash", "")
+            block = int(tx.get("blockNumber") or 0)
+            log_index = int(tx.get("transactionIndex") or 0)
+            confs = int(tx.get("confirmations") or 0)
+            await _process_crypto_tx(
+                db=db,
+                network="ERC20",
+                txid=txid,
+                log_index=log_index,
+                from_addr=tx.get("from", ""),
+                to_addr=wallet,
+                amount=amount,
+                block_number=block,
+                confirmations=confs,
+                required_confirmations=required_conf,
+                token_symbol="USDT",
+                token_contract=contract,
+                pending_orders=pending,
+                raw=tx,
+            )
+    except Exception as e:
+        logger.error(f"[erc20] etherscan scan error: {e}")
+
+
 # ── TRC20 ──────────────────────────────────────────────────────────────────────
 
 async def _check_trc20_transfers(cfg: dict, db) -> None:
@@ -410,6 +484,189 @@ async def _check_binance_pending(cfg: dict, db) -> None:
             logger.error(f"[binance_merchant] poll error for {order.order_code}: {e}")
 
 
+# ── Manual TXID verification (shopper-submitted) ───────────────────────────────
+
+async def _fetch_single_tx(network: str, txid: str, cfg: dict, wallet: str, contract: str) -> dict | None:
+    """
+    Look up ONE specific transaction by hash on-chain (rather than scanning a
+    list of recent transfers). Returns a normalized dict or None if not found.
+    """
+    try:
+        import httpx
+        if network in ("BEP20", "ERC20"):
+            if network == "BEP20":
+                base = "https://api.bscscan.com/api"
+                api_key = cfg.get("bscscan_api_key") or ""
+            else:
+                base = "https://api.etherscan.io/api"
+                api_key = cfg.get("etherscan_api_key") or ""
+            url = f"{base}?module=account&action=tokentx&address={wallet}&sort=desc&apikey={api_key}&page=1&offset=200"
+            if contract:
+                url += f"&contractaddress={contract}"
+            async with httpx.AsyncClient(timeout=15) as client:
+                r = await client.get(url)
+            data = r.json()
+            if data.get("status") != "1":
+                return None
+            for tx in data.get("result", []):
+                if (tx.get("hash") or "").lower() != txid.lower():
+                    continue
+                decimals = int(tx.get("tokenDecimal") or 18)
+                amount = int(tx.get("value") or 0) / (10 ** decimals)
+                return {
+                    "to": tx.get("to", ""),
+                    "from": tx.get("from", ""),
+                    "contract": tx.get("contractAddress", ""),
+                    "amount": amount,
+                    "block_number": int(tx.get("blockNumber") or 0),
+                    "confirmations": int(tx.get("confirmations") or 0),
+                    "log_index": int(tx.get("transactionIndex") or 0),
+                    "raw": tx,
+                }
+            return None
+
+        if network == "TRC20":
+            headers = {}
+            trongrid_key = cfg.get("trongrid_api_key") or ""
+            if trongrid_key:
+                headers["TRON-PRO-API-KEY"] = trongrid_key
+            url = f"https://api.trongrid.io/v1/accounts/{wallet}/transactions/trc20"
+            params = {"limit": 200, "only_to": "true"}
+            if contract:
+                params["contract_address"] = contract
+            async with httpx.AsyncClient(timeout=15, headers=headers) as client:
+                r = await client.get(url, params=params)
+            if r.status_code != 200:
+                return None
+            data = r.json()
+            for tx in data.get("data", []):
+                tx_id = tx.get("transaction_id") or tx.get("txID") or ""
+                if tx_id.lower() != txid.lower():
+                    continue
+                token_info = tx.get("token_info") or {}
+                decimals = int(token_info.get("decimals") or 6)
+                amount = int(tx.get("value") or 0) / (10 ** decimals)
+                return {
+                    "to": tx.get("to") or "",
+                    "from": tx.get("from") or "",
+                    "contract": token_info.get("address", ""),
+                    "amount": amount,
+                    "block_number": int(tx.get("block_timestamp") or 0),
+                    "confirmations": 20 if tx.get("confirmed") else 0,
+                    "log_index": 0,
+                    "raw": tx,
+                }
+            return None
+    except Exception as e:
+        logger.error(f"[{network}] _fetch_single_tx error: {e}")
+        return None
+    return None
+
+
+async def verify_txid_for_order(db, order, txid: str) -> dict:
+    """
+    Full verification checklist run when a shopper pastes a TXID by hand.
+    Checks — in order, each with a specific failure reason so the exact
+    problem can be surfaced to the shopper:
+      1. order is still pending_payment / not already paid or delivered
+      2. network is one we support (BEP20 / TRC20 / ERC20)
+      3. the wallet/contract config for that network is present
+      4. the txid hasn't already been used to pay a *different* order
+      5. the transaction actually exists on-chain (implies it succeeded —
+         failed transfers never emit a Transfer event / never appear in the
+         token-transfer list used here)
+      6. destination wallet matches the configured receiving address
+      7. token contract matches the configured USDT contract
+      8. amount matches the order's expected (unique) USDT amount
+      9. required confirmation depth is reached — if not, reports progress
+         instead of delivering
+    On success, delegates to the same idempotent _process_crypto_tx() path
+    used by the background monitors, which sets payment_status=paid and
+    schedules fulfillment exactly once.
+    Returns: {"ok": bool, "reason": str, ...extra context...}
+    """
+    from models import OrderStatus, PaymentStatus, CryptoTransaction
+
+    txid = (txid or "").strip()
+    if not txid:
+        return {"ok": False, "reason": "empty"}
+
+    sv = order.status.value if hasattr(order.status, "value") else str(order.status)
+    if sv != "pending_payment":
+        return {"ok": False, "reason": "order_not_pending"}
+
+    ps = order.payment_status.value if hasattr(order.payment_status, "value") else str(order.payment_status or "")
+    if ps in ("paid", "overpaid"):
+        return {"ok": False, "reason": "already_paid"}
+
+    network = order.payment_network
+    if network not in ("BEP20", "TRC20", "ERC20"):
+        return {"ok": False, "reason": "unsupported_network"}
+
+    method_code = {"BEP20": "usdt_bep20", "TRC20": "usdt_trc20", "ERC20": "usdt_erc20"}[network]
+    cfg = _get_pm_config(db, method_code)
+    if not cfg:
+        return {"ok": False, "reason": "config_missing"}
+
+    wallet = (cfg.get("wallet_address") or "").strip().lower() if network != "TRC20" else (cfg.get("wallet_address") or "").strip()
+    contract = (cfg.get("usdt_contract") or "").strip().lower() if network != "TRC20" else (cfg.get("usdt_contract") or "").strip()
+    if not wallet:
+        return {"ok": False, "reason": "config_missing"}
+    required_conf = order.required_confirmations or int(cfg.get("required_confirmations") or 12)
+
+    # Guard: txid already used to pay a DIFFERENT (or already-confirmed) order.
+    dup = db.query(CryptoTransaction).filter(
+        CryptoTransaction.network == network, CryptoTransaction.txid == txid,
+    ).first()
+    if dup and dup.status == "confirmed" and dup.matched_order_id != order.id:
+        return {"ok": False, "reason": "txid_reused"}
+
+    tx = await _fetch_single_tx(network, txid, cfg, wallet, contract)
+    if not tx:
+        return {"ok": False, "reason": "not_found"}
+
+    to_addr = (tx.get("to") or "")
+    to_cmp = to_addr.lower() if network != "TRC20" else to_addr
+    if to_cmp != wallet:
+        return {"ok": False, "reason": "wrong_wallet"}
+
+    if contract:
+        tx_contract = (tx.get("contract") or "")
+        tx_contract_cmp = tx_contract.lower() if network != "TRC20" else tx_contract
+        if tx_contract_cmp != contract:
+            return {"ok": False, "reason": "wrong_token"}
+
+    expected = order.expected_crypto_amount or 0
+    amount = tx.get("amount") or 0
+    if abs(float(expected) - float(amount)) >= 0.0002:
+        return {"ok": False, "reason": "amount_mismatch", "amount": amount, "expected": expected}
+
+    confirmations = tx.get("confirmations") or 0
+
+    await _process_crypto_tx(
+        db=db,
+        network=network,
+        txid=txid,
+        log_index=tx.get("log_index", 0),
+        from_addr=tx.get("from", ""),
+        to_addr=to_addr,
+        amount=amount,
+        block_number=tx.get("block_number", 0),
+        confirmations=confirmations,
+        required_confirmations=required_conf,
+        token_symbol="USDT",
+        token_contract=contract,
+        pending_orders=[order],
+        raw=tx.get("raw", {}),
+    )
+
+    db.refresh(order)
+    new_ps = order.payment_status.value if hasattr(order.payment_status, "value") else str(order.payment_status or "")
+    if new_ps in ("paid", "overpaid"):
+        return {"ok": True, "reason": "confirmed"}
+    return {"ok": False, "reason": "insufficient_confirmations", "confirmations": confirmations, "required": required_conf}
+
+
 # ── Late payment: detect crypto received after expiry ─────────────────────────
 
 async def _check_late_crypto_payments(db) -> None:
@@ -422,7 +679,7 @@ async def _check_late_crypto_payments(db) -> None:
         db.query(Order)
         .filter(
             Order.status == OrderStatus.payment_expired,
-            Order.payment_network.in_(["BEP20", "TRC20"]),
+            Order.payment_network.in_(["BEP20", "TRC20", "ERC20"]),
             Order.payment_status != PaymentStatus.late_payment,
         )
         .all()
@@ -503,6 +760,29 @@ async def trc20_monitor_loop():
                 db.close()
         except Exception as e:
             logger.error(f"[trc20] loop error: {e}")
+            interval = 60
+        await asyncio.sleep(interval)
+
+
+async def erc20_monitor_loop():
+    """Background loop: check ERC20 (Ethereum) USDT transfers every N seconds."""
+    logger.info("[erc20] monitor loop started")
+    while True:
+        try:
+            from database import SessionLocal
+            db = SessionLocal()
+            try:
+                cfg = _get_pm_config(db, "usdt_erc20")
+                if cfg:
+                    interval = int(cfg.get("poll_interval_seconds") or 30)
+                    await _check_erc20_transfers(cfg, db)
+                    await _check_late_crypto_payments(db)
+                else:
+                    interval = 60
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"[erc20] loop error: {e}")
             interval = 60
         await asyncio.sleep(interval)
 

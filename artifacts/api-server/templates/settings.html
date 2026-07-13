@@ -17,6 +17,7 @@
   <li class="nav-item"><button class="nav-link {% if active_tab == 'binance' %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#tabBinance">🟡 Binance Pay</button></li>
   <li class="nav-item"><button class="nav-link {% if active_tab == 'bep20' %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#tabBep20">🟨 BEP20</button></li>
   <li class="nav-item"><button class="nav-link {% if active_tab == 'trc20' %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#tabTrc20">🔴 TRC20</button></li>
+  <li class="nav-item"><button class="nav-link {% if active_tab == 'erc20' %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#tabErc20">🔵 ERC20</button></li>
   <li class="nav-item"><button class="nav-link {% if active_tab == 'exchange_rate' %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#tabExchangeRate">💱 Tỉ giá</button></li>
   <li class="nav-item"><button class="nav-link {% if active_tab == 'order' %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#tabOrder">📦 Đơn hàng</button></li>
   <li class="nav-item"><button class="nav-link {% if active_tab == 'api' %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#tabApi">🔗 API</button></li>
@@ -536,6 +537,77 @@
     </div>
   </div>
 
+  <!-- USDT ERC20 Tab -->
+  <div class="tab-pane fade {% if active_tab == 'erc20' %}show active{% endif %}" id="tabErc20">
+    <div class="row g-3">
+      <div class="col-12 col-lg-7">
+        <div class="card mb-3">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <h6 class="mb-0">🔵 USDT ERC20 (Ethereum)</h6>
+            <span class="badge bg-secondary" id="erc20Badge">Đang tải...</span>
+          </div>
+          <form action="/settings/payment-method/erc20" method="post">
+            <div class="card-body">
+              <div class="mb-3 form-check form-switch">
+                <input class="form-check-input" type="checkbox" name="is_enabled" id="erc20Enabled">
+                <label class="form-check-label fw-semibold" for="erc20Enabled">Bật USDT ERC20</label>
+              </div>
+              <div class="mb-3">
+                <label class="form-label">Địa chỉ ví Ethereum <span class="text-danger">*</span></label>
+                <input type="text" name="wallet_address" id="erc20Wallet" class="form-control font-monospace" placeholder="0x...">
+                <small class="text-muted">Nhận USDT qua mạng Ethereum (ERC20)</small>
+              </div>
+              <div class="mb-3">
+                <label class="form-label">USDT Contract Address</label>
+                <input type="text" name="usdt_contract" id="erc20Contract" class="form-control font-monospace"
+                       value="0xdAC17F958D2ee523a2206206994597C13D831ec7">
+                <small class="text-muted">Mặc định: USDT ERC20 chính thức</small>
+              </div>
+              <div class="mb-3">
+                <label class="form-label">Etherscan API Key</label>
+                <div class="input-group">
+                  <input type="password" name="etherscan_api_key" id="etherscanKey" class="form-control" placeholder="••••••••">
+                  <button type="button" class="btn btn-outline-secondary" onclick="togglePass('etherscanKey',this)"><i class="bi bi-eye"></i></button>
+                </div>
+                <small class="text-muted">Lấy tại <a href="https://etherscan.io/myapikey" target="_blank">etherscan.io</a> (miễn phí)</small>
+              </div>
+              <div class="row g-3">
+                <div class="col-sm-4">
+                  <label class="form-label">Xác nhận cần</label>
+                  <input type="number" name="required_confirmations" class="form-control" value="12" min="1" id="erc20Confs">
+                </div>
+                <div class="col-sm-4">
+                  <label class="form-label">Poll mỗi (giây)</label>
+                  <input type="number" name="poll_interval_seconds" class="form-control" value="30" min="15" id="erc20Poll">
+                </div>
+                <div class="col-sm-4">
+                  <label class="form-label">Hết hạn (phút)</label>
+                  <input type="number" name="timeout_minutes" class="form-control" value="60" min="15" id="erc20Timeout">
+                </div>
+              </div>
+            </div>
+            <div class="card-footer"><button type="submit" class="btn btn-primary">💾 Lưu USDT ERC20</button></div>
+          </form>
+        </div>
+      </div>
+      <div class="col-12 col-lg-5">
+        <div class="card">
+          <div class="card-header"><h6 class="mb-0">ℹ️ Hướng dẫn ERC20</h6></div>
+          <div class="card-body small">
+            <p>Hệ thống sẽ tự động theo dõi USDT đến địa chỉ ví của bạn trên Ethereum.</p>
+            <p><strong>Ghi chú quan trọng:</strong></p>
+            <ul>
+              <li>Phí gas Ethereum thường cao hơn BEP20/TRC20 — phù hợp cho đơn giá trị lớn</li>
+              <li>Etherscan API Key là bắt buộc để quét giao dịch</li>
+              <li>Cần ít nhất <strong>12 confirmations</strong> Ethereum ≈ ~3 phút</li>
+            </ul>
+            <div id="erc20CurrentConfig" class="mt-2"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Exchange Rate Tab -->
   <div class="tab-pane fade {% if active_tab == 'exchange_rate' %}show active{% endif %}" id="tabExchangeRate">
     <div class="row g-3">
@@ -829,6 +901,22 @@ document.querySelector('[data-bs-target="#tabTrc20"]')?.addEventListener('shown.
   if (cfg.timeout_minutes) document.getElementById('trc20Timeout').value = cfg.timeout_minutes;
 });
 
+// Load ERC20 config when tab shown
+document.querySelector('[data-bs-target="#tabErc20"]')?.addEventListener('shown.bs.tab', async () => {
+  const d = await loadPaymentMethodConfig('usdt_erc20');
+  if (!d) return;
+  const badge = document.getElementById('erc20Badge');
+  badge.textContent = d.is_active ? 'Đang bật' : 'Đang tắt';
+  badge.className = `badge ${d.is_active ? 'bg-success' : 'bg-secondary'}`;
+  document.getElementById('erc20Enabled').checked = d.is_active;
+  const cfg = d.config || {};
+  if (cfg.wallet_address) document.getElementById('erc20Wallet').value = cfg.wallet_address;
+  if (cfg.usdt_contract) document.getElementById('erc20Contract').value = cfg.usdt_contract;
+  if (cfg.required_confirmations) document.getElementById('erc20Confs').value = cfg.required_confirmations;
+  if (cfg.poll_interval_seconds) document.getElementById('erc20Poll').value = cfg.poll_interval_seconds;
+  if (cfg.timeout_minutes) document.getElementById('erc20Timeout').value = cfg.timeout_minutes;
+});
+
 // Load exchange rate config when tab shown
 document.querySelector('[data-bs-target="#tabExchangeRate"]')?.addEventListener('shown.bs.tab', async () => {
   const r = await fetch('/api/exchange-rate');
@@ -898,6 +986,13 @@ async function previewRate() {
       document.getElementById('trc20Enabled').checked = d.is_active;
       const cfg = d.config || {};
       if (cfg.wallet_address) document.getElementById('trc20Wallet').value = cfg.wallet_address;
+    }
+  } else if (tab === 'erc20') {
+    const d = await loadPaymentMethodConfig('usdt_erc20');
+    if (d) {
+      document.getElementById('erc20Enabled').checked = d.is_active;
+      const cfg = d.config || {};
+      if (cfg.wallet_address) document.getElementById('erc20Wallet').value = cfg.wallet_address;
     }
   }
 })();

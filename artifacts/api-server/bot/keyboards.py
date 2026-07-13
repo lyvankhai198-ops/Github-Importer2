@@ -110,9 +110,10 @@ def payment_method_keyboard(order_id: int, enabled_methods: list, lang: str = "v
         "binance_pay":    ("btn_binance_pay",     f"pay_method:{order_id}:binance_pay"),
         "usdt_bep20":     ("btn_usdt_bep20",      f"pay_method:{order_id}:usdt_bep20"),
         "usdt_trc20":     ("btn_usdt_trc20",      f"pay_method:{order_id}:usdt_trc20"),
+        "usdt_erc20":     ("btn_usdt_erc20",      f"pay_method:{order_id}:usdt_erc20"),
     }
     rows = []
-    for code in ["bank_transfer", "binance_pay", "usdt_bep20", "usdt_trc20"]:
+    for code in ["bank_transfer", "binance_pay", "usdt_bep20", "usdt_trc20", "usdt_erc20"]:
         if code in enabled_methods:
             label_key, callback = METHOD_BUTTONS[code]
             rows.append([InlineKeyboardButton(t(lang, label_key), callback_data=callback)])
@@ -142,6 +143,10 @@ def payment_keyboard(order_id: int, support_username: str = "", lang: str = "vi"
 def binance_manual_keyboard(order_id: int, support_username: str = "", lang: str = "vi") -> InlineKeyboardMarkup:
     """Keyboard for Binance Pay Manual payment."""
     rows = [
+        [
+            InlineKeyboardButton(t(lang, "btn_copy_payid"), callback_data=f"copy_payid:{order_id}"),
+            InlineKeyboardButton(t(lang, "btn_copy_amount"), callback_data=f"copy_amt:{order_id}"),
+        ],
         [InlineKeyboardButton(t(lang, "btn_check_payment"), callback_data=f"check_payment:{order_id}")],
         [InlineKeyboardButton(t(lang, "btn_cancel_pending"), callback_data=f"cancel_pending:{order_id}")],
     ]
@@ -165,8 +170,13 @@ def binance_merchant_keyboard(order_id: int, checkout_url: str = "", support_use
 
 
 def crypto_payment_keyboard(order_id: int, support_username: str = "", lang: str = "vi") -> InlineKeyboardMarkup:
-    """Keyboard shown with crypto payment instructions."""
+    """Keyboard shown with crypto (BEP20/TRC20/ERC20) payment instructions."""
     rows = [
+        [
+            InlineKeyboardButton(t(lang, "btn_copy_address"), callback_data=f"copy_addr:{order_id}"),
+            InlineKeyboardButton(t(lang, "btn_copy_amount"), callback_data=f"copy_amt:{order_id}"),
+        ],
+        [InlineKeyboardButton(t(lang, "btn_verify_txid"), callback_data=f"verify_txid:{order_id}")],
         [InlineKeyboardButton(t(lang, "btn_check_payment"), callback_data=f"check_payment:{order_id}")],
         [InlineKeyboardButton(t(lang, "btn_cancel_pending"), callback_data=f"cancel_pending:{order_id}")],
     ]

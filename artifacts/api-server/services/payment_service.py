@@ -604,6 +604,10 @@ async def _deliver_to_user(order: Order, db: Session):
         admin_id = cfg.admin_telegram_id if cfg else ""
         bot = bot_manager._application.bot
 
+        # The order's outcome is about to be sent — safe to remove the QR/instruction
+        # message now (order is guaranteed Paid/Overpaid by process_paid_order's gate).
+        await cleanup_payment_qr(bot, order, db)
+
         sv = order.status.value if hasattr(order.status, "value") else str(order.status)
 
         if sv == "completed":
@@ -634,6 +638,7 @@ async def _notify_paid_api_failed(order: Order, db: Session, reason: str = ""):
         admin_id = cfg.admin_telegram_id if cfg else ""
         bot = bot_manager._application.bot
         from bot.notifier import notify_user_api_failed_after_payment, notify_admin_api_failed_after_payment
+        await cleanup_payment_qr(bot, order, db)
         await notify_user_api_failed_after_payment(bot, order.telegram_user_id, order)
         if admin_id:
             await notify_admin_api_failed_after_payment(bot, order, admin_id, reason)
@@ -653,6 +658,7 @@ async def _notify_paid_waiting_stock(order: Order, db: Session):
         bot = bot_manager._application.bot
         lang = get_user_lang(db, order.telegram_user_id)
         chat_id = order.payment_chat_id or order.telegram_user_id
+        await cleanup_payment_qr(bot, order, db)
         await bot.send_message(
             chat_id=int(chat_id),
             text=t(lang, "paid_waiting_stock_user"),
@@ -685,6 +691,9 @@ async def _notify_admin_manual_needed(order: Order, db: Session):
         cfg = db.query(TelegramBotConfig).first()
         admin_id = cfg.admin_telegram_id if cfg else ""
         bot = bot_manager._application.bot
+        # Payment is confirmed and admin has been handed the order — the QR/
+        # instruction message is no longer needed.
+        await cleanup_payment_qr(bot, order, db)
         if admin_id:
             from bot.notifier import notify_admin_new_payment_pending
             await notify_admin_new_payment_pending(bot, order, admin_id)
@@ -708,20 +717,44 @@ async def safe_delete_message(bot, chat_id, message_id):
 
 
 async def _delete_all_payment_messages(bot, order: Order, db: Session):
+    """Delete the pre-purchase browsing messages (product card, quantity prompt).
+    Does NOT touch the payment QR/instruction message — that one must survive
+    until the order is actually delivered; see cleanup_payment_qr()."""
     chat_id = order.payment_chat_id or order.telegram_user_id
     await safe_delete_message(bot, chat_id, order.product_message_id)
     await safe_delete_message(bot, chat_id, order.quantity_prompt_message_id)
-    await safe_delete_message(bot, chat_id, order.payment_message_id)
     order.product_message_id = None
     order.quantity_prompt_message_id = None
-    order.payment_message_id = None
     db.commit()
+
+
+async def cleanup_payment_qr(bot, order: Order, db: Session):
+    """
+    Delete the payment QR/instruction message.
+
+    Call this ONLY once the order has reached Paid/Overpaid status AND its
+    outcome (delivery + invoice, a paid-but-out-of-stock notice, an API-failed
+    notice, or a manual-handoff notice to the admin) is about to be sent to the
+    user — never on a status-check button press, a regen-QR request, or a
+    timeout while the order is still unpaid.
+    """
+    try:
+        chat_id = order.payment_chat_id or order.telegram_user_id
+        await safe_delete_message(bot, chat_id, order.payment_message_id)
+        order.payment_message_id = None
+        db.commit()
+    except Exception as e:
+        logger.error(f"[payment] cleanup_payment_qr error: {e}")
 
 
 async def _send_payment_confirmed_interim(order: Order, db: Session):
     """
-    After confirming payment: delete all stored messages and send the 'acquiring items'
-    interim message. Called *before* the API buy call.
+    After confirming payment: clean up the pre-purchase browsing messages and
+    edit the existing QR/instruction message in place to show a "confirmed,
+    processing" state. The QR/instruction message itself is intentionally left
+    on screen (not deleted) — it is only removed later, right before the final
+    delivery/invoice or outcome notice is sent (see cleanup_payment_qr()).
+    Called *before* the API buy call.
     """
     try:
         from services.bot_service import bot_manager
@@ -732,10 +765,20 @@ async def _send_payment_confirmed_interim(order: Order, db: Session):
         lang = get_user_lang(db, order.telegram_user_id)
         await _delete_all_payment_messages(bot, order, db)
         chat_id = order.payment_chat_id or order.telegram_user_id
-        await bot.send_message(
-            chat_id=int(chat_id),
-            text=t(lang, "payment_confirmed_interim"),
-        )
+        text = t(lang, "payment_confirmed_interim")
+        msg_id = order.payment_message_id
+        edited = False
+        if msg_id:
+            try:
+                if order.payment_message_type == "photo":
+                    await bot.edit_message_caption(chat_id=int(chat_id), message_id=msg_id, caption=text)
+                else:
+                    await bot.edit_message_text(chat_id=int(chat_id), message_id=msg_id, text=text)
+                edited = True
+            except Exception:
+                edited = False
+        if not edited:
+            await bot.send_message(chat_id=int(chat_id), text=text)
     except Exception as e:
         logger.error(f"[payment] _send_payment_confirmed_interim error: {e}")
 

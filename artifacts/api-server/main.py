@@ -190,6 +190,7 @@ def _seed_payment_methods():
             ("binance_pay",  "🟡 Binance Pay",  "🟡 Binance Pay",  False),
             ("usdt_bep20",   "🟨 USDT BEP20",   "🟨 USDT BEP20",   False),
             ("usdt_trc20",   "🔴 USDT TRC20",   "🔴 USDT TRC20",   False),
+            ("usdt_erc20",   "🔵 USDT ERC20",   "🔵 USDT ERC20",   False),
         ]
         for code, vi, en, active in defaults:
             exists = db.query(PaymentMethod).filter(PaymentMethod.method_code == code).first()
@@ -261,9 +262,12 @@ async def lifespan(app: FastAPI):
     _background_tasks.append(asyncio.create_task(expire_payment_orders_loop()))
 
     # Start crypto monitor workers (each independent — one crash won't affect others)
-    from services.crypto_monitor import bep20_monitor_loop, trc20_monitor_loop, binance_merchant_loop
+    from services.crypto_monitor import (
+        bep20_monitor_loop, trc20_monitor_loop, erc20_monitor_loop, binance_merchant_loop,
+    )
     _background_tasks.append(asyncio.create_task(bep20_monitor_loop()))
     _background_tasks.append(asyncio.create_task(trc20_monitor_loop()))
+    _background_tasks.append(asyncio.create_task(erc20_monitor_loop()))
     _background_tasks.append(asyncio.create_task(binance_merchant_loop()))
 
     # Auto-start the Telegram bot if it's configured + enabled, so it comes

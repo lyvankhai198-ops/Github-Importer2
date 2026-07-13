@@ -709,8 +709,8 @@ async def _setup_crypto_payment(context, db, tg_user, order, lang: str,
                 pass
         return False
 
-    network = "BEP20" if method == "usdt_bep20" else "TRC20"
-    required_conf = int(pm_cfg.get("required_confirmations") or (12 if network == "BEP20" else 20))
+    network = {"usdt_bep20": "BEP20", "usdt_trc20": "TRC20", "usdt_erc20": "ERC20"}[method]
+    required_conf = int(pm_cfg.get("required_confirmations") or (20 if network == "TRC20" else 12))
     timeout = int(pm_cfg.get("timeout_minutes") or 60)
 
     base_usdt, rate = await calculate_crypto_amount(db, order.total_price)
@@ -735,7 +735,7 @@ async def _setup_crypto_payment(context, db, tg_user, order, lang: str,
         amount_line = t(lang, "usdt_bep20_amount", amount=f"{unique_usdt:.4f}")
         warning_line = t(lang, "usdt_bep20_warning")
         order_line = t(lang, "usdt_bep20_order", code=order.order_code)
-    else:
+    elif method == "usdt_trc20":
         title = t(lang, "usdt_trc20_title")
         network_line = t(lang, "usdt_trc20_network")
         token_line = t(lang, "usdt_trc20_token")
@@ -743,6 +743,14 @@ async def _setup_crypto_payment(context, db, tg_user, order, lang: str,
         amount_line = t(lang, "usdt_trc20_amount", amount=f"{unique_usdt:.4f}")
         warning_line = t(lang, "usdt_trc20_warning")
         order_line = t(lang, "usdt_trc20_order", code=order.order_code)
+    else:
+        title = t(lang, "usdt_erc20_title")
+        network_line = t(lang, "usdt_erc20_network")
+        token_line = t(lang, "usdt_erc20_token")
+        addr_line = t(lang, "usdt_erc20_address", address=wallet)
+        amount_line = t(lang, "usdt_erc20_amount", amount=f"{unique_usdt:.4f}")
+        warning_line = t(lang, "usdt_erc20_warning")
+        order_line = t(lang, "usdt_erc20_order", code=order.order_code)
 
     text = "\n".join([title, "", network_line, token_line, "", addr_line, "", amount_line, "", warning_line, "", order_line])
     kbd = crypto_payment_keyboard(order.id, support, lang=lang)
@@ -1242,7 +1250,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await _setup_sepay_payment(context, db, tg_user, order, lang, processing_msg)
             elif method == "binance_pay":
                 await _setup_binance_payment(context, db, tg_user, order, lang, processing_msg)
-            elif method in ("usdt_bep20", "usdt_trc20"):
+            elif method in ("usdt_bep20", "usdt_trc20", "usdt_erc20"):
                 await _setup_crypto_payment(context, db, tg_user, order, lang, method, processing_msg)
             else:
                 try:
@@ -1473,6 +1481,57 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             db.close()
         return
 
+    # ── copy_addr / copy_amt / copy_payid: tap-to-see-and-copy for payment info ──
+    if data.startswith("copy_addr:") or data.startswith("copy_amt:") or data.startswith("copy_payid:"):
+        kind, order_id_str = data.split(":", 1)
+        order_id = int(order_id_str)
+        tg_user = update.effective_user
+        db = SessionLocal()
+        try:
+            lang = _get_lang(db, tg_user.id)
+            order = get_order_by_id(db, order_id)
+            if not order or order.telegram_user_id != str(tg_user.id):
+                await query.answer(t(lang, "order_not_found"), show_alert=True)
+                return
+            if kind == "copy_addr":
+                value = order.payment_address or "—"
+                await query.answer(t(lang, "copy_address_alert", value=value), show_alert=True)
+            elif kind == "copy_amt":
+                amount = order.expected_crypto_amount
+                value = f"{amount:.4f} USDT" if amount else f"{format_vnd(order.total_price)}đ"
+                await query.answer(t(lang, "copy_amount_alert", value=value), show_alert=True)
+            else:  # copy_payid
+                from services.binance_service import get_binance_config
+                bnb_cfg = get_binance_config(db) or {}
+                value = bnb_cfg.get("pay_id") or "—"
+                await query.answer(t(lang, "copy_payid_alert", value=value), show_alert=True)
+        finally:
+            db.close()
+        return
+
+    # ── verify_txid: shopper claims to have paid a crypto order, wants to submit TXID ──
+    if data.startswith("verify_txid:"):
+        order_id = int(data.split(":")[1])
+        tg_user = update.effective_user
+        db = SessionLocal()
+        try:
+            lang = _get_lang(db, tg_user.id)
+            order = get_order_by_id(db, order_id)
+            if not order or order.telegram_user_id != str(tg_user.id):
+                await query.answer(t(lang, "order_not_found"), show_alert=True)
+                return
+            sv = order.status.value if hasattr(order.status, "value") else str(order.status)
+            if sv != "pending_payment" or order.payment_network not in ("BEP20", "TRC20", "ERC20"):
+                await query.answer(t(lang, "order_not_found"), show_alert=True)
+                return
+            context.user_data["state"] = "waiting_txid"
+            context.user_data["txid_order_id"] = order_id
+            await query.answer()
+            await context.bot.send_message(chat_id=tg_user.id, text=t(lang, "waiting_txid_prompt"))
+        finally:
+            db.close()
+        return
+
     # ── view_order ──
     if data.startswith("view_order:"):
         order_id = int(data.split(":")[1])
@@ -1563,6 +1622,58 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text_in = update.message.text or ""
     if text_in in ("🌐 Ngôn ngữ", "🌐 Language"):
         await update.message.reply_text(t("vi", "choose_lang"), reply_markup=language_keyboard())
+        return
+
+    if state == "waiting_txid":
+        order_id = context.user_data.get("txid_order_id")
+        txid = (update.message.text or "").strip()
+        context.user_data.pop("state", None)
+        context.user_data.pop("txid_order_id", None)
+
+        if not order_id:
+            return
+
+        checking_msg = await update.message.reply_text(t(lang, "txid_checking"))
+        db = SessionLocal()
+        try:
+            order = get_order_by_id(db, order_id)
+            if not order or order.telegram_user_id != str(update.effective_user.id):
+                await checking_msg.edit_text(t(lang, "order_not_found"))
+                return
+
+            from services.crypto_monitor import verify_txid_for_order
+            result = await verify_txid_for_order(db, order, txid)
+
+            if result.get("ok"):
+                try:
+                    await checking_msg.edit_text(t(lang, "txid_ok_confirmed"))
+                except Exception:
+                    pass
+                return
+
+            reason = result.get("reason", "generic")
+            key = f"txid_fail_{reason}"
+            try:
+                if reason == "insufficient_confirmations":
+                    msg = t(lang, key, confirmations=result.get("confirmations", 0), required=result.get("required", 0))
+                else:
+                    msg = t(lang, key)
+            except Exception:
+                msg = t(lang, "txid_fail_generic")
+
+            from bot.keyboards import crypto_payment_keyboard
+            support = _get_support_username(db)
+            try:
+                await checking_msg.edit_text(msg)
+            except Exception:
+                pass
+            # Let the shopper retry with a different TXID immediately, without
+            # needing to tap "Verify TXID" again.
+            if reason not in ("already_paid", "order_not_pending", "unsupported_network"):
+                context.user_data["state"] = "waiting_txid"
+                context.user_data["txid_order_id"] = order_id
+        finally:
+            db.close()
         return
 
     if state == "waiting_quantity":

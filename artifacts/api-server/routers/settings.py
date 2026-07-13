@@ -407,7 +407,7 @@ def _get_pm(db: Session, code: str):
 async def get_pm_config(request: Request, code: str, db: Session = Depends(get_db)):
     if not check_auth(request):
         return JSONResponse({"success": False}, status_code=401)
-    if code not in ("binance_pay", "usdt_bep20", "usdt_trc20"):
+    if code not in ("binance_pay", "usdt_bep20", "usdt_trc20", "usdt_erc20"):
         return JSONResponse({"success": False, "message": "Unknown method"}, status_code=400)
     from models import PaymentMethod
     pm = db.query(PaymentMethod).filter(PaymentMethod.method_code == code).first()
@@ -567,6 +567,50 @@ async def save_trc20_settings(
     db.commit()
     flash(request, "Cài đặt USDT TRC20 đã được lưu!")
     return RedirectResponse(url="/settings?tab=trc20", status_code=302)
+
+
+@router.post("/settings/payment-method/erc20")
+async def save_erc20_settings(
+    request: Request,
+    db: Session = Depends(get_db),
+    is_enabled: str = Form("off"),
+    wallet_address: str = Form(""),
+    usdt_contract: str = Form(""),
+    etherscan_api_key: str = Form(""),
+    required_confirmations: int = Form(12),
+    poll_interval_seconds: int = Form(30),
+    timeout_minutes: int = Form(60),
+):
+    if not check_auth(request):
+        return RedirectResponse(url="/login", status_code=302)
+    pm = _get_pm(db, "usdt_erc20")
+    pm.is_active = (is_enabled == "on")
+
+    try:
+        existing = json.loads(decrypt(pm.config_encrypted) or "{}") if pm.config_encrypted else {}
+    except Exception:
+        existing = {}
+
+    if not usdt_contract.strip():
+        usdt_contract = "0xdAC17F958D2ee523a2206206994597C13D831ec7"  # Ethereum USDT
+
+    new_cfg = {
+        "wallet_address": wallet_address.strip(),
+        "usdt_contract": usdt_contract.strip().lower(),
+        "required_confirmations": max(1, required_confirmations),
+        "poll_interval_seconds": max(15, poll_interval_seconds),
+        "timeout_minutes": max(15, timeout_minutes),
+    }
+    if etherscan_api_key.strip() and not etherscan_api_key.strip().startswith("*"):
+        new_cfg["etherscan_api_key"] = etherscan_api_key.strip()
+    else:
+        new_cfg["etherscan_api_key"] = existing.get("etherscan_api_key", "")
+
+    pm.config_encrypted = encrypt(json.dumps(new_cfg, ensure_ascii=False))
+    pm.updated_at = datetime.utcnow()
+    db.commit()
+    flash(request, "Cài đặt USDT ERC20 đã được lưu!")
+    return RedirectResponse(url="/settings?tab=erc20", status_code=302)
 
 
 # ── Exchange rate config ──────────────────────────────────────────────────────
