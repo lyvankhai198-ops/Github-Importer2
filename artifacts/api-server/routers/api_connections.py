@@ -6,7 +6,10 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models import ApiConnection, ApiProduct, AuthType, ApiType
 from crypto import encrypt, decrypt, mask_key
-from services.api_service import sync_api_products, test_api_connection, get_api_balance
+from services.api_service import (
+    sync_api_products, test_api_connection, get_api_balance,
+    start_sync_scheduler, stop_sync_scheduler,
+)
 from integrations.manager import api_manager
 
 router = APIRouter()
@@ -60,6 +63,11 @@ async def add_connection(
     )
     db.add(conn)
     db.commit()
+    db.refresh(conn)
+    if conn.is_active:
+        # Start syncing immediately — don't make the admin wait for a full
+        # app restart before the newly added connection begins auto-syncing.
+        start_sync_scheduler(conn.id, conn.sync_interval_minutes)
     flash(request, "Kết nối API đã được thêm!")
     return RedirectResponse(url="/api-connections", status_code=302)
 
@@ -93,6 +101,11 @@ async def edit_connection(
     conn.is_active = (is_active == "true")
     db.commit()
     api_manager.invalidate(conn_id)
+    # Re-apply the live scheduler so an interval change or reactivation takes
+    # effect immediately instead of waiting for the next app restart.
+    stop_sync_scheduler(conn_id)
+    if conn.is_active:
+        start_sync_scheduler(conn_id, conn.sync_interval_minutes)
     flash(request, "Kết nối API đã được cập nhật!")
     return RedirectResponse(url="/api-connections", status_code=302)
 
@@ -130,6 +143,9 @@ async def toggle_connection(conn_id: int, request: Request, db: Session = Depend
         return JSONResponse({"error": "Not found"}, status_code=404)
     conn.is_active = not conn.is_active
     db.commit()
+    stop_sync_scheduler(conn_id)
+    if conn.is_active:
+        start_sync_scheduler(conn_id, conn.sync_interval_minutes)
     return JSONResponse({"is_active": conn.is_active})
 
 
@@ -139,6 +155,7 @@ async def delete_connection(conn_id: int, request: Request, db: Session = Depend
         return RedirectResponse(url="/login", status_code=302)
     conn = db.query(ApiConnection).filter(ApiConnection.id == conn_id).first()
     if conn:
+        stop_sync_scheduler(conn_id)
         db.delete(conn)
         db.commit()
         api_manager.invalidate(conn_id)
