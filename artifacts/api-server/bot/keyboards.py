@@ -171,6 +171,14 @@ def wallet_deposit_method_keyboard(currency: str, enabled_methods: list, lang: s
     return InlineKeyboardMarkup(rows)
 
 
+def wallet_deposit_qr_keyboard(deposit_id: int, lang: str = "vi") -> InlineKeyboardMarkup:
+    """Shown under the VND deposit QR: manual check + cancel."""
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(t(lang, "btn_check_deposit"), callback_data=f"check_deposit:{deposit_id}")],
+        [InlineKeyboardButton(t(lang, "btn_cancel_deposit"), callback_data=f"cancel_deposit:{deposit_id}")],
+    ])
+
+
 def wallet_insufficient_balance_keyboard(order_id: int, lang: str = "vi") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(t(lang, "btn_wallet_deposit"), callback_data="wallet_deposit")],
@@ -271,16 +279,22 @@ def crypto_payment_keyboard(order_id: int, support_username: str = "", lang: str
 
 
 def post_delivery_keyboard(order_id: int, support_username: str = "", lang: str = "vi") -> InlineKeyboardMarkup:
+    """
+    Post-purchase action row: exactly 🛍 Mua tiếp / 📦 Xem đơn / 💬 Hỗ trợ / 🏠 Trang chủ.
+    "Tải lại tài khoản" (re-download) is still reachable via 📦 Xem đơn's own
+    keyboard — no separate button here, per the ĐỢT 2 delivery UI spec.
+    """
     rows = [
-        [InlineKeyboardButton("📦 Xem đơn hàng" if lang == "vi" else "📦 View order", callback_data=f"view_order:{order_id}")],
-        [InlineKeyboardButton("📥 Tải lại tài khoản" if lang == "vi" else "📥 Re-download accounts", callback_data=f"reload_order:{order_id}")],
+        [InlineKeyboardButton("🛍 Mua tiếp" if lang == "vi" else "🛍 Buy more", callback_data="buy_more")],
+        [InlineKeyboardButton("📦 Xem đơn" if lang == "vi" else "📦 View order", callback_data=f"reload_order:{order_id}")],
     ]
     support_row = []
     if support_username:
         support_row.append(
-            InlineKeyboardButton(t(lang, "btn_support"), url=f"https://t.me/{support_username.lstrip('@')}")
+            InlineKeyboardButton("💬 Hỗ trợ" if lang == "vi" else "💬 Support",
+                                 url=f"https://t.me/{support_username.lstrip('@')}")
         )
-    support_row.append(InlineKeyboardButton(t(lang, "btn_home"), callback_data="home"))
+    support_row.append(InlineKeyboardButton("🏠 Trang chủ" if lang == "vi" else "🏠 Home", callback_data="home"))
     rows.append(support_row)
     return InlineKeyboardMarkup(rows)
 

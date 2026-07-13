@@ -13,7 +13,7 @@ from bot.keyboards import (
     binance_keyboard, crypto_payment_keyboard,
     confirm_order_keyboard,
     wallet_menu_keyboard, wallet_deposit_currency_keyboard, wallet_deposit_method_keyboard,
-    wallet_insufficient_balance_keyboard,
+    wallet_insufficient_balance_keyboard, wallet_deposit_qr_keyboard,
     api_menu_keyboard, api_back_keyboard, api_confirm_keyboard, account_info_keyboard,
 )
 from bot.i18n import t, get_user_lang
@@ -32,7 +32,7 @@ from services import wallet_service
 from services import api_client_service
 from services import api_key_service
 from models import (
-    Order, TelegramBotConfig, OrderStatus, PaymentStatus, User,
+    Order, TelegramBotConfig, OrderStatus, PaymentStatus, User, Product,
     WalletCurrency, WalletTxType, WalletDeposit, WalletDepositStatus,
     ApiClient, ApiClientStatus, ApiRequestLog,
 )
@@ -639,7 +639,7 @@ async def _setup_sepay_payment(context, db, tg_user, order, lang: str, processin
         t(lang, "sepay_qty", qty=order.quantity),
         t(lang, "sepay_amount", amount=f"{format_vnd(order.total_price)}"),
         "",
-        t(lang, "sepay_bank", bank=html.escape(sepay.bank_bin)),
+        t(lang, "sepay_bank", bank=html.escape(sepay.bank_name or sepay.bank_bin)),
         t(lang, "sepay_account_number", acc=html.escape(sepay.account_number)),
         t(lang, "sepay_account_name", name=html.escape(sepay.account_name)),
         t(lang, "sepay_content", code=html.escape(order.payment_code)),
@@ -710,7 +710,10 @@ def _get_deposit_payment_display(db, method: str):
         sepay = get_sepay_config(db)
         if not sepay or not sepay.is_enabled or not sepay.account_number or not sepay.bank_bin or not sepay.account_name:
             return None
-        return {"bank": sepay.bank_bin, "acc": sepay.account_number, "acc_name": sepay.account_name}
+        return {
+            "bank": sepay.bank_name or sepay.bank_bin, "bank_bin": sepay.bank_bin,
+            "acc": sepay.account_number, "acc_name": sepay.account_name,
+        }
 
     if method == "binance_pay":
         from services.binance_service import get_binance_config
@@ -1113,6 +1116,157 @@ async def _do_create_order(context, db, tg_user, product_id: int, quantity: int,
         db.commit()
     except Exception as e:
         logger.error(f"[order] could not send payment method selection: {e}")
+
+
+async def _render_product_detail(query, context, db, lang: str, product_id: int):
+    """
+    Render the product-detail card (image/caption + buy button, or the
+    out-of-stock blocking screen) into the given callback query's chat.
+    Shared by the `product:<id>` callback and the post-delivery "🛍 Mua tiếp"
+    button (which opens the newest active product after a resync).
+    """
+    detail = get_product_detail(db, product_id)
+    if not detail:
+        await query.message.edit_text(t(lang, "product_not_found"))
+        return
+    p = detail["product"]
+    sources = detail["sources"]
+
+    # Freshness check — re-sync if stale (>60s)
+    from models import DeliveryMode
+    if p.delivery_mode == DeliveryMode.api_auto:
+        for src in sources:
+            if src.api_product and src.api_product.last_sync_at:
+                age = datetime.utcnow() - src.api_product.last_sync_at
+                if age > timedelta(seconds=60):
+                    from services.api_service import sync_api_products
+                    await sync_api_products(db, src.api_product.api_connection_id)
+                    db.expire_all()
+                    detail = get_product_detail(db, product_id)
+                    if detail:
+                        p = detail["product"]
+                        sources = detail["sources"]
+                    break
+
+    stock_info = get_product_stock_status(product_id, db)
+    stock = stock_info["stock"]
+    status = stock_info["status"]
+
+    # Determine stock text
+    if p.delivery_mode != DeliveryMode.manual_stock and p.delivery_mode != DeliveryMode.api_auto:
+        # manual_admin (and legacy "manual") — no local inventory tracked
+        stock_text = f"🟡 {t(lang, 'product_list_accept_order')}"
+    elif status == "unavailable":
+        stock_text = t(lang, "product_unavailable")
+    elif status == "out_of_stock":
+        stock_text = t(lang, "product_out_of_stock")
+    elif stock > 10:
+        stock_text = t(lang, "product_in_stock", count=stock)
+    else:
+        stock_text = t(lang, "product_low_stock", count=stock)
+
+    min_qty = p.min_quantity or 1
+    api_src = None
+    for src in sources:
+        if src.is_active and src.api_product:
+            api_src = src.api_product
+            break
+
+    from services.normalize import format_usdt, translate_shorthand_to_en
+
+    # Name: use English name if lang=en and available, else fall back
+    # to the Vietnamese name (never show a bare product code).
+    display_name = p.name
+    if lang == "en":
+        if getattr(p, "name_en", None):
+            display_name = p.name_en
+        else:
+            # Defensive fallback — see bot/keyboards.py for why.
+            display_name = translate_shorthand_to_en(p.name)
+
+    detail_icon = (getattr(p, "telegram_icon", None) or "").strip() or "📦"
+    if status in ("out_of_stock", "unavailable"):
+        detail_icon = "❌"
+    lines = [f"{detail_icon} <b>{html.escape(display_name)}</b>\n"]
+    if lang == "en":
+        lines.append(t(lang, "product_price", price=format_usdt(p.price_usdt)))
+    else:
+        lines.append(t(lang, "product_price", price=f"{format_vnd(p.sale_price)}"))
+    lines.append(stock_text)
+    lines.append(t(lang, "product_min_qty", qty=min_qty))
+    if p.duration:
+        dur = translate_shorthand_to_en(p.duration) if lang == "en" else p.duration
+        lines.append(t(lang, "product_duration", val=html.escape(dur)))
+    if p.warranty:
+        warr = translate_shorthand_to_en(p.warranty) if lang == "en" else p.warranty
+        lines.append(t(lang, "product_warranty", val=html.escape(warr)))
+
+    # Description: single source of truth for language-correct
+    # description text — see services.localization. description_en
+    # is generated once (on save, on API sync, or the first time an
+    # English shopper views it) and reused as-is afterwards; English
+    # shoppers NEVER see a fallback to the Vietnamese text.
+    from services.localization import get_localized_product_description
+    external_desc = api_src.external_description if api_src else None
+    desc = get_localized_product_description(p, lang, db=db, external_description=external_desc)
+    if desc:
+        lines.append(t(lang, "product_description", desc=html.escape(desc)))
+
+    text_msg = "\n".join(lines)
+    image_url = p.image_path or (api_src.external_image_url if api_src else None)
+
+    # Out-of-stock: show blocking keyboard
+    if status == "out_of_stock":
+        kb = out_of_stock_keyboard(p.id, lang=lang)
+        full_text = f"{text_msg}\n\n{t(lang, 'out_of_stock_title')}\n{t(lang, 'out_of_stock_body')}"
+        if image_url and image_url.startswith("http"):
+            try:
+                import httpx
+                async with httpx.AsyncClient(timeout=10) as c:
+                    resp = await c.get(image_url)
+                if resp.status_code == 200:
+                    sent = await query.message.reply_photo(
+                        photo=io.BytesIO(resp.content),
+                        caption=full_text[:1024], parse_mode="HTML", reply_markup=kb,
+                    )
+                    context.user_data["product_message_id"] = sent.message_id
+                    await query.message.delete()
+                    return
+            except Exception:
+                pass
+        await query.message.edit_text(full_text, parse_mode="HTML", reply_markup=kb)
+        context.user_data["product_message_id"] = query.message.message_id
+        return
+
+    # Normal detail — show buy button
+    kb = product_detail_keyboard(p.id, lang=lang)
+    if image_url:
+        try:
+            if image_url.startswith("http"):
+                import httpx
+                async with httpx.AsyncClient(timeout=10) as c:
+                    resp = await c.get(image_url)
+                if resp.status_code == 200:
+                    sent = await query.message.reply_photo(
+                        photo=io.BytesIO(resp.content),
+                        caption=text_msg, parse_mode="HTML", reply_markup=kb,
+                    )
+                    context.user_data["product_message_id"] = sent.message_id
+                    await query.message.delete()
+                    return
+            else:
+                sent = await query.message.reply_photo(
+                    photo=open(image_url, "rb"),
+                    caption=text_msg, parse_mode="HTML", reply_markup=kb,
+                )
+                context.user_data["product_message_id"] = sent.message_id
+                await query.message.delete()
+                return
+        except Exception:
+            pass
+
+    sent = await query.message.edit_text(text_msg, parse_mode="HTML", reply_markup=kb)
+    context.user_data["product_message_id"] = query.message.message_id
 
 
 # ── Callback query handler ────────────────────────────────────────────────────
@@ -1582,148 +1736,49 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db = SessionLocal()
         try:
             lang = _get_lang(db, update.effective_user.id)
-            detail = get_product_detail(db, product_id)
-            if not detail:
-                await query.message.edit_text(t(lang, "product_not_found"))
-                return
-            p = detail["product"]
-            sources = detail["sources"]
+            await _render_product_detail(query, context, db, lang, product_id)
+        finally:
+            db.close()
+        return
 
-            # Freshness check — re-sync if stale (>60s)
-            from models import DeliveryMode
-            if p.delivery_mode == DeliveryMode.api_auto:
-                for src in sources:
-                    if src.api_product and src.api_product.last_sync_at:
-                        age = datetime.utcnow() - src.api_product.last_sync_at
-                        if age > timedelta(seconds=60):
-                            from services.api_service import sync_api_products
-                            await sync_api_products(db, src.api_product.api_connection_id)
-                            db.expire_all()
-                            detail = get_product_detail(db, product_id)
-                            if detail:
-                                p = detail["product"]
-                                sources = detail["sources"]
-                            break
-
-            stock_info = get_product_stock_status(product_id, db)
-            stock = stock_info["stock"]
-            status = stock_info["status"]
-
-            # Determine stock text
-            if p.delivery_mode != DeliveryMode.manual_stock and p.delivery_mode != DeliveryMode.api_auto:
-                # manual_admin (and legacy "manual") — no local inventory tracked
-                stock_text = f"🟡 {t(lang, 'product_list_accept_order')}"
-            elif status == "unavailable":
-                stock_text = t(lang, "product_unavailable")
-            elif status == "out_of_stock":
-                stock_text = t(lang, "product_out_of_stock")
-            elif stock > 10:
-                stock_text = t(lang, "product_in_stock", count=stock)
-            else:
-                stock_text = t(lang, "product_low_stock", count=stock)
-
-            min_qty = p.min_quantity or 1
-            api_src = None
-            for src in sources:
-                if src.is_active and src.api_product:
-                    api_src = src.api_product
-                    break
-
-            from services.normalize import format_usdt, translate_shorthand_to_en
-
-            # Name: use English name if lang=en and available, else fall back
-            # to the Vietnamese name (never show a bare product code).
-            display_name = p.name
-            if lang == "en":
-                if getattr(p, "name_en", None):
-                    display_name = p.name_en
-                else:
-                    # Defensive fallback — see bot/keyboards.py for why.
-                    display_name = translate_shorthand_to_en(p.name)
-
-            detail_icon = (getattr(p, "telegram_icon", None) or "").strip() or "📦"
-            if status in ("out_of_stock", "unavailable"):
-                detail_icon = "❌"
-            lines = [f"{detail_icon} <b>{html.escape(display_name)}</b>\n"]
-            if lang == "en":
-                lines.append(t(lang, "product_price", price=format_usdt(p.price_usdt)))
-            else:
-                lines.append(t(lang, "product_price", price=f"{format_vnd(p.sale_price)}"))
-            lines.append(stock_text)
-            lines.append(t(lang, "product_min_qty", qty=min_qty))
-            if p.duration:
-                dur = translate_shorthand_to_en(p.duration) if lang == "en" else p.duration
-                lines.append(t(lang, "product_duration", val=html.escape(dur)))
-            if p.warranty:
-                warr = translate_shorthand_to_en(p.warranty) if lang == "en" else p.warranty
-                lines.append(t(lang, "product_warranty", val=html.escape(warr)))
-
-            # Description: single source of truth for language-correct
-            # description text — see services.localization. description_en
-            # is generated once (on save, on API sync, or the first time an
-            # English shopper views it) and reused as-is afterwards; English
-            # shoppers NEVER see a fallback to the Vietnamese text.
-            from services.localization import get_localized_product_description
-            external_desc = api_src.external_description if api_src else None
-            desc = get_localized_product_description(p, lang, db=db, external_description=external_desc)
-            if desc:
-                lines.append(t(lang, "product_description", desc=html.escape(desc)))
-
-            text_msg = "\n".join(lines)
-            image_url = p.image_path or (api_src.external_image_url if api_src else None)
-
-            # Out-of-stock: show blocking keyboard
-            if status == "out_of_stock":
-                kb = out_of_stock_keyboard(p.id, lang=lang)
-                full_text = f"{text_msg}\n\n{t(lang, 'out_of_stock_title')}\n{t(lang, 'out_of_stock_body')}"
-                if image_url and image_url.startswith("http"):
-                    try:
-                        import httpx
-                        async with httpx.AsyncClient(timeout=10) as c:
-                            resp = await c.get(image_url)
-                        if resp.status_code == 200:
-                            sent = await query.message.reply_photo(
-                                photo=io.BytesIO(resp.content),
-                                caption=full_text[:1024], parse_mode="HTML", reply_markup=kb,
-                            )
-                            context.user_data["product_message_id"] = sent.message_id
-                            await query.message.delete()
-                            return
-                    except Exception:
-                        pass
-                await query.message.edit_text(full_text, parse_mode="HTML", reply_markup=kb)
-                context.user_data["product_message_id"] = query.message.message_id
-                return
-
-            # Normal detail — show buy button
-            kb = product_detail_keyboard(p.id, lang=lang)
-            if image_url:
+    # ── buy_more (post-delivery "🛍 Mua tiếp") ──
+    if data == "buy_more":
+        db = SessionLocal()
+        try:
+            lang = _get_lang(db, update.effective_user.id)
+            # Refresh product data from all active API connections first,
+            # same as the product-list "Làm mới" button, so the newest
+            # product opened below reflects current stock/price.
+            from services.api_service import sync_api_products
+            from models import ApiConnection
+            connections = db.query(ApiConnection).filter(ApiConnection.is_active == True).all()
+            for conn in connections:
                 try:
-                    if image_url.startswith("http"):
-                        import httpx
-                        async with httpx.AsyncClient(timeout=10) as c:
-                            resp = await c.get(image_url)
-                        if resp.status_code == 200:
-                            sent = await query.message.reply_photo(
-                                photo=io.BytesIO(resp.content),
-                                caption=text_msg, parse_mode="HTML", reply_markup=kb,
-                            )
-                            context.user_data["product_message_id"] = sent.message_id
-                            await query.message.delete()
-                            return
-                    else:
-                        sent = await query.message.reply_photo(
-                            photo=open(image_url, "rb"),
-                            caption=text_msg, parse_mode="HTML", reply_markup=kb,
-                        )
-                        context.user_data["product_message_id"] = sent.message_id
-                        await query.message.delete()
-                        return
+                    await sync_api_products(db, conn.id)
                 except Exception:
                     pass
+            db.expire_all()
 
-            sent = await query.message.edit_text(text_msg, parse_mode="HTML", reply_markup=kb)
-            context.user_data["product_message_id"] = query.message.message_id
+            newest = (
+                db.query(Product)
+                .filter(Product.is_active == True)
+                .order_by(Product.created_at.desc(), Product.id.desc())
+                .first()
+            )
+            if not newest:
+                show_oos = _get_show_out_of_stock(db)
+                per_page = _get_products_per_page(db)
+                products = get_active_products_for_bot(db, show_out_of_stock=show_oos)
+                await query.message.reply_text(
+                    t(lang, "product_list_title"),
+                    parse_mode="HTML",
+                    reply_markup=product_list_keyboard(products, lang=lang, page=0, per_page=per_page),
+                )
+                return
+
+            await _render_product_detail(query, context, db, lang, newest.id)
+        except Exception as e:
+            logger.warning(f"[buy_more] error: {e}")
         finally:
             db.close()
         return
@@ -1943,7 +1998,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 t(lang, "sepay_product", name=html.escape(product_name)),
                 t(lang, "sepay_qty", qty=order.quantity),
                 t(lang, "sepay_amount", amount=f"{format_vnd(order.total_price)}"),
-                "", t(lang, "sepay_bank", bank=html.escape(sepay.bank_bin)),
+                "", t(lang, "sepay_bank", bank=html.escape(sepay.bank_name or sepay.bank_bin)),
                 t(lang, "sepay_account_number", acc=html.escape(sepay.account_number)),
                 t(lang, "sepay_account_name", name=html.escape(sepay.account_name)),
                 t(lang, "sepay_content", code=html.escape(order.payment_code or "")),
@@ -2044,6 +2099,70 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await query.answer(t(lang, "payment_expired_msg"), show_alert=True)
             else:
                 await query.answer(_payment_status_label(ps, lang), show_alert=True)
+        finally:
+            db.close()
+        return
+
+    # ── check_deposit (manual "🔄 Kiểm tra thanh toán" on the wallet deposit QR) ──
+    if data.startswith("check_deposit:"):
+        deposit_id = int(data.split(":")[1])
+        tg_user = update.effective_user
+        db = SessionLocal()
+        try:
+            lang = _get_lang(db, tg_user.id)
+            deposit = db.query(WalletDeposit).filter(WalletDeposit.id == deposit_id).first()
+            if not deposit or deposit.telegram_user_id != str(tg_user.id):
+                await query.answer(t(lang, "order_not_found"), show_alert=True)
+                return
+            if deposit.status == WalletDepositStatus.credited:
+                await query.answer(t(lang, "wallet_deposit_check_credited", ref=deposit.reference_code), show_alert=True)
+            elif deposit.status == WalletDepositStatus.pending:
+                await query.answer(t(lang, "wallet_deposit_check_pending", ref=deposit.reference_code), show_alert=True)
+            else:
+                await query.answer(t(lang, "wallet_deposit_check_gone"), show_alert=True)
+        finally:
+            db.close()
+        return
+
+    # ── cancel_deposit ("❌ Hủy đơn" on the wallet deposit QR) ──
+    if data.startswith("cancel_deposit:"):
+        deposit_id = int(data.split(":")[1])
+        tg_user = update.effective_user
+        db = SessionLocal()
+        try:
+            lang = _get_lang(db, tg_user.id)
+            deposit = db.query(WalletDeposit).filter(WalletDeposit.id == deposit_id).first()
+            if not deposit or deposit.telegram_user_id != str(tg_user.id):
+                await query.answer(t(lang, "order_not_found"), show_alert=True)
+                return
+
+            # Only a still-pending deposit can be cancelled by the shopper —
+            # atomic status-guarded UPDATE so a webhook crediting it at the
+            # exact same moment can never be raced/overwritten by this cancel.
+            from sqlalchemy import text as _sql_text
+            rows = db.execute(
+                _sql_text("UPDATE wallet_deposits SET status='cancelled' WHERE id=:id AND status='pending'"),
+                {"id": deposit_id},
+            )
+            db.commit()
+            if rows.rowcount == 0:
+                db.refresh(deposit)
+                if deposit.status == WalletDepositStatus.credited:
+                    await query.answer(t(lang, "wallet_deposit_check_credited", ref=deposit.reference_code), show_alert=True)
+                else:
+                    await query.answer(t(lang, "wallet_deposit_cancel_denied"), show_alert=True)
+                return
+
+            try:
+                if query.message.photo:
+                    await query.message.edit_caption(
+                        caption=t(lang, "wallet_deposit_cancelled_user"), reply_markup=None,
+                    )
+                else:
+                    await query.message.edit_text(t(lang, "wallet_deposit_cancelled_user"), reply_markup=None)
+            except Exception:
+                await query.answer()
+                await context.bot.send_message(chat_id=tg_user.id, text=t(lang, "wallet_deposit_cancelled_user"))
         finally:
             db.close()
         return
@@ -2273,10 +2392,45 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if currency == "VND":
                 text = t(lang, "wallet_deposit_created_vnd", ref=ref, amount=format_vnd(final_amount),
                          bank=payment_info["bank"], acc=payment_info["acc"], acc_name=payment_info["acc_name"])
+                kbd = wallet_deposit_qr_keyboard(deposit.id, lang=lang)
+                cfg = db.query(TelegramBotConfig).first()
+                shop_name = getattr(cfg, "shop_name", "") or "" if cfg else ""
+                qr_url = generate_vietqr_url(
+                    bank_bin=payment_info["bank_bin"],
+                    account_number=payment_info["acc"],
+                    amount=final_amount,
+                    payment_code=ref,
+                    account_name=payment_info["acc_name"],
+                    shop_name=shop_name,
+                )
+                sent = None
+                try:
+                    sent = await update.message.reply_photo(
+                        photo=qr_url, caption=text, parse_mode="HTML", reply_markup=kbd,
+                    )
+                except Exception:
+                    pass
+                if not sent:
+                    try:
+                        import httpx as _httpx
+                        async with _httpx.AsyncClient(timeout=15) as c:
+                            resp = await c.get(qr_url)
+                        if resp.status_code == 200:
+                            sent = await update.message.reply_photo(
+                                photo=io.BytesIO(resp.content), caption=text,
+                                parse_mode="HTML", reply_markup=kbd,
+                            )
+                    except Exception:
+                        pass
+                if not sent:
+                    text_only = text + f'\n\n🔗 <a href="{qr_url}">Mở QR VietQR</a>'
+                    sent = await update.message.reply_text(
+                        text_only, parse_mode="HTML", reply_markup=kbd, disable_web_page_preview=True,
+                    )
             else:
                 text = t(lang, "wallet_deposit_created_usdt", ref=ref, amount=f"{final_amount:.4f}",
                          network=payment_info["network"], address=payment_info["address"])
-            sent = await update.message.reply_text(text, parse_mode="HTML")
+                sent = await update.message.reply_text(text, parse_mode="HTML")
             deposit.deposit_message_id = sent.message_id
             db.commit()
         finally:

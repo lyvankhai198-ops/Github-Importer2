@@ -427,12 +427,45 @@ async def notify_admin_wallet_deposit_request(bot, deposit, admin_telegram_id: s
         logger.error(f"notify_admin_wallet_deposit_request error: {e}")
 
 
-async def notify_user_wallet_deposit_confirmed(bot, chat_id: str, deposit, lang: str = "vi"):
+async def notify_user_wallet_deposit_confirmed(bot, chat_id: str, deposit, lang: str = "vi", new_balance: float = None):
+    """
+    User: deposit auto-credited. Also flips the original QR message to a
+    "paid" state (buttons removed) so it can no longer be checked/cancelled —
+    per the ĐỢT 2 spec, a credited QR must become unusable.
+    """
     try:
         from bot.i18n import t
         currency = deposit.currency.value if hasattr(deposit.currency, "value") else str(deposit.currency)
         amount_str = format_vnd(deposit.amount) + " VND" if currency == "VND" else f"{deposit.amount:.2f} USDT"
-        text = t(lang, "wallet_deposit_confirmed_user", ref=deposit.reference_code, amount=amount_str)
+        balance_str = (
+            (format_vnd(new_balance) + " VND" if currency == "VND" else f"{new_balance:.2f} USDT")
+            if new_balance is not None else "—"
+        )
+        time_str = (deposit.credited_at or deposit.confirmed_at).strftime("%H:%M %d/%m/%Y") \
+            if (deposit.credited_at or deposit.confirmed_at) else ""
+        text = t(
+            lang, "wallet_deposit_confirmed_detail",
+            ref=deposit.reference_code, amount=amount_str, balance=balance_str, time=time_str,
+        )
+
+        # Invalidate the original QR/instruction message — it must no longer
+        # be usable once the deposit is credited.
+        if deposit.chat_id and deposit.deposit_message_id:
+            try:
+                paid_caption = f"✅ {t(lang, 'wallet_deposit_check_credited', ref=deposit.reference_code)}"
+                await bot.edit_message_caption(
+                    chat_id=int(deposit.chat_id), message_id=deposit.deposit_message_id,
+                    caption=paid_caption, parse_mode="HTML", reply_markup=None,
+                )
+            except Exception:
+                try:
+                    await bot.edit_message_text(
+                        chat_id=int(deposit.chat_id), message_id=deposit.deposit_message_id,
+                        text=paid_caption, parse_mode="HTML", reply_markup=None,
+                    )
+                except Exception:
+                    pass
+
         await bot.send_message(chat_id=int(chat_id), text=text, parse_mode="HTML")
     except Exception as e:
         logger.error(f"notify_user_wallet_deposit_confirmed error: {e}")

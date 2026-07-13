@@ -389,26 +389,28 @@ def format_delivery_message(order, items: list, product_name: str, lang: str = "
             total_str = f"{format_vnd(order.total_price)} VND"
         header = (
             f"✅ <b>PURCHASE SUCCESSFUL</b>\n\n"
-            f"Order: <code>{order.order_code}</code>\n"
-            f"Product: {html.escape(product_name)}\n"
-            f"Quantity: {order.quantity}\n"
-            f"Total: {total_str}\n\n"
-            f"📦 <b>YOUR ACCOUNTS</b>\n"
+            f"🧾 Order: <code>{order.order_code}</code>\n"
+            f"📦 Product: {html.escape(product_name)}\n"
+            f"🔢 Quantity: {order.quantity}\n"
+            f"💰 Total: {total_str}\n\n"
+            f"🎁 <b>ACCOUNT(S)</b>\n"
         )
         thanks = "Thank you for your purchase! 🙏"
+        account_label = "Account"
         more_suffix = "more account(s) (see attached file)"
         file_order_label = "Order"
         file_product_label = "Product"
     else:
         header = (
             f"✅ <b>MUA HÀNG THÀNH CÔNG</b>\n\n"
-            f"Mã đơn: <code>{order.order_code}</code>\n"
-            f"Sản phẩm: {html.escape(product_name)}\n"
-            f"Số lượng: {order.quantity}\n"
-            f"Tổng tiền: {format_vnd(order.total_price)}đ\n\n"
-            f"📦 <b>TÀI KHOẢN CỦA BẠN</b>\n"
+            f"🧾 Mã đơn: <code>{order.order_code}</code>\n"
+            f"📦 Sản phẩm: {html.escape(product_name)}\n"
+            f"🔢 Số lượng: {order.quantity}\n"
+            f"💰 Tổng tiền: {format_vnd(order.total_price)}đ\n\n"
+            f"🎁 <b>TÀI KHOẢN</b>\n"
         )
         thanks = "Cảm ơn bạn đã mua hàng! 🙏"
+        account_label = "Tài khoản"
         more_suffix = "tài khoản nữa (xem file đính kèm)"
         file_order_label = "Đơn hàng"
         file_product_label = "Sản phẩm"
@@ -418,18 +420,25 @@ def format_delivery_message(order, items: list, product_name: str, lang: str = "
         val = _item_display_value(item)
         lines.append(val)
 
+    def _account_blocks(vals: list) -> str:
+        # <pre> (not inline <code>) so multi-line account text is one
+        # easy-to-tap-to-copy block; numbered only when there's more than one.
+        if len(vals) == 1:
+            return f"<pre>{html.escape(vals[0])}</pre>"
+        return "\n".join(
+            f"{account_label} #{i + 1}\n<pre>{html.escape(v)}</pre>" for i, v in enumerate(vals)
+        )
+
     if len(items) <= 10:
-        account_block = "\n".join(f"<code>{html.escape(l)}</code>" for l in lines)
+        account_block = _account_blocks(lines)
         text = header + "\n" + account_block + "\n\n" + thanks
         return text, None
     else:
-        # Tạo file TXT
+        # Tạo file TXT — never inline JSON or internal data, plain text only.
         file_content = f"{file_order_label}: {order.order_code}\n{file_product_label}: {product_name}\n"
         file_content += "=" * 40 + "\n"
         file_content += "\n".join(lines)
-        account_block = "\n".join(
-            f"<code>{html.escape(lines[i])}</code>" for i in range(min(3, len(lines)))
-        )
+        account_block = _account_blocks(lines[:3])
         text = (
             header + "\n" + account_block + "\n"
             f"<i>... {'and ' if lang == 'en' else 'và '}{len(lines) - 3} {more_suffix}</i>\n\n"

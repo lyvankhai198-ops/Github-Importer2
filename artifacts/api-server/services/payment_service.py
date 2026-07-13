@@ -425,8 +425,9 @@ async def _notify_admin_deposit_needs_review_async(deposit_id: int):
 async def _notify_deposit_credited_async(deposit_id: int):
     try:
         from database import SessionLocal
-        from models import WalletDeposit
+        from models import WalletDeposit, User
         from services.bot_service import bot_manager
+        from services import wallet_service
         if not bot_manager.is_running():
             return
         db = SessionLocal()
@@ -438,7 +439,11 @@ async def _notify_deposit_credited_async(deposit_id: int):
             from bot.i18n import get_user_lang
             lang = get_user_lang(db, deposit.telegram_user_id)
             chat_id = deposit.chat_id or deposit.telegram_user_id
-            await notify_user_wallet_deposit_confirmed(bot_manager._application.bot, chat_id, deposit, lang=lang)
+            user = db.query(User).filter(User.telegram_id == deposit.telegram_user_id).first()
+            new_balance = wallet_service.get_balance(user, deposit.currency) if user else None
+            await notify_user_wallet_deposit_confirmed(
+                bot_manager._application.bot, chat_id, deposit, lang=lang, new_balance=new_balance,
+            )
         finally:
             db.close()
     except Exception as e:

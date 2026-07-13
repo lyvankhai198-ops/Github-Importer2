@@ -242,14 +242,29 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "wallet_deposit_no_payment_configured": "❌ Phương thức thanh toán này chưa được cấu hình. Vui lòng chọn phương thức khác hoặc liên hệ hỗ trợ.",
         "wallet_deposit_created_vnd": (
             "✅ <b>YÊU CẦU NẠP TIỀN ĐÃ TẠO</b>\n\n"
-            "🔑 Mã tham chiếu: <code>{ref}</code>\n"
-            "💰 Số tiền: <b>{amount}đ</b>\n\n"
+            "🔑 Mã tham chiếu: <code>{ref}</code>\n\n"
             "🏦 Ngân hàng: <b>{bank}</b>\n"
-            "Số tài khoản: <code>{acc}</code>\n"
-            "Chủ TK: {acc_name}\n"
-            "Nội dung CK: <code>{ref}</code>\n\n"
+            "👤 Chủ tài khoản: {acc_name}\n"
+            "🔢 Số tài khoản: <code>{acc}</code>\n"
+            "💰 Số tiền: <code>{amount}</code>đ\n"
+            "📝 Nội dung: <code>{ref}</code>\n\n"
             "⚠️ Vui lòng chuyển khoản đúng số tiền và ghi đúng nội dung ở trên.\n"
-            "🤖 Hệ thống sẽ tự động cộng tiền vào ví của bạn ngay khi nhận được chuyển khoản, không cần chờ admin."
+            "🤖 Hệ thống sẽ tự động cộng tiền vào ví của bạn ngay khi nhận được chuyển khoản, không cần chờ admin.\n"
+            "📷 Hoặc quét mã QR ở trên bằng app ngân hàng bất kỳ để chuyển khoản ngay."
+        ),
+        "btn_check_deposit": "🔄 Kiểm tra thanh toán",
+        "btn_cancel_deposit": "❌ Hủy đơn",
+        "wallet_deposit_cancelled_user": "❌ Yêu cầu nạp tiền đã được hủy.",
+        "wallet_deposit_cancel_denied": "Không thể hủy — yêu cầu này đã được xử lý hoặc không tồn tại.",
+        "wallet_deposit_check_pending": "⏳ Chưa nhận được chuyển khoản cho mã <code>{ref}</code>. Hệ thống sẽ tự động cộng tiền ngay khi nhận được — bạn không cần làm gì thêm.",
+        "wallet_deposit_check_credited": "✅ Yêu cầu nạp tiền <code>{ref}</code> đã được cộng tiền vào ví!",
+        "wallet_deposit_check_gone": "Yêu cầu nạp tiền này không còn ở trạng thái chờ thanh toán.",
+        "wallet_deposit_confirmed_detail": (
+            "✅ <b>NẠP TIỀN THÀNH CÔNG</b>\n\n"
+            "🔑 Mã tham chiếu: <code>{ref}</code>\n"
+            "💰 Đã cộng: <b>{amount}</b>\n"
+            "💼 Số dư mới: <b>{balance}</b>\n"
+            "🕒 Thời gian: {time}"
         ),
         "wallet_deposit_created_usdt": (
             "✅ <b>YÊU CẦU NẠP TIỀN ĐÃ TẠO</b>\n\n"
@@ -580,14 +595,29 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "wallet_deposit_no_payment_configured": "❌ This payment method isn't configured yet. Please choose another or contact support.",
         "wallet_deposit_created_vnd": (
             "✅ <b>DEPOSIT REQUEST CREATED</b>\n\n"
-            "🔑 Reference: <code>{ref}</code>\n"
-            "💰 Amount: <b>{amount} VND</b>\n\n"
+            "🔑 Reference: <code>{ref}</code>\n\n"
             "🏦 Bank: <b>{bank}</b>\n"
-            "Account: <code>{acc}</code>\n"
-            "Account holder: {acc_name}\n"
-            "Transfer note: <code>{ref}</code>\n\n"
+            "👤 Account holder: {acc_name}\n"
+            "🔢 Account number: <code>{acc}</code>\n"
+            "💰 Amount: <code>{amount}</code> VND\n"
+            "📝 Transfer note: <code>{ref}</code>\n\n"
             "⚠️ Please transfer the exact amount and use the note shown above.\n"
-            "🤖 Your wallet will be credited automatically as soon as the transfer arrives — no admin wait."
+            "🤖 Your wallet will be credited automatically as soon as the transfer arrives — no admin wait.\n"
+            "📷 Or scan the QR code above with any banking app to pay instantly."
+        ),
+        "btn_check_deposit": "🔄 Check payment",
+        "btn_cancel_deposit": "❌ Cancel",
+        "wallet_deposit_cancelled_user": "❌ Deposit request has been cancelled.",
+        "wallet_deposit_cancel_denied": "Can't cancel — this request has already been processed or doesn't exist.",
+        "wallet_deposit_check_pending": "⏳ No transfer received yet for <code>{ref}</code>. Your wallet will be credited automatically as soon as it arrives — nothing else to do.",
+        "wallet_deposit_check_credited": "✅ Deposit <code>{ref}</code> has already been credited to your wallet!",
+        "wallet_deposit_check_gone": "This deposit request is no longer pending.",
+        "wallet_deposit_confirmed_detail": (
+            "✅ <b>DEPOSIT SUCCESSFUL</b>\n\n"
+            "🔑 Reference: <code>{ref}</code>\n"
+            "💰 Credited: <b>{amount}</b>\n"
+            "💼 New balance: <b>{balance}</b>\n"
+            "🕒 Time: {time}"
         ),
         "wallet_deposit_created_usdt": (
             "✅ <b>DEPOSIT REQUEST CREATED</b>\n\n"
