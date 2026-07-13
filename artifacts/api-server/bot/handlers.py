@@ -257,6 +257,7 @@ async def products_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not products:
             await update.message.reply_text(t(lang, "product_list_empty"))
             return
+        context.user_data["last_products_page"] = 0
         await update.message.reply_text(
             t(lang, "product_list_title"),
             parse_mode="HTML",
@@ -331,6 +332,55 @@ async def cancel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         is_admin = str(tg_user.id) == str(admin_id)
         await update.message.reply_text(
             t(lang, "cancelled_returned_home"),
+            reply_markup=main_menu_keyboard(lang=lang, is_admin=is_admin),
+        )
+    finally:
+        db.close()
+
+
+async def back_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Persistent "⬅️ Quay lại / Back" reply-keyboard button. Never disappears.
+    If the shopper is mid quantity-entry, this cancels that step (instead of
+    /cancel) and returns them to the product list page they were browsing.
+    Otherwise it just re-shows the main menu.
+    """
+    state = context.user_data.get("state")
+    db = SessionLocal()
+    try:
+        lang = _get_lang(db, update.effective_user.id)
+        admin_id = _get_admin_id(db)
+        is_admin = str(update.effective_user.id) == str(admin_id)
+
+        if state == "waiting_quantity":
+            prompt_id = context.user_data.get("quantity_prompt_message_id")
+            if prompt_id:
+                await _safe_del(context.bot, update.effective_chat.id, prompt_id)
+            context.user_data.pop("state", None)
+            context.user_data.pop("buying_product_id", None)
+            context.user_data.pop("quantity_prompt_message_id", None)
+            context.user_data.pop("processing_order", None)
+
+            show_oos = _get_show_out_of_stock(db)
+            per_page = _get_products_per_page(db)
+            products = get_active_products_for_bot(db, show_out_of_stock=show_oos)
+            page = context.user_data.get("last_products_page", 0)
+            if products:
+                await update.message.reply_text(
+                    t(lang, "product_list_title"),
+                    parse_mode="HTML",
+                    reply_markup=product_list_keyboard(products, lang=lang, page=page, per_page=per_page),
+                )
+            else:
+                await update.message.reply_text(
+                    t(lang, "product_list_empty"),
+                    reply_markup=main_menu_keyboard(lang=lang, is_admin=is_admin),
+                )
+            return
+
+        welcome = _get_welcome_message(db)
+        await update.message.reply_text(
+            welcome,
             reply_markup=main_menu_keyboard(lang=lang, is_admin=is_admin),
         )
     finally:
@@ -758,6 +808,7 @@ async def _do_create_order(context, db, tg_user, product_id: int, quantity: int,
         telegram_user_id=str(tg_user.id),
         product_id=product_id,
         quantity=quantity,
+        origin_products_page=context.user_data.get("last_products_page", 0),
         unit_price=product.sale_price,
         total_price=total,
         expected_amount=total,
@@ -841,6 +892,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             show_oos = _get_show_out_of_stock(db)
             per_page = _get_products_per_page(db)
             products = get_active_products_for_bot(db, show_out_of_stock=show_oos)
+            context.user_data["last_products_page"] = page
             await query.message.edit_text(
                 t(lang, "product_list_title"),
                 parse_mode="HTML",
@@ -871,6 +923,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             show_oos = _get_show_out_of_stock(db)
             per_page = _get_products_per_page(db)
             products = get_active_products_for_bot(db, show_out_of_stock=show_oos)
+            context.user_data["last_products_page"] = page
             await query.message.edit_text(
                 t(lang, "product_list_title"),
                 parse_mode="HTML",
@@ -945,10 +998,11 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             show_oos = _get_show_out_of_stock(db)
             per_page = _get_products_per_page(db)
             products = get_active_products_for_bot(db, show_out_of_stock=show_oos)
+            page = context.user_data.get("last_products_page", 0)
             await query.message.edit_text(
                 t(lang, "product_list_title"),
                 parse_mode="HTML",
-                reply_markup=product_list_keyboard(products, lang=lang, page=0, per_page=per_page),
+                reply_markup=product_list_keyboard(products, lang=lang, page=page, per_page=per_page),
             )
         finally:
             db.close()
@@ -1167,15 +1221,29 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             _processing_callbacks.discard(cb_key)
         return
 
-    # ── cancel_order (pre-payment method selection) ──
+    # ── cancel_order (pre-payment method selection, legacy) ──
     if data == "cancel_order":
-        context.user_data.clear()
         db = SessionLocal()
         try:
             lang = _get_lang(db, update.effective_user.id)
+            page = context.user_data.get("last_products_page", 0)
+            show_oos = _get_show_out_of_stock(db)
+            per_page = _get_products_per_page(db)
+            products = get_active_products_for_bot(db, show_out_of_stock=show_oos)
         finally:
             db.close()
-        await query.message.edit_text(t(lang, "order_cancelled"))
+        context.user_data.pop("state", None)
+        context.user_data.pop("buying_product_id", None)
+        context.user_data.pop("quantity_prompt_message_id", None)
+        context.user_data.pop("processing_order", None)
+        if products:
+            await query.message.edit_text(
+                f"{t(lang, 'order_cancelled')}\n\n{t(lang, 'product_list_title')}",
+                parse_mode="HTML",
+                reply_markup=product_list_keyboard(products, lang=lang, page=page, per_page=per_page),
+            )
+        else:
+            await query.message.edit_text(t(lang, "order_cancelled"))
         return
 
     # ── cancel_pending ──
@@ -1197,17 +1265,40 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             order.status = OrderStatus.cancelled
             order.updated_at = datetime.utcnow()
+            page = order.origin_products_page or 0
             db.commit()
 
             chat_id = order.payment_chat_id or order.telegram_user_id
+            # QR/instruction message is only ever deleted here because the order was
+            # never paid — a paid order is blocked above and its QR is cleaned up by
+            # the delivery flow instead, never by this cancel path.
             await _safe_del(context.bot, chat_id, order.product_message_id)
             await _safe_del(context.bot, chat_id, order.quantity_prompt_message_id)
             await _safe_del(context.bot, chat_id, order.payment_message_id)
 
+            # Clear any leftover quantity-input state for this chat so the shopper
+            # isn't stuck mid-flow after cancelling.
+            context.user_data.pop("state", None)
+            context.user_data.pop("buying_product_id", None)
+            context.user_data.pop("quantity_prompt_message_id", None)
+            context.user_data.pop("processing_order", None)
+
+            show_oos = _get_show_out_of_stock(db)
+            per_page = _get_products_per_page(db)
+            products = get_active_products_for_bot(db, show_out_of_stock=show_oos)
             try:
-                await context.bot.send_message(
-                    chat_id=int(chat_id), text=t(lang, "order_cancel_success")
-                )
+                if products:
+                    context.user_data["last_products_page"] = page
+                    await context.bot.send_message(
+                        chat_id=int(chat_id),
+                        text=f"{t(lang, 'order_cancel_success')}\n\n{t(lang, 'product_list_title')}",
+                        parse_mode="HTML",
+                        reply_markup=product_list_keyboard(products, lang=lang, page=page, per_page=per_page),
+                    )
+                else:
+                    await context.bot.send_message(
+                        chat_id=int(chat_id), text=t(lang, "order_cancel_success")
+                    )
             except Exception:
                 pass
         finally:

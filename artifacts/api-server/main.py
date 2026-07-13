@@ -70,6 +70,7 @@ def _run_migrations():
         "ALTER TABLE orders ADD COLUMN payment_message_type VARCHAR(20)",
         "ALTER TABLE orders ADD COLUMN product_message_id INTEGER",
         "ALTER TABLE orders ADD COLUMN quantity_prompt_message_id INTEGER",
+        "ALTER TABLE orders ADD COLUMN origin_products_page INTEGER DEFAULT 0",
         # Crypto payment fields on Order
         "ALTER TABLE orders ADD COLUMN payment_currency VARCHAR(20)",
         "ALTER TABLE orders ADD COLUMN exchange_rate FLOAT",

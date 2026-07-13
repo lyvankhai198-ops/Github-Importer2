@@ -327,6 +327,7 @@ class Order(Base):
     payment_message_type = Column(String(20), nullable=True)      # "photo" | "text"
     product_message_id = Column(Integer, nullable=True)
     quantity_prompt_message_id = Column(Integer, nullable=True)
+    origin_products_page = Column(Integer, nullable=True, default=0)  # product-list page shopper was browsing before buying
     # ── Crypto payment fields ─────────────────────────────────────────────────
     payment_currency = Column(String(20), nullable=True)          # VND | USDT
     exchange_rate = Column(Float, nullable=True)                   # VND/USDT rate at order time
