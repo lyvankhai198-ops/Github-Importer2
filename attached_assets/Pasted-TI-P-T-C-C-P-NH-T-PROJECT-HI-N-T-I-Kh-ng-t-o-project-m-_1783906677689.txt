@@ -1,0 +1,489 @@
+TIẾP TỤC CẬP NHẬT PROJECT HIỆN TẠI.
+
+Không tạo project mới.
+Không xóa database.
+Không xóa đơn hàng.
+Không mất dữ liệu người dùng.
+Không mất API nguồn.
+Không thay đổi cấu trúc đang hoạt động.
+
+==================================================
+16. HỦY ĐƠN HÀNG
+==================================================
+
+Khi khách bấm:
+
+❌ Hủy đơn
+
+Bot phải:
+
+- hủy đơn đang chờ
+- xóa trạng thái nhập số lượng
+- xóa QR nếu đơn chưa thanh toán
+- quay ngay về đúng danh mục sản phẩm trước đó
+
+KHÔNG quay về /start.
+
+KHÔNG quay về menu chính.
+
+==================================================
+17. MENU XANH TELEGRAM
+==================================================
+
+Luôn bật ReplyKeyboardMarkup cố định.
+
+Nút góc trái màu xanh:
+
+☰ Menu
+
+Luôn hiển thị.
+
+Các nút:
+
+☰ Menu
+⬅️ Quay lại
+
+Không được tự biến mất.
+
+==================================================
+18. TỰ ĐỘNG QUY ĐỔI USDT
+==================================================
+
+Web thêm:
+
+Exchange Rate
+
+Mặc định
+
+1 USDT = 26.500 VND
+
+Admin có thể sửa.
+
+Khi tạo hoặc sửa sản phẩm:
+
+Nếu nhập:
+
+Giá VND
+
+=> tự tính
+
+price_usdt
+
+Nếu sửa tỷ giá
+
+=> cập nhật toàn bộ price_usdt.
+
+Bot:
+
+Ngôn ngữ Việt:
+
+55.000đ
+
+Ngôn ngữ English:
+
+2.08 USDT
+
+KHÔNG hiển thị VND trong tiếng Anh.
+
+==================================================
+19. BINANCE AUTO DELIVERY
+==================================================
+
+Thêm phương thức thanh toán:
+
+• Binance Pay
+• USDT BEP20
+• USDT TRC20
+• USDT ERC20
+
+Khách chọn mạng muốn thanh toán.
+
+Bot tự sinh:
+
+- QR thanh toán
+- Địa chỉ ví
+- Số tiền đúng theo đơn
+- Mã đơn
+
+Sau khi khách thanh toán:
+
+Khách nhập hoặc dán TXID.
+
+TXID chỉ dùng để tra cứu giao dịch, KHÔNG được dùng làm bằng chứng thanh toán.
+
+Bot phải tự xác minh giao dịch với blockchain hoặc API Binance.
+
+Chỉ giao hàng khi đồng thời thỏa tất cả điều kiện:
+
+✔ Đúng TXID.
+✔ Đúng địa chỉ ví nhận của shop.
+✔ Đúng mạng (BEP20 / TRC20 / ERC20).
+✔ Đúng token USDT.
+✔ Đúng số tiền của đơn.
+✔ Giao dịch thành công (Success).
+✔ Đủ số confirmation theo cấu hình.
+✔ TXID chưa từng được sử dụng.
+✔ Đơn vẫn ở trạng thái Chờ thanh toán.
+✔ Chưa từng giao tài khoản.
+
+Nếu chỉ sai một điều kiện:
+
+- Không giao tài khoản.
+- Hiển thị lý do cụ thể.
+- Cho phép khách nhập TXID khác.
+
+Sau khi xác minh thành công:
+
+- Đánh dấu đơn Paid.
+- Tự động lấy tài khoản trong kho.
+- Giao tài khoản ngay.
+- Gửi hóa đơn.
+- Ghi lịch sử giao dịch.
+- Đánh dấu TXID đã sử dụng để chống dùng lại.
+
+Toàn bộ quá trình phải hoàn toàn tự động, không cần admin xác nhận.
+
+20. CHỈ XÓA QR SAU KHI THANH TOÁN
+==================================================
+
+Hiện tại:
+
+Khách bấm kiểm tra hoặc timeout có thể mất QR.
+
+Sửa:
+
+QR chỉ được xóa khi:
+
+Đơn = PAID
+
+Sau khi:
+
+- giao tài khoản
+- sửa tin nhắn thanh toán
+
+Nếu chưa thanh toán:
+
+QR luôn giữ nguyên.
+
+==================================================
+21. THÔNG BÁO TỪ WEB
+==================================================
+
+Web thêm menu:
+
+📢 Thông báo Bot
+
+Có:
+
+Tiêu đề
+
+Nội dung
+
+Ảnh (tùy chọn)
+
+Nút:
+
+Gửi
+
+Bot gửi Broadcast tới toàn bộ user.
+
+Có thống kê:
+
+Đã gửi
+
+Thất bại
+
+==================================================
+22. THÔNG BÁO KHI NHẬP KHO
+==================================================
+
+Nếu admin thêm tài khoản vào kho.
+
+Có lựa chọn:
+
+☑ Thông báo người dùng
+
+Nếu bật:
+
+Bot gửi:
+
+📦 Đã có hàng
+
+Tên sản phẩm
+
+Mời quay lại mua.
+
+Nếu có danh sách người đang chờ:
+
+chỉ gửi cho họ.
+
+==================================================
+23. QR BINANCE
+==================================================
+
+Thanh toán Binance.
+
+Sinh QR riêng.
+
+Hiển thị:
+
+Coin
+
+Network
+
+Address
+
+Memo nếu có.
+
+Có nút:
+
+📋 Copy Address
+
+📋 Copy Amount
+
+==================================================
+24. ĐỒNG BỘ SẢN PHẨM API
+==================================================
+
+Nếu sản phẩm liên kết API.
+
+KHÔNG cần admin nhập tay.
+
+Bot tự:
+
+- tạo sản phẩm mới
+- cập nhật tồn kho
+- cập nhật ảnh
+- cập nhật mô tả
+- cập nhật bảo hành
+- cập nhật thời hạn
+
+Nếu admin sửa riêng:
+
+Không ghi đè.
+
+==================================================
+25. BỎ /cancel KHI NHẬP SỐ LƯỢNG
+==================================================
+
+Trong bước:
+
+Nhập số lượng
+
+KHÔNG hiện:
+
+/cancel
+
+Chỉ còn:
+
+⬅️ Quay lại
+
+☰ Menu
+
+==================================================
+26. WEB VÀ BOT CHẠY 24/24
+==================================================
+
+Khởi động app:
+
+Tự:
+
+- chạy scheduler
+- chạy bot
+- reconnect khi lỗi
+- reconnect database
+
+Không cần mở web.
+
+Không cần bấm Start Bot.
+
+Phù hợp VPS.
+
+==================================================
+27. DỊCH TOÀN BỘ SẢN PHẨM
+==================================================
+
+Nếu khách chọn English.
+
+Toàn bộ:
+
+Tên
+
+Mô tả
+
+Bảo hành
+
+Button
+
+Thông báo
+
+Đều dùng tiếng Anh.
+
+Không còn tiếng Việt.
+
+==================================================
+28. DỊCH KÝ HIỆU
+==================================================
+
+Tự động đổi:
+
+BHF
+=
+Full Warranty
+
+KBH
+=
+No Warranty
+
+BH 1D
+=
+1-Day Warranty
+
+BH 3D
+=
+3-Day Warranty
+
+BH 7D
+=
+7-Day Warranty
+
+BH 10D
+=
+10-Day Warranty
+
+BH 15D
+=
+15-Day Warranty
+
+BH 25D
+=
+25-Day Warranty
+
+BH 30D
+=
+30-Day Warranty
+
+BH 90D
+=
+90-Day Warranty
+
+BH 1M
+=
+1-Month Warranty
+
+BH 3M
+=
+3-Month Warranty
+
+BH 6M
+=
+6-Month Warranty
+
+BH 1Y
+=
+1-Year Warranty
+
+Slot
+=
+Shared Slot
+
+Key
+=
+License Key
+
+API
+=
+API Access
+
+Team
+=
+Team Account
+
+Random
+=
+Random
+
+Add Fam
+=
+Family Slot
+
+Credit
+=
+Credits
+
+Ngày
+=
+Days
+
+Tháng
+=
+Months
+
+Năm
+=
+Year
+
+Ví dụ:
+
+[BHF] Grok Super 3 Tháng
+
+↓
+
+[Full Warranty] Grok Super 3 Months
+
+========================
+
+[KBH] ChatGPT Plus 1 Tháng
+
+↓
+
+[No Warranty] ChatGPT Plus 1 Month
+
+========================
+
+BH 25D
+
+↓
+
+25-Day Warranty
+
+Tất cả tên sản phẩm và mô tả phải tự dịch theo ngôn ngữ người dùng.
+
+==================================================
+29. TEST
+==================================================
+
+Kiểm tra:
+
+✔ Hủy đơn quay lại danh mục.
+
+✔ Menu xanh luôn có.
+
+✔ USDT tự đổi.
+
+✔ Binance tự giao.
+
+✔ QR chỉ mất sau thanh toán.
+
+✔ Broadcast hoạt động.
+
+✔ Thêm kho gửi thông báo.
+
+✔ QR Binance hoạt động.
+
+✔ API tự đồng bộ.
+
+✔ Không còn /cancel.
+
+✔ Bot chạy sau restart.
+
+✔ English dịch 100%.
+
+✔ Ký hiệu bảo hành dịch chính xác.
+
+Sau khi hoàn thành:
+
+- tự kiểm thử
+- sửa toàn bộ lỗi
+- commit
+- push GitHub.
