@@ -6,7 +6,7 @@ from bot.handlers import (
     start_handler, products_handler, orders_handler, support_handler,
     admin_panel_handler, callback_handler, message_handler, language_menu_handler,
     menu_handler, myid_handler, _set_bot_commands, cancel_handler, back_button_handler,
-    unknown_command_handler, wallet_handler, api_handler,
+    unknown_command_handler, wallet_handler, api_handler, account_info_handler,
 )
 
 
@@ -25,6 +25,7 @@ async def setup_application(token: str, db_session_factory):
     app.add_handler(CommandHandler("orders",   orders_handler))
     app.add_handler(CommandHandler("wallet",   wallet_handler))
     app.add_handler(CommandHandler("api",      api_handler))
+    app.add_handler(CommandHandler("account",  account_info_handler))
     app.add_handler(CommandHandler("language", language_menu_handler))
     app.add_handler(CommandHandler("support",  support_handler))
     app.add_handler(CommandHandler("myid",     myid_handler))
@@ -35,6 +36,7 @@ async def setup_application(token: str, db_session_factory):
     app.add_handler(MessageHandler(filters.Regex(r"^📦 Đơn hàng$"),        orders_handler))
     app.add_handler(MessageHandler(filters.Regex(r"^💼 Ví của tôi$"),       wallet_handler))
     app.add_handler(MessageHandler(filters.Regex(r"^🔗 API$"),             api_handler))
+    app.add_handler(MessageHandler(filters.Regex(r"^👤 Thông tin$"),        account_info_handler))
     app.add_handler(MessageHandler(filters.Regex(r"^💬 Hỗ trợ$"),          support_handler))
     app.add_handler(MessageHandler(filters.Regex(r"^🌐 Ngôn ngữ$"),        language_menu_handler))
     app.add_handler(MessageHandler(filters.Regex(r"^🌐 Mở trang quản trị$"), admin_panel_handler))
@@ -45,6 +47,7 @@ async def setup_application(token: str, db_session_factory):
     app.add_handler(MessageHandler(filters.Regex(r"^🛍 Products$"),    products_handler))
     app.add_handler(MessageHandler(filters.Regex(r"^📦 Orders$"),      orders_handler))
     app.add_handler(MessageHandler(filters.Regex(r"^💼 My Wallet$"),    wallet_handler))
+    app.add_handler(MessageHandler(filters.Regex(r"^👤 Account$"),      account_info_handler))
     app.add_handler(MessageHandler(filters.Regex(r"^💬 Support$"),     support_handler))
     app.add_handler(MessageHandler(filters.Regex(r"^🌐 Language$"),    language_menu_handler))
     app.add_handler(MessageHandler(filters.Regex(r"^🌐 Admin panel$"), admin_panel_handler))

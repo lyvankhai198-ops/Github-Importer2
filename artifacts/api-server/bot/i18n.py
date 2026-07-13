@@ -11,6 +11,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "menu_orders": "📦 Đơn hàng",
         "menu_language": "🌐 Ngôn ngữ",
         "menu_support": "💬 Hỗ trợ",
+        "menu_btn_account": "👤 Thông tin",
         "menu_admin": "🌐 Mở trang quản trị",
         "menu_persistent": "☰ Menu",
         "menu_back": "⬅️ Quay lại",
@@ -177,6 +178,23 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "📦 Tổng đơn: {total_orders}\n"
             "✅ Trạng thái: {status}"
         ),
+        "account_info_full": (
+            "👤 <b>THÔNG TIN TÀI KHOẢN</b>\n\n"
+            "Tên: {full_name}\n"
+            "Username: @{username}\n"
+            "Chat ID: <code>{tg_id}</code>\n"
+            "Ngôn ngữ: {language}\n\n"
+            "👛 Số dư VND: <b>{balance_vnd}đ</b>\n"
+            "💵 Số dư USDT: <b>{balance_usdt} USDT</b>\n\n"
+            "🔗 Trạng thái API: {api_status}\n"
+            "🔑 API Key: <code>{api_key_masked}</code>\n"
+            "📅 Ngày tạo API: {api_created_at}\n"
+            "📦 Tổng đơn API: {api_order_count}\n"
+            "💳 Tổng chi qua API: {api_total_spent}\n\n"
+            "📦 Tổng đơn hàng: {total_orders}\n"
+            "✅ Đơn hoàn thành: {completed_orders}"
+        ),
+        "btn_account_docs": "📘 Tài liệu API",
         "menu_btn_products":  "🛍 Sản phẩm",
         "menu_btn_orders":    "📦 Đơn hàng",
         "menu_btn_language":  "🌐 Ngôn ngữ",
@@ -251,10 +269,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "wallet_purchase_debited": "✅ Đã thanh toán <b>{amount}đ</b> từ Ví.\nSố dư còn lại: <b>{balance}đ</b>",
         # ── Customer API ──────────────────────────────────────────────────────
         "menu_btn_api": "🔗 API",
-        "api_menu_title": "🔗 <b>API CỦA TÔI</b>",
+        "api_menu_title": "🔗 <b>LIÊN KẾT API</b>",
         "api_menu_no_key": "Bạn chưa có API key.\nTạo key để lấy sản phẩm và đặt hàng qua API.",
         "api_menu_status": "📶 Trạng thái: <b>{status}</b>",
-        "api_menu_key": "🔑 Key: <code>{key}</code>",
+        "api_menu_key": "🔑 API Key của bạn:\n<code>{key}</code>",
+        "api_menu_prepaid_notice": "⚠️ API hoạt động theo cơ chế trả trước.\nBạn phải có số dư trong ví trước khi gọi API mua hàng.",
         "api_menu_balance": "💰 Số dư: <b>{vnd}đ</b> | <b>{usdt} USDT</b>",
         "api_menu_usage": "📊 Đã dùng: {requests} request, {orders} đơn hàng",
         "api_menu_permissions": "🔐 Quyền: {permissions}",
@@ -263,10 +282,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "api_status_locked": "⏸ Đã bị khóa (do admin)",
         "api_status_revoked": "🚫 Đã thu hồi",
         "btn_api_generate": "🆕 Tạo API key",
-        "btn_api_regenerate": "🔄 Cấp lại key",
+        "btn_api_regenerate": "♻️ Tạo lại API Key",
         "btn_api_revoke": "🗑 Thu hồi key",
         "btn_api_history": "📜 Lịch sử request",
         "btn_api_guide": "📘 Hướng dẫn dùng API",
+        "btn_api_swagger": "📘 Mở Swagger",
         "api_key_generated": (
             "✅ <b>API key đã được tạo!</b>\n\n"
             "<code>{key}</code>\n\n"
@@ -324,6 +344,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "menu_orders": "📦 Orders",
         "menu_language": "🌐 Language",
         "menu_support": "💬 Support",
+        "menu_btn_account": "👤 Account",
         "menu_admin": "🌐 Admin panel",
         "menu_persistent": "☰ Menu",
         "menu_back": "⬅️ Back",
@@ -490,6 +511,23 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "📦 Total orders: {total_orders}\n"
             "✅ Status: {status}"
         ),
+        "account_info_full": (
+            "👤 <b>ACCOUNT INFORMATION</b>\n\n"
+            "Name: {full_name}\n"
+            "Username: @{username}\n"
+            "Chat ID: <code>{tg_id}</code>\n"
+            "Language: {language}\n\n"
+            "👛 VND balance: <b>{balance_vnd} VND</b>\n"
+            "💵 USDT balance: <b>{balance_usdt} USDT</b>\n\n"
+            "🔗 API status: {api_status}\n"
+            "🔑 API Key: <code>{api_key_masked}</code>\n"
+            "📅 API created at: {api_created_at}\n"
+            "📦 API orders: {api_order_count}\n"
+            "💳 Total API spending: {api_total_spent}\n\n"
+            "📦 Total orders: {total_orders}\n"
+            "✅ Completed orders: {completed_orders}"
+        ),
+        "btn_account_docs": "📘 API Documentation",
         "menu_btn_products":  "🛍 Products",
         "menu_btn_orders":    "📦 Orders",
         "menu_btn_language":  "🌐 Language",
@@ -564,10 +602,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "wallet_purchase_debited": "✅ Paid <b>{amount} VND</b> from your Wallet.\nRemaining balance: <b>{balance} VND</b>",
         # ── Customer API ──────────────────────────────────────────────────────
         "menu_btn_api": "🔗 API",
-        "api_menu_title": "🔗 <b>MY API</b>",
+        "api_menu_title": "🔗 <b>API CONNECTION</b>",
         "api_menu_no_key": "You don't have an API key yet.\nGenerate one to fetch products and place orders via API.",
         "api_menu_status": "📶 Status: <b>{status}</b>",
-        "api_menu_key": "🔑 Key: <code>{key}</code>",
+        "api_menu_key": "🔑 Your API Key:\n<code>{key}</code>",
+        "api_menu_prepaid_notice": "⚠️ This API uses a prepaid wallet system.\nYou must have sufficient wallet balance before using the purchase API.",
         "api_menu_balance": "💰 Balance: <b>{vnd} VND</b> | <b>{usdt} USDT</b>",
         "api_menu_usage": "📊 Usage: {requests} requests, {orders} orders",
         "api_menu_permissions": "🔐 Permissions: {permissions}",
@@ -576,10 +615,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "api_status_locked": "⏸ Locked (by admin)",
         "api_status_revoked": "🚫 Revoked",
         "btn_api_generate": "🆕 Generate API key",
-        "btn_api_regenerate": "🔄 Regenerate key",
+        "btn_api_regenerate": "♻️ Regenerate API Key",
         "btn_api_revoke": "🗑 Revoke key",
         "btn_api_history": "📜 Request history",
         "btn_api_guide": "📘 Usage guide",
+        "btn_api_swagger": "📘 Open Swagger",
         "api_key_generated": (
             "✅ <b>API key generated!</b>\n\n"
             "<code>{key}</code>\n\n"
@@ -633,14 +673,20 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
 }
 
 
-def t(lang: str, key: str, **kwargs) -> str:
+def t(lang: str, i18n_key: str, **kwargs) -> str:
     """
     Return translated string for the given language and key.
     Falls back to Vietnamese if the key is missing for the requested language.
     Supports format placeholders: t(lang, "key", var=value)
+
+    NOTE: the translation-key argument is named `i18n_key` (not `key`) on
+    purpose — several templates have a `{key}` placeholder (e.g. showing an
+    API key), and callers pass that as `key=...`. Naming this parameter
+    `key` would collide with that kwarg ("got multiple values for
+    argument 'key'"). Always call this positionally: t(lang, "some_key", ...).
     """
     lang = lang if lang in TRANSLATIONS else "vi"
-    text = TRANSLATIONS[lang].get(key) or TRANSLATIONS["vi"].get(key, key)
+    text = TRANSLATIONS[lang].get(i18n_key) or TRANSLATIONS["vi"].get(i18n_key, i18n_key)
     if kwargs:
         try:
             text = text.format(**kwargs)

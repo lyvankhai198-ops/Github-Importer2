@@ -14,7 +14,7 @@ from bot.keyboards import (
     confirm_order_keyboard,
     wallet_menu_keyboard, wallet_deposit_currency_keyboard, wallet_deposit_method_keyboard,
     wallet_insufficient_balance_keyboard,
-    api_menu_keyboard, api_back_keyboard, api_confirm_keyboard,
+    api_menu_keyboard, api_back_keyboard, api_confirm_keyboard, account_info_keyboard,
 )
 from bot.i18n import t, get_user_lang
 from services.product_service import (
@@ -30,6 +30,7 @@ from services.payment_service import (
 )
 from services import wallet_service
 from services import api_client_service
+from services import api_key_service
 from models import (
     Order, TelegramBotConfig, OrderStatus, PaymentStatus, User,
     WalletCurrency, WalletTxType, WalletDeposit, WalletDepositStatus,
@@ -211,6 +212,8 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             welcome,
             reply_markup=main_menu_keyboard(lang=lang, is_admin=is_admin),
         )
+        # Returning users see the latest products immediately — no extra tap.
+        await _send_product_list(update.message, db, context, lang)
     finally:
         db.close()
 
@@ -266,53 +269,62 @@ async def myid_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def _send_product_list(message_target, db, context, lang: str):
+    """
+    Shared "sync then render page 0 of products" flow, used by /products,
+    the 🛍 Products button, and — per the always-show-products-on-start
+    requirement — /start and the post-language-picker screen too.
+    """
+    # Auto-sync every active API source before rendering — no manual
+    # "Refresh" tap required. Skipped entirely if there's no active API
+    # connection at all (nothing to sync).
+    from models import ApiConnection
+    from services.api_service import sync_active_supplier_products
+
+    sync_failed = []
+    status_msg = None
+    if db.query(ApiConnection).filter(ApiConnection.is_active == True).first():
+        status_msg = await message_target.reply_text(t(lang, "products_syncing"))
+        try:
+            sync_result = await sync_active_supplier_products(db)
+            sync_failed = sync_result.get("failed", [])
+            db.expire_all()  # pick up commits made by the parallel sync sessions
+        except Exception as e:
+            logger.error(f"[_send_product_list] sync_active_supplier_products failed: {e}")
+
+    show_oos = _get_show_out_of_stock(db)
+    per_page = _get_products_per_page(db)
+    products = get_active_products_for_bot(db, show_out_of_stock=show_oos)
+
+    if status_msg:
+        try:
+            await status_msg.delete()
+        except Exception:
+            pass
+
+    if not products:
+        await message_target.reply_text(t(lang, "product_list_empty"))
+        return
+
+    if context is not None:
+        context.user_data["last_products_page"] = 0
+    title = t(lang, "product_list_title")
+    if sync_failed:
+        title += "\n" + t(lang, "products_sync_partial_warning")
+    await message_target.reply_text(
+        title,
+        parse_mode="HTML",
+        reply_markup=product_list_keyboard(products, lang=lang, page=0, per_page=per_page),
+    )
+
+
 async def products_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db = SessionLocal()
     try:
         if not await _require_language_selected(update, db):
             return
         lang = _get_lang(db, update.effective_user.id)
-
-        # Auto-sync every active API source before rendering — no manual
-        # "Refresh" tap required. Skipped entirely if there's no active API
-        # connection at all (nothing to sync).
-        from models import ApiConnection
-        from services.api_service import sync_active_supplier_products
-
-        sync_failed = []
-        status_msg = None
-        if db.query(ApiConnection).filter(ApiConnection.is_active == True).first():
-            status_msg = await update.message.reply_text(t(lang, "products_syncing"))
-            try:
-                sync_result = await sync_active_supplier_products(db)
-                sync_failed = sync_result.get("failed", [])
-                db.expire_all()  # pick up commits made by the parallel sync sessions
-            except Exception as e:
-                logger.error(f"[products_handler] sync_active_supplier_products failed: {e}")
-
-        show_oos = _get_show_out_of_stock(db)
-        per_page = _get_products_per_page(db)
-        products = get_active_products_for_bot(db, show_out_of_stock=show_oos)
-
-        if status_msg:
-            try:
-                await status_msg.delete()
-            except Exception:
-                pass
-
-        if not products:
-            await update.message.reply_text(t(lang, "product_list_empty"))
-            return
-
-        context.user_data["last_products_page"] = 0
-        title = t(lang, "product_list_title")
-        if sync_failed:
-            title += "\n" + t(lang, "products_sync_partial_warning")
-        await update.message.reply_text(
-            title,
-            parse_mode="HTML",
-            reply_markup=product_list_keyboard(products, lang=lang, page=0, per_page=per_page),
-        )
+        await _send_product_list(update.message, db, context, lang)
     finally:
         db.close()
 
@@ -398,30 +410,40 @@ def _api_base_url() -> str:
     return f"https://{domain}" if domain else "https://your-domain.example.com"
 
 
-async def _send_api_menu(bot_or_query, db, tg_user, lang: str, edit=False):
+async def _send_api_menu(bot_or_query, db, tg_user, lang: str, edit=False, bot=None):
+    """
+    Prepaid-only API screen: just the (masked) key, a status line if it's
+    locked/revoked, the prepaid-wallet notice, and Swagger + Regenerate.
+    A key is auto-created the first time this screen is opened — there is
+    no separate "Create key" step. Wallet balance, usage stats, and order
+    history live in 👛 Ví / 📦 Đơn hàng / 👤 Thông tin instead of here.
+    """
     client = api_client_service.get_client_for_user(db, str(tg_user.id))
-    lines = [t(lang, "api_menu_title"), ""]
     if not client:
-        lines.append(t(lang, "api_menu_no_key"))
-    else:
+        client, _full_key = api_client_service.generate_key_for_user(db, str(tg_user.id))
+        admin_id = _get_admin_id(db)
+        if admin_id and bot:
+            try:
+                await bot.send_message(
+                    chat_id=int(admin_id),
+                    text=t("vi", "api_admin_key_created", tg_id=tg_user.id),
+                    parse_mode="HTML",
+                )
+            except Exception as e:
+                logger.error(f"api_admin_key_created notify failed: {e}")
+
+    lines = [t(lang, "api_menu_title"), ""]
+    if client.status != ApiClientStatus.active:
         status_key = {
-            ApiClientStatus.active: "api_status_active",
             ApiClientStatus.locked: "api_status_locked",
             ApiClientStatus.revoked: "api_status_revoked",
         }.get(client.status, "api_status_active")
-        user = db.query(User).filter(User.telegram_id == str(tg_user.id)).first()
-        vnd = wallet_service.get_balance(user, WalletCurrency.VND) if user else 0.0
-        usdt = wallet_service.get_balance(user, WalletCurrency.USDT) if user else 0.0
-        lines += [
-            t(lang, "api_menu_status", status=t(lang, status_key)),
-            t(lang, "api_menu_key", key=f"{client.key_prefix}••••" if client.key_prefix else "—"),
-            t(lang, "api_menu_balance", vnd=format_vnd(vnd), usdt=f"{usdt:.2f}"),
-            t(lang, "api_menu_usage", requests=client.total_requests, orders=client.total_orders),
-            t(lang, "api_menu_permissions", permissions=", ".join(api_client_service.get_permissions(client))),
-            t(lang, "api_menu_created", date=client.created_at.strftime("%d/%m/%Y") if client.created_at else "—"),
-        ]
+        lines.append(t(lang, "api_menu_status", status=t(lang, status_key)))
+    lines.append(t(lang, "api_menu_key", key=api_key_service.masked_display(client.key_prefix)))
+    lines.append("")
+    lines.append(t(lang, "api_menu_prepaid_notice"))
     text = "\n".join(lines)
-    kbd = api_menu_keyboard(lang=lang, has_key=bool(client and client.status != ApiClientStatus.revoked))
+    kbd = api_menu_keyboard(lang=lang, swagger_url=f"{_api_base_url()}/docs")
     if edit:
         try:
             await bot_or_query.message.edit_text(text, parse_mode="HTML", reply_markup=kbd)
@@ -440,7 +462,67 @@ async def api_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lang = _get_lang(db, update.effective_user.id)
         tg_user = update.effective_user
         get_or_create_user(db, str(tg_user.id), tg_user.username, tg_user.first_name, tg_user.last_name)
-        await _send_api_menu(update.message, db, tg_user, lang, edit=False)
+        await _send_api_menu(update.message, db, tg_user, lang, edit=False, bot=context.bot)
+    finally:
+        db.close()
+
+
+async def _account_info_text(db, tg_user, lang: str) -> str:
+    user = db.query(User).filter(User.telegram_id == str(tg_user.id)).first()
+    vnd = wallet_service.get_balance(user, WalletCurrency.VND) if user else 0.0
+    usdt = wallet_service.get_balance(user, WalletCurrency.USDT) if user else 0.0
+    client = api_client_service.get_client_for_user(db, str(tg_user.id))
+    if client:
+        api_status = t(lang, {
+            ApiClientStatus.active: "api_status_active",
+            ApiClientStatus.locked: "api_status_locked",
+            ApiClientStatus.revoked: "api_status_revoked",
+        }.get(client.status, "api_status_active"))
+        api_key_masked = api_key_service.masked_display(client.key_prefix)
+        api_created_at = client.created_at.strftime("%d/%m/%Y") if client.created_at else "—"
+        api_order_count = client.total_orders or 0
+        api_total_spent_orders = (
+            db.query(Order)
+            .filter(Order.api_client_id == client.id, Order.payment_status == PaymentStatus.paid)
+            .all()
+        )
+        api_total_spent = format_vnd(sum(o.total_price or 0 for o in api_total_spent_orders))
+    else:
+        api_status = t(lang, "api_menu_no_key")
+        api_key_masked = "—"
+        api_created_at = "—"
+        api_order_count = 0
+        api_total_spent = "0"
+
+    total_orders = getattr(user, "total_orders", 0) or 0
+    completed_orders = (
+        db.query(Order)
+        .filter(Order.telegram_user_id == str(tg_user.id), Order.status == OrderStatus.completed)
+        .count()
+    )
+    lang_display = "Tiếng Việt" if lang == "vi" else "English"
+    username_str = tg_user.username or "—"
+    full_name = " ".join(filter(None, [tg_user.first_name, tg_user.last_name])) or username_str
+
+    return t(lang, "account_info_full",
+              full_name=full_name, username=username_str, tg_id=tg_user.id, language=lang_display,
+              balance_vnd=format_vnd(vnd), balance_usdt=f"{usdt:.2f}",
+              api_status=api_status, api_key_masked=api_key_masked, api_created_at=api_created_at,
+              api_order_count=api_order_count, api_total_spent=api_total_spent,
+              total_orders=total_orders, completed_orders=completed_orders)
+
+
+async def account_info_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handler for /account command and 👤 Thông tin / Account menu button."""
+    db = SessionLocal()
+    try:
+        if not await _require_language_selected(update, db):
+            return
+        lang = _get_lang(db, update.effective_user.id)
+        tg_user = update.effective_user
+        get_or_create_user(db, str(tg_user.id), tg_user.username, tg_user.first_name, tg_user.last_name)
+        text = await _account_info_text(db, tg_user, lang)
+        await update.message.reply_text(text, parse_mode="HTML", reply_markup=account_info_keyboard(lang=lang))
     finally:
         db.close()
 
@@ -1216,6 +1298,9 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 pass
             # Update Telegram Menu commands for this chat in the chosen language
             await _set_bot_commands(context.bot, lang_code, chat_id=int(tg_user.id))
+            # First-time users go straight from language picker to the product
+            # list — no separate "tap Products" step.
+            await _send_product_list(query.message, db, context, lang_code)
         finally:
             db.close()
         return
@@ -1338,13 +1423,45 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             db.close()
         return
 
+    if data == "account_orders":
+        db = SessionLocal()
+        try:
+            tg_user = update.effective_user
+            lang = _get_lang(db, tg_user.id)
+            orders = (
+                db.query(Order)
+                .filter(Order.telegram_user_id == str(tg_user.id))
+                .order_by(Order.created_at.desc())
+                .limit(10)
+                .all()
+            )
+            if not orders:
+                text = t(lang, "orders_empty")
+            else:
+                lines = [t(lang, "orders_title")]
+                for o in orders:
+                    sv = o.status.value if hasattr(o.status, "value") else o.status
+                    st = _status_label(sv, lang)
+                    lines.append(
+                        f"• <code>{o.order_code}</code> — {st}\n"
+                        f"  💰 {format_vnd(o.total_price)}đ | {o.created_at.strftime('%d/%m/%Y')}"
+                    )
+                text = "\n".join(lines)
+            try:
+                await query.message.reply_text(text, parse_mode="HTML")
+            except Exception:
+                await context.bot.send_message(chat_id=tg_user.id, text=text, parse_mode="HTML")
+        finally:
+            db.close()
+        return
+
     # ── API key menu ──
     if data == "api_home":
         db = SessionLocal()
         try:
             tg_user = update.effective_user
             lang = _get_lang(db, tg_user.id)
-            await _send_api_menu(query, db, tg_user, lang, edit=True)
+            await _send_api_menu(query, db, tg_user, lang, edit=True, bot=context.bot)
         finally:
             db.close()
         return

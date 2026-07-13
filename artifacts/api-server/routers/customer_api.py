@@ -42,7 +42,12 @@ async def require_api_client(
     request.state.api_client_id = client.id
 
     if client.status != ApiClientStatus.active:
-        raise HTTPException(status_code=401, detail=f"API key is {client.status.value}")
+        # 401 means "we don't know who you are"; a locked/revoked key IS a
+        # recognized identity that's been denied access, so this is a 403.
+        raise HTTPException(status_code=403, detail={
+            "code": "api_suspended" if client.status == ApiClientStatus.locked else "api_revoked",
+            "message": f"API key is {client.status.value}",
+        })
 
     limit_error = check_rate_limits(db, client)
     if limit_error:

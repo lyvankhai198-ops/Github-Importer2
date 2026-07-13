@@ -8,6 +8,7 @@ def main_menu_keyboard(lang: str = "vi", is_admin: bool = False) -> ReplyKeyboar
         [t(lang, "menu_products"), t(lang, "menu_orders")],
         [t(lang, "menu_btn_wallet"), t(lang, "menu_support")],
         [t(lang, "menu_btn_api"), t(lang, "menu_language")],
+        [t(lang, "menu_btn_account")],
     ]
     if is_admin:
         buttons.append([t(lang, "menu_admin")])
@@ -183,17 +184,28 @@ def wallet_insufficient_balance_keyboard(order_id: int, lang: str = "vi") -> Inl
 
 # ── Customer API ─────────────────────────────────────────────────────────────
 
-def api_menu_keyboard(lang: str = "vi", has_key: bool = False) -> InlineKeyboardMarkup:
+def api_menu_keyboard(lang: str = "vi", has_key: bool = False, swagger_url: str = "") -> InlineKeyboardMarkup:
+    """
+    Simplified, prepaid-only API screen: just the key, a Swagger link, and
+    Regenerate. Wallet top-up, API order history, and key revocation all
+    live under their own menus (👛 Ví / 📦 Đơn hàng), not here.
+    """
     rows = []
-    if has_key:
-        rows.append([InlineKeyboardButton(t(lang, "btn_api_regenerate"), callback_data="api_regenerate")])
-        rows.append([InlineKeyboardButton(t(lang, "btn_api_revoke"), callback_data="api_revoke")])
-    else:
-        rows.append([InlineKeyboardButton(t(lang, "btn_api_generate"), callback_data="api_generate")])
-    rows.append([InlineKeyboardButton(t(lang, "btn_api_history"), callback_data="api_history")])
-    rows.append([InlineKeyboardButton(t(lang, "btn_api_guide"), callback_data="api_guide")])
+    if swagger_url:
+        rows.append([InlineKeyboardButton(t(lang, "btn_api_swagger"), url=swagger_url)])
+    rows.append([InlineKeyboardButton(t(lang, "btn_api_regenerate"), callback_data="api_regenerate")])
     rows.append([InlineKeyboardButton(t(lang, "btn_home"), callback_data="home")])
     return InlineKeyboardMarkup(rows)
+
+
+def account_info_keyboard(lang: str = "vi") -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(t(lang, "menu_btn_wallet"), callback_data="wallet_home")],
+        [InlineKeyboardButton(t(lang, "menu_orders"), callback_data="account_orders")],
+        [InlineKeyboardButton(t(lang, "btn_wallet_history"), callback_data="wallet_history")],
+        [InlineKeyboardButton(t(lang, "btn_account_docs"), callback_data="api_guide")],
+        [InlineKeyboardButton(t(lang, "btn_home"), callback_data="home")],
+    ])
 
 
 def api_back_keyboard(lang: str = "vi") -> InlineKeyboardMarkup:
