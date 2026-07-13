@@ -112,6 +112,25 @@ class BotManager:
                         self._status = BotStatus.error
                         self._update_db_status(BotStatus.error)
                         break
+                    if self._is_conflict_error(e):
+                        # Another process (the old bot, or a second instance
+                        # of this one) is already polling getUpdates with the
+                        # same token. Telegram only allows one poller per
+                        # token — do NOT retry/spin up a second instance;
+                        # that would just fight the other process forever.
+                        logger.error(
+                            "TELEGRAM_BOT_CONFLICT: another instance of this bot (likely the old "
+                            "bot, still running on a different server) is already polling with this "
+                            "token. Stop that instance first, then restart the bot here."
+                        )
+                        gave_up = True
+                        self._last_error = (
+                            "Conflict: bot cũ vẫn đang chạy ở server khác với cùng token. "
+                            "Vui lòng tắt bot cũ trước khi chạy bot ở đây."
+                        )
+                        self._status = BotStatus.error
+                        self._update_db_status(BotStatus.error)
+                        break
                     self._retry_count += 1
                     delay = _backoff_delay(self._retry_count)
                     self._status = BotStatus.reconnecting
@@ -143,6 +162,16 @@ class BotManager:
         msg = str(exc).lower()
         return "unauthorized" in msg or "invalid token" in msg or "not found" in msg and "bot" in msg
 
+    @staticmethod
+    def _is_conflict_error(exc: Exception) -> bool:
+        try:
+            from telegram.error import Conflict
+            if isinstance(exc, Conflict):
+                return True
+        except Exception:
+            pass
+        return "conflict" in str(exc).lower() and "getupdates" in str(exc).lower()
+
     async def _run_bot_once(self, token: str):
         """Run a single connection lifecycle. Raises on failure so the
         supervisor can decide whether/how to reconnect."""
@@ -161,6 +190,17 @@ class BotManager:
             logger.info(f"TELEGRAM_BOT_RUNNING: @{me.username}")
             await application.initialize()
             await application.start()
+            # Defensive explicit delete_webhook before polling: if this token
+            # was previously used in webhook mode (or by another deployment),
+            # a stale webhook would silently swallow getUpdates. PTB's
+            # start_polling() already does this internally, but we call it
+            # again here explicitly so the intent (and the log line) is
+            # unambiguous when taking over a legacy bot's token.
+            try:
+                await application.bot.delete_webhook(drop_pending_updates=False)
+                logger.info("TELEGRAM_BOT_WEBHOOK_CLEARED")
+            except Exception as e:
+                logger.warning(f"delete_webhook failed (continuing anyway): {e}")
             await application.updater.start_polling(drop_pending_updates=True)
             while not self._stop_requested:
                 await asyncio.sleep(1)

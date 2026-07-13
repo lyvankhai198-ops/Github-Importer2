@@ -168,7 +168,12 @@ class User(Base):
     language_selected = Column(Boolean, default=False, nullable=False)
     total_orders = Column(Integer, default=0)
     total_spent = Column(Float, default=0.0)
+    balance = Column(Float, default=0.0, nullable=False)  # wallet balance carried over from legacy-bot import
     is_banned = Column(Boolean, default=False)
+    # True once a broadcast/DM send gets a Telegram "Forbidden" (user blocked
+    # the bot). Distinct from is_banned (admin action) — this is detected
+    # automatically and excludes the user from future broadcasts.
+    is_blocked = Column(Boolean, default=False, nullable=False)
     last_active_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=now)
     updated_at = Column(DateTime, default=now, onupdate=now)

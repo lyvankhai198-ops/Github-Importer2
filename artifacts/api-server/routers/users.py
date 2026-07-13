@@ -1,5 +1,5 @@
 from pathlib import Path
-from fastapi import APIRouter, Request, Depends, Form
+from fastapi import APIRouter, Request, Depends, Form, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
@@ -42,7 +42,64 @@ async def users_list(request: Request, db: Session = Depends(get_db), search: st
         "total": total,
         "per_page": per_page,
         "flash": flash_msg,
+        "import_result": request.session.pop("import_result", None),
     })
+
+
+@router.post("/users/import")
+async def import_users_endpoint(
+    request: Request,
+    db: Session = Depends(get_db),
+    file: UploadFile = File(...),
+    mode: str = Form("update_info"),
+):
+    """Import legacy-bot users (chat_id/username/full_name/balance/created_at)
+    from a CSV or Excel file, deduped by telegram_id (chat_id). See
+    services.user_import for the exact merge rules per mode."""
+    if not check_auth(request):
+        return RedirectResponse(url="/login", status_code=302)
+
+    from services.user_import import parse_import_file, import_users, VALID_MODES
+    if mode not in VALID_MODES:
+        flash(request, "Chế độ import không hợp lệ!", "error")
+        return RedirectResponse(url="/users", status_code=302)
+    if not file or not file.filename:
+        flash(request, "Vui lòng chọn file CSV/Excel để import!", "error")
+        return RedirectResponse(url="/users", status_code=302)
+
+    try:
+        content = await file.read()
+        rows = parse_import_file(file.filename, content)
+        if not rows:
+            flash(request, "File không có dữ liệu người dùng nào!", "error")
+            return RedirectResponse(url="/users", status_code=302)
+        result = import_users(db, rows, mode)
+    except ValueError as e:
+        flash(request, f"Lỗi đọc file: {e}", "error")
+        return RedirectResponse(url="/users", status_code=302)
+    except Exception as e:
+        flash(request, f"Import thất bại: {e}", "error")
+        return RedirectResponse(url="/users", status_code=302)
+
+    request.session["import_result"] = result
+    flash(request, f"Import xong: {result['success']}/{result['total']} thành công, {result['duplicates']} trùng, {result['errors']} lỗi.")
+    return RedirectResponse(url="/users", status_code=302)
+
+
+@router.post("/users/test-send")
+async def test_send_message(request: Request, chat_id: str = Form(...)):
+    """📢 Gửi tin thử — sends a fixed test message to a chosen Chat ID so
+    the admin can confirm the (new) bot token can actually reach a
+    carried-over legacy-bot user before running a full broadcast."""
+    if not check_auth(request):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    chat_id = chat_id.strip()
+    if not chat_id:
+        return JSONResponse({"success": False, "error": "Thiếu Chat ID"}, status_code=400)
+    if not bot_manager.is_running():
+        return JSONResponse({"success": False, "error": "Bot chưa khởi động!"})
+    ok = await bot_manager.send_message(chat_id, "✅ Đây là tin nhắn thử từ bot. Nếu bạn nhận được tin này, bot đã kết nối thành công tới Chat ID của bạn.")
+    return JSONResponse({"success": ok, "error": None if ok else "Không gửi được — kiểm tra Chat ID hoặc user đã chặn bot."})
 
 
 @router.get("/users/{telegram_id}", response_class=HTMLResponse)

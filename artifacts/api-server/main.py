@@ -146,6 +146,10 @@ def _run_migrations():
         # needs re-translating" apart from "already translated, nothing to do"
         # without re-calling the translator (and re-billing) on every sync.
         "ALTER TABLE products ADD COLUMN description_en_source TEXT",
+        # Legacy-bot user import: wallet balance carried over, plus automatic
+        # blocked-in-Telegram detection (distinct from admin-issued is_banned).
+        "ALTER TABLE users ADD COLUMN balance FLOAT DEFAULT 0.0",
+        "ALTER TABLE users ADD COLUMN is_blocked BOOLEAN DEFAULT 0",
     ]
     with engine.connect() as conn:
         ran_language_selected_migration = False

@@ -38,9 +38,10 @@
       <div class="card-header"><h6 class="mb-0">Kết quả gửi gần nhất</h6></div>
       <div class="card-body">
         <div class="row g-2 text-center">
-          <div class="col-4"><div class="fw-bold fs-4">{{ result.total }}</div><small class="text-muted">Tổng số</small></div>
-          <div class="col-4"><div class="fw-bold fs-4 text-success">{{ result.sent }}</div><small class="text-muted">Thành công</small></div>
-          <div class="col-4"><div class="fw-bold fs-4 text-danger">{{ result.failed }}</div><small class="text-muted">Thất bại</small></div>
+          <div class="col-3"><div class="fw-bold fs-4">{{ result.total }}</div><small class="text-muted">Tổng số</small></div>
+          <div class="col-3"><div class="fw-bold fs-4 text-success">{{ result.sent }}</div><small class="text-muted">Thành công</small></div>
+          <div class="col-3"><div class="fw-bold fs-4 text-danger">{{ result.failed }}</div><small class="text-muted">Thất bại</small></div>
+          <div class="col-3"><div class="fw-bold fs-4 text-warning">{{ result.blocked or 0 }}</div><small class="text-muted">Đã chặn bot</small></div>
         </div>
       </div>
     </div>

@@ -13,14 +13,18 @@ logger = logging.getLogger(__name__)
 
 
 async def send_broadcast(db: Session, title: str, content: str, image_path: str | None = None) -> dict:
+    from telegram.error import Forbidden
     from services.bot_service import bot_manager
     if not bot_manager.is_running():
-        return {"sent": 0, "failed": 0, "total": 0, "error": "Bot chưa chạy — vui lòng bật bot trước khi gửi thông báo."}
+        return {"sent": 0, "failed": 0, "blocked": 0, "total": 0, "error": "Bot chưa chạy — vui lòng bật bot trước khi gửi thông báo."}
 
-    users = db.query(User).filter(User.is_banned == False).all()
+    # Only active users: not admin-banned, and not already known to have
+    # blocked the bot in Telegram (is_blocked, set automatically below).
+    users = db.query(User).filter(User.is_banned == False, User.is_blocked == False).all()
     total = len(users)
     sent = 0
     failed = 0
+    blocked = 0
 
     bot = bot_manager._application.bot
     text = f"📢 <b>{html.escape(title)}</b>\n\n{html.escape(content)}"
@@ -42,9 +46,17 @@ async def send_broadcast(db: Session, title: str, content: str, image_path: str 
             else:
                 await bot.send_message(chat_id=int(user.telegram_id), text=text, parse_mode="HTML")
             sent += 1
+        except Forbidden:
+            # User blocked the bot (or deleted their account) — stop
+            # broadcasting to them going forward until they unblock it.
+            failed += 1
+            blocked += 1
+            user.is_blocked = True
+            db.commit()
+            logger.warning(f"[broadcast] user {user.telegram_id} has blocked the bot — marked is_blocked")
         except Exception as e:
             failed += 1
             logger.error(f"[broadcast] send failed for user {user.telegram_id}: {e}")
 
-    logger.info(f"BROADCAST_SENT: total={total} sent={sent} failed={failed}")
-    return {"sent": sent, "failed": failed, "total": total, "error": None}
+    logger.info(f"BROADCAST_SENT: total={total} sent={sent} failed={failed} blocked={blocked}")
+    return {"sent": sent, "failed": failed, "blocked": blocked, "total": total, "error": None}
