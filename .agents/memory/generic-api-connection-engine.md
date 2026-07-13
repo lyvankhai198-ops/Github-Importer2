@@ -20,3 +20,13 @@ an existing one, look first at whether it's expressible via the existing config 
 do not write new adapter code. The legacy adapter files (`integrations/canboso.py`,
 `zampto.py`, `custom.py`) still exist only because older tests import them directly; they are
 dead code on the live path and should not be extended.
+
+**Reverted (2026-07-13):** the user asked to undo this engine and restore the original
+fixed-adapter architecture (ZamptoAdapter/CustomAdapter/CanBosoAdapter dispatched by
+`ApiType` in `integrations/manager.py`), with "CanBoSo Market" removed only from the
+Add/Edit Connection dropdown — the CanBosoAdapter dispatch and the CanBoSo Market
+end-user shopping feature (item_type, paid_waiting_stock, synthetic buyer email) were kept
+working untouched. Lesson: the CanBoSo Market end-user feature is wired through the same
+`ApiConnection`/adapter dispatch as the admin "Kết nối API" screen, not a separate system —
+before removing or hiding any ApiType from the admin UI, check whether an end-user feature
+depends on being able to create/use that adapter type.
