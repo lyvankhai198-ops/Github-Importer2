@@ -1,0 +1,337 @@
+Thiết kế lại hệ thống kết nối API theo hướng generic/dynamic, để sau này có thể kết nối nhiều nhà cung cấp API khác nhau mà không cần sửa code cho từng bên.
+
+Không tạo project mới.
+Không xóa database.
+Không làm mất kết nối API hiện có.
+Phải giữ tương thích với CanBoSo và Zampto.
+
+MỤC TIÊU
+
+Admin có thể tự tạo một kết nối API mới trên web bằng cách cấu hình:
+
+1. Tên kết nối
+2. Base URL
+3. Loại xác thực
+4. Tên header hoặc query param chứa API key
+5. Tiền tố token nếu có
+6. Endpoint lấy sản phẩm
+7. Endpoint kiểm tra kết nối
+8. Endpoint tạo đơn hàng
+9. HTTP method cho từng endpoint
+10. Query params mặc định
+11. Request body template
+12. Đường dẫn JSON để lấy dữ liệu
+13. Mapping các trường sản phẩm
+14. Mapping request tạo đơn
+15. Mapping response đơn hàng
+
+Sau khi lưu, hệ thống phải tự Test, Sync và tạo đơn mà không cần viết code riêng cho nhà cung cấp đó.
+
+A. LOẠI XÁC THỰC PHẢI HỖ TRỢ
+
+- none
+- x_api_key
+- bearer
+- basic_auth
+- query_param
+- custom_header
+
+Các field cấu hình:
+
+auth_type
+auth_header_name
+auth_query_name
+auth_prefix
+api_key_encrypted
+username_encrypted
+password_encrypted
+
+Ví dụ:
+
+X-API-Key:
+auth_type = custom_header
+auth_header_name = X-API-Key
+auth_prefix = ""
+
+Bearer:
+auth_type = bearer
+auth_header_name = Authorization
+auth_prefix = Bearer
+
+Query:
+auth_type = query_param
+auth_query_name = api_key
+
+Không dùng giá trị API key đã mask.
+Luôn giải mã api_key_encrypted trước khi gửi request.
+
+B. CẤU HÌNH ENDPOINT
+
+Mỗi kết nối phải có các field:
+
+test_endpoint
+test_method
+products_endpoint
+products_method
+order_endpoint
+order_method
+
+Ví dụ:
+
+CanBoSo:
+base_url = https://canboso.com/api/public/market
+products_endpoint = /products
+order_endpoint = /products/{product_id}/buy
+
+Zampto:
+base_url = URL do admin nhập
+products_endpoint = endpoint do admin cấu hình
+order_endpoint = endpoint do admin cấu hình
+
+Phải chuẩn hóa URL:
+- không nối trùng dấu /
+- không tạo /products/products
+- cho phép endpoint tuyệt đối hoặc tương đối
+- cho phép placeholder như {product_id}, {service_id}, {order_id}
+
+C. QUERY PARAM VÀ BODY TEMPLATE
+
+Cho phép admin nhập JSON cho:
+
+default_query_params
+test_query_params
+products_query_params
+order_query_params
+order_body_template
+
+Ví dụ order_body_template:
+
+{
+  "quantity": "{{quantity}}",
+  "email": "{{customer_email}}",
+  "product_id": "{{external_product_id}}"
+}
+
+Hệ thống thay placeholder động trước khi gửi.
+
+Các placeholder hỗ trợ ít nhất:
+
+{{quantity}}
+{{customer_email}}
+{{product_id}}
+{{external_product_id}}
+{{user_id}}
+{{price}}
+{{reference}}
+{{order_id}}
+
+D. PARSE RESPONSE ĐỘNG
+
+Cho phép cấu hình JSON path cho:
+
+products_list_path
+product_id_path
+product_name_path
+product_price_path
+product_stock_path
+product_description_path
+product_category_path
+product_status_path
+
+Ví dụ response:
+
+{
+  "data": {
+    "products": [...]
+  }
+}
+
+thì:
+products_list_path = data.products
+
+Phải hỗ trợ:
+- response là list trực tiếp
+- data
+- data.products
+- products
+- result.items
+- custom dot path
+
+Nếu path không tồn tại, báo lỗi rõ ràng trên web.
+
+E. MAPPING SẢN PHẨM
+
+Admin có thể cấu hình mapping:
+
+external_id
+name
+price
+stock
+description
+category
+status
+min_quantity
+max_quantity
+metadata
+
+Nếu field không có thì dùng default hợp lý.
+
+Không được hardcode tên field riêng của CanBoSo hoặc Zampto trong phần sync chung.
+
+F. TẠO ĐƠN HÀNG ĐỘNG
+
+Cho phép cấu hình:
+
+order_body_template
+order_response_id_path
+order_response_status_path
+order_response_items_path
+order_response_message_path
+
+Hệ thống phải:
+
+- tạo request từ template
+- gửi đúng auth
+- parse response theo mapping
+- lưu raw response
+- không hardcode body riêng cho từng API
+
+G. TEST KẾT NỐI
+
+Nút Test kết nối phải:
+
+1. Tạo request từ cấu hình
+2. Gửi đúng auth
+3. Gọi test_endpoint hoặc products_endpoint nếu test_endpoint trống
+4. Hiện:
+   - URL
+   - method
+   - status code
+   - thời gian phản hồi
+   - message lỗi an toàn
+5. Không hiển thị API key đầy đủ
+
+H. LOG AN TOÀN
+
+Log:
+
+connection_id
+connection_name
+api_type
+auth_type
+method
+url
+status_code
+duration_ms
+has_api_key
+response_preview tối đa 500 ký tự
+
+Không log:
+- API key đầy đủ
+- password
+- Authorization header đầy đủ
+
+I. GIAO DIỆN
+
+Trong màn hình Thêm/Sửa kết nối API, thêm các mục:
+
+Thông tin chung
+Xác thực
+Endpoint
+Query Params
+Body Template
+Response Mapping
+Product Mapping
+Order Mapping
+Advanced
+
+Có nút:
+- Test kết nối
+- Xem request preview
+- Xem response preview
+- Đồng bộ thử 1 sản phẩm
+- Đồng bộ toàn bộ
+
+Có sẵn preset:
+
+- CanBoSo Market
+- Zampto Standard
+- Custom Generic
+
+Nhưng preset chỉ tự điền cấu hình.
+Luồng xử lý phía backend vẫn dùng chung một engine generic.
+
+J. TƯƠNG THÍCH NGƯỢC
+
+Các kết nối cũ:
+- canboso_market
+- zampto_standard
+
+phải được migrate sang cấu hình generic tự động.
+
+Không làm mất:
+- API key đã lưu
+- lịch sử sync
+- sản phẩm đã đồng bộ
+- đơn hàng hiện có
+
+K. KIẾN TRÚC CODE
+
+Tạo một generic API client/service dùng chung, ví dụ:
+
+GenericApiClient
+AuthBuilder
+UrlBuilder
+TemplateRenderer
+JsonPathResolver
+ProductMapper
+OrderMapper
+
+Không để logic auth và request bị rải rác ở nhiều router.
+
+Tất cả chức năng sau phải gọi chung generic engine:
+
+- test connection
+- sync one
+- sync all
+- create order
+- buy product
+- refresh connection
+- scheduled sync
+
+L. KIỂM THỬ
+
+Phải có test cho:
+
+1. X-API-Key header
+2. Bearer token
+3. Query param api_key
+4. Custom header
+5. Basic auth
+6. URL join
+7. JSON path
+8. Product mapping
+9. Order body template
+10. Response mapping
+11. CanBoSo preset
+12. Zampto preset
+13. Custom Generic API
+
+M. KẾT QUẢ CUỐI
+
+Sau khi sửa:
+
+- CanBoSo hoạt động
+- Zampto hoạt động
+- có thể thêm API mới chỉ bằng cấu hình
+- không cần sửa code cho từng nhà cung cấp
+- test, sync và tạo đơn đều dùng generic engine
+
+Cuối cùng:
+- chạy test
+- migrate database an toàn
+- commit
+- push GitHub
+- báo commit hash
+- liệt kê file đã sửa
+- mô tả cấu hình mẫu cho CanBoSo và một Custom API
