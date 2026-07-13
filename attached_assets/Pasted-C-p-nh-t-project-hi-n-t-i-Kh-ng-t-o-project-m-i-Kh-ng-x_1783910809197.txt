@@ -1,0 +1,444 @@
+Cập nhật project hiện tại.
+
+Không tạo project mới.
+Không xóa database, đơn hàng, API nguồn, cấu hình thanh toán hoặc dữ liệu người dùng.
+
+MỤC TIÊU:
+
+1. Khi khách bấm mục Sản phẩm, bot phải tự đồng bộ API nguồn trước rồi mới hiển thị danh sách.
+2. Không bắt khách bấm nút Làm mới.
+3. Giữ icon giống kiểu hiển thị trong ảnh.
+4. Khi khách chọn English, toàn bộ tên sản phẩm, mô tả, trạng thái, nút và giá phải hiển thị bằng tiếng Anh.
+5. Không để bản tiếng Anh còn các đoạn tiếng Việt hoặc ký hiệu chưa dịch.
+
+==================================================
+1. TỰ ĐỒNG BỘ KHI BẤM SẢN PHẨM
+==================================================
+
+Khi user bấm:
+
+🛍 Sản phẩm
+hoặc
+🛍 Products
+hoặc dùng lệnh:
+/products
+/product
+
+Bot phải chạy:
+
+sync_active_supplier_products()
+
+trước khi render danh sách.
+
+Luồng:
+
+Khách bấm Sản phẩm
+→ bot báo ngắn:
+  ⏳ Đang cập nhật sản phẩm...
+  hoặc
+  ⏳ Updating products...
+→ đồng bộ toàn bộ API nguồn đang active
+→ cập nhật database
+→ hiển thị danh sách sản phẩm mới nhất
+
+Không yêu cầu khách bấm nút Làm mới.
+
+Nếu đồng bộ thành công:
+- hiển thị danh sách ngay
+- không gửi thêm thông báo rác
+
+Nếu một nguồn lỗi:
+- vẫn hiển thị dữ liệu từ các nguồn còn hoạt động
+- giữ dữ liệu cũ của nguồn lỗi
+- không đặt tồn kho nguồn lỗi về 0
+
+Nếu toàn bộ nguồn lỗi:
+- hiển thị danh sách gần nhất trong database
+- báo nhỏ:
+  ⚠️ Một số nguồn chưa cập nhật được.
+  hoặc
+  ⚠️ Some sources could not be refreshed.
+
+==================================================
+2. KHÔNG ĐỂ BOT CHỜ QUÁ LÂU
+==================================================
+
+Đồng bộ phải có timeout riêng cho từng nguồn, ví dụ 8 giây.
+
+Chạy các nguồn song song bằng asyncio.gather(..., return_exceptions=True).
+
+Không để một nguồn chậm làm treo toàn bộ bot.
+
+Nếu dữ liệu vừa đồng bộ trong vòng 30 giây:
+- không cần gọi lại toàn bộ nguồn
+- dùng cache ngắn 30 giây
+
+==================================================
+3. DANH SÁCH SẢN PHẨM
+==================================================
+
+Sản phẩm còn hàng:
+
+{icon} {product_name} - {price}
+
+Sản phẩm hết hàng:
+
+❌ {product_name} - Hết hàng
+
+English:
+
+{icon} {product_name_en} - {price_usdt} USDT
+
+Out of stock:
+
+❌ {product_name_en} - Out of stock
+
+Không hiển thị nút Làm mới bắt buộc.
+
+Có thể giữ nút:
+
+🔄 Làm mới
+🔄 Refresh
+
+nhưng chỉ là tùy chọn, không phải cách đồng bộ chính.
+
+==================================================
+4. ICON GIỐNG HÌNH
+==================================================
+
+Hỗ trợ icon riêng cho từng sản phẩm.
+
+Thêm hoặc dùng trường:
+
+telegram_icon
+
+Nếu admin đã cấu hình icon thì dùng icon đó.
+
+Ví dụ:
+
+Grok:
+◉ hoặc icon Grok hiện tại trong database
+
+Canva:
+logo hoặc emoji Canva đã lưu
+
+Gemini:
+✨
+
+CapCut:
+biểu tượng CapCut đã lưu
+
+Cursor:
+◇ hoặc icon đã lưu
+
+Sản phẩm hết hàng:
+luôn thay icon đầu bằng ❌
+
+Không dùng chung 📦 cho mọi sản phẩm nếu đã có icon riêng.
+
+Nếu sản phẩm có ảnh:
+- trang chi tiết gửi ảnh sản phẩm
+- caption chứa tên, giá, tồn kho, đã bán và mô tả
+
+==================================================
+5. TRANG CHI TIẾT TIẾNG VIỆT
+==================================================
+
+Ví dụ:
+
+◉ GROK SUPER 3 THÁNG BHF
+
+💵 Giá: 350K
+➕ Tồn kho: 120 tài khoản
+📊 Đã bán: 119 tài khoản
+
+💬 Mô tả:
+• Grok gói Super hạn sử dụng 3 tháng.
+• Định dạng: tk|mk
+• Bảo hành 3 tháng.
+⚠️ VUI LÒNG ĐỌC KỸ MÔ TẢ TRƯỚC KHI MUA:
+• Không đổi mail. Đổi mail = KBH.
+• Không bật 2FA, bật = KBH.
+• Không link hoặc gỡ tài khoản khỏi X hoặc Google.
+
+🏷 Nhập số lượng muốn mua (1–120):
+
+==================================================
+6. TRANG CHI TIẾT TIẾNG ANH
+==================================================
+
+Khi user.language_code = "en":
+
+Toàn bộ nội dung phải bằng tiếng Anh.
+
+Ví dụ:
+
+◉ GROK SUPER 3 MONTHS — FULL WARRANTY
+
+💵 Price: 13.21 USDT
+➕ Stock: 120 accounts
+📊 Sold: 119 accounts
+
+💬 Description:
+• Grok Super package with a 3-month duration.
+• Format: username|password
+• 3-month full warranty.
+⚠️ PLEASE READ THE DESCRIPTION CAREFULLY BEFORE BUYING:
+• Do not change the email. Changing the email voids the warranty.
+• Do not enable 2FA. Enabling 2FA voids the warranty.
+• Do not link or remove the account from X or Google.
+
+🏷 Enter quantity to buy (1–120):
+
+Không được còn:
+
+- 3 Tháng
+- BHF
+- KBH
+- tk|mk
+- Giá
+- Tồn kho
+- Đã bán
+- Mô tả
+- Không đổi mail
+- Bảo hành
+
+trong bản tiếng Anh.
+
+==================================================
+7. DỊCH TÊN SẢN PHẨM
+==================================================
+
+Ưu tiên dùng trường:
+
+name_en
+
+Nếu name_en trống:
+- tự sinh bằng hàm translate_product_name_to_en()
+
+Quy tắc:
+
+BHF → Full Warranty
+KBH → No Warranty
+BH 1D → 1-Day Warranty
+BH 3D → 3-Day Warranty
+BH 7D → 7-Day Warranty
+BH 10D → 10-Day Warranty
+BH 15D → 15-Day Warranty
+BH 25D → 25-Day Warranty
+BH 30D → 30-Day Warranty
+BH 1M → 1-Month Warranty
+BH 3M → 3-Month Warranty
+BH 6M → 6-Month Warranty
+BH 1Y → 1-Year Warranty
+
+1 Ngày → 1 Day
+3 Ngày → 3 Days
+7 Ngày → 7 Days
+10 Ngày → 10 Days
+15 Ngày → 15 Days
+25 Ngày → 25 Days
+30 Ngày → 30 Days
+
+1 Tháng → 1 Month
+3 Tháng → 3 Months
+6 Tháng → 6 Months
+12 Tháng → 12 Months
+
+1 Năm → 1 Year
+
+Ví dụ:
+
+GROK SUPER 3 THÁNG BHF
+→
+GROK SUPER 3 MONTHS — FULL WARRANTY
+
+[KBH] ChatGPT Plus 1 Tháng
+→
+[NO WARRANTY] ChatGPT Plus 1 Month
+
+==================================================
+8. DỊCH MÔ TẢ
+==================================================
+
+Ưu tiên trường:
+
+description_en
+
+Nếu trống:
+- tự tạo từ description_vi bằng hàm normalize_and_translate_description()
+
+Không gọi dịch lại mỗi lần user mở sản phẩm.
+
+Khi sync hoặc admin lưu sản phẩm:
+- tạo description_en một lần
+- lưu database
+- cho admin sửa tay trên web
+
+Từ điển bắt buộc:
+
+tk|mk → username|password
+tài khoản → account
+hạn sử dụng → duration
+bảo hành → warranty
+bảo hành full → full warranty
+không bảo hành → no warranty
+đổi mail → change email
+không đổi mail → do not change email
+bật 2FA → enable 2FA
+đăng nhập → log in
+thiết bị → device
+gói → package
+tháng → months
+ngày → days
+năm → year
+
+Các câu phải tự nhiên, không dịch máy kiểu cứng.
+
+==================================================
+9. GIÁ VND VÀ USDT
+==================================================
+
+Tỷ giá mặc định:
+
+1 USDT = 26,500 VND
+
+Tiếng Việt:
+- hiển thị VND
+- ví dụ 350.000đ
+
+English:
+- hiển thị USDT
+- ví dụ 13.21 USDT
+
+Công thức:
+
+price_usdt = sale_price_vnd / exchange_rate
+
+Làm tròn 2 chữ số thập phân.
+
+Không dùng ký hiệu $ nếu đang bán USDT để tránh hiểu nhầm USD.
+
+Dùng:
+
+13.21 USDT
+
+thay vì:
+
+$13.21
+
+==================================================
+10. MENU VÀ NÚT TIẾNG ANH
+==================================================
+
+Vietnamese:
+
+🛍 Sản phẩm
+💬 Hỗ trợ
+👛 Ví
+🔗 API
+
+English:
+
+🛍 Products
+💬 Support
+👛 Wallet
+🔗 API
+
+Màn hình chọn thanh toán English:
+
+Choose payment method:
+Total: 13.21 USDT
+
+💰 Pay with Wallet
+🟡 Pay with Binance
+🌐 Pay with USDT (BEP20)
+🌐 Pay with USDT (TRC20)
+
+==================================================
+11. TRANG BINANCE
+==================================================
+
+English:
+
+🟡 BINANCE PAYMENT
+
+Binance ID:
+<code>{binance_id}</code>
+
+Amount:
+<code>{amount_usdt} USDT</code>
+
+After payment, send your TXID or Binance off-chain transaction reference for verification.
+
+Không ghi:
+
+“tap to copy”
+
+nếu Telegram không thực sự hỗ trợ chạm một lần để copy.
+
+Đặt Binance ID và số tiền trong thẻ code để người dùng có thể nhấn giữ và copy dễ dàng.
+
+==================================================
+12. CẬP NHẬT WEB
+==================================================
+
+Trong form sản phẩm thêm:
+
+- Tên tiếng Việt
+- Tên tiếng Anh
+- Mô tả tiếng Việt
+- Mô tả tiếng Anh
+- Icon Telegram
+- Giá VND
+- Giá USDT tự tính
+
+Có nút:
+
+🌐 Tạo bản tiếng Anh
+
+Nút này:
+- dịch tên
+- dịch mô tả
+- thay ký hiệu bảo hành
+- cho admin xem trước
+- admin có thể chỉnh sửa trước khi lưu
+
+==================================================
+13. KHÔNG GHI ĐÈ BẢN DỊCH ADMIN
+==================================================
+
+Thêm cờ:
+
+name_en_locked
+description_en_locked
+
+Nếu admin đã sửa bản tiếng Anh:
+- sync nguồn không được ghi đè
+
+Nếu chưa sửa:
+- có thể tự cập nhật từ bản tiếng Việt
+
+==================================================
+14. TEST BẮT BUỘC
+==================================================
+
+1. Nguồn thêm sản phẩm mới.
+2. Khách bấm Products.
+3. Bot tự đồng bộ ngay.
+4. Sản phẩm mới xuất hiện mà không cần bấm Refresh.
+5. Icon hiển thị đúng.
+6. Chọn tiếng Việt:
+   - tên, mô tả, giá VND đúng.
+7. Chọn English:
+   - tên, mô tả, nút, trạng thái đều tiếng Anh.
+8. Không còn BHF, KBH, Tháng, Ngày trong bản tiếng Anh.
+9. Giá English hiển thị USDT.
+10. Sản phẩm hết hàng hiện:
+    ❌ Out of stock
+11. Một nguồn lỗi không làm danh sách biến mất.
+12. Sau khi hoàn thành:
+    - restart app
+    - test bot
+    - commit
+    - push GitHub
