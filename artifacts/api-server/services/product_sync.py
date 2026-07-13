@@ -82,20 +82,23 @@ def apply_admin_en_edit(product, name_en: str | None, description_en: str | None
 
 def ensure_en_fields(product) -> bool:
     """
-    Auto-fill Product.name_en/description_en from the Vietnamese name/
-    description via translation, but only where the field is currently
-    blank AND not locked by an admin edit. Safe to call on every sync —
-    it never overwrites existing text. Returns True if anything changed.
+    Keep Product.name_en/description_en auto-translated from the
+    Vietnamese name/description, but only for fields NOT locked by an
+    admin edit. Unlocked fields are re-derived every call (not just when
+    blank) so an improved translator automatically fixes previously
+    auto-generated text on the next save/sync — an admin edit is the only
+    thing that freezes a field (see apply_admin_en_edit). Safe to call on
+    every sync. Returns True if anything changed.
     """
     changed = False
-    if not product.name_en and not product.name_en_locked and product.name:
+    if not product.name_en_locked and product.name:
         translated = translate_product_name_to_en(product.name)
-        if translated:
+        if translated and translated != product.name_en:
             product.name_en = translated
             changed = True
-    if not product.description_en and not product.description_en_locked and product.description:
+    if not product.description_en_locked and product.description:
         translated = normalize_and_translate_description(product.description)
-        if translated:
+        if translated and translated != product.description_en:
             product.description_en = translated
             changed = True
     return changed

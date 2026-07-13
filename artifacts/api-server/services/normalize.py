@@ -3,6 +3,7 @@ normalize.py — Chuẩn hóa dữ liệu từ các API nguồn khác nhau.
 """
 import html
 import re
+import unicodedata
 
 
 def format_vnd(value) -> str:
@@ -107,6 +108,94 @@ _DESCRIPTION_PHRASE_PATTERNS = [
 ]
 
 
+def _deaccent(text: str) -> str:
+    """Strip Vietnamese diacritics (and đ/Đ) so fixed boilerplate lines can be
+    matched regardless of whether the admin typed full accents or not."""
+    if not text:
+        return text
+    text = text.replace("đ", "d").replace("Đ", "D")
+    decomposed = unicodedata.normalize("NFKD", text)
+    return "".join(c for c in decomposed if not unicodedata.combining(c))
+
+
+_BULLET_RE = re.compile(r"^(\s*(?:\u26A0\uFE0F|\u26A0|[•\-\*])\s*)")
+
+# Brand/plan/duration line, e.g. "Grok gói Super hạn sử dụng 3 tháng." ->
+# "Grok Super subscription valid for 3 months." Matched against the
+# original (accented or unaccented) text so the brand/plan casing is
+# preserved verbatim in the output.
+_PRODUCT_LINE_RE = re.compile(
+    r"^(.+?)\s+g[oó]i\s+(.+?)\s+h[aạ]n\s+s[uử]\s+d[uụ]ng\s+(\d+)\s+th[aá]ng\.?$",
+    re.IGNORECASE,
+)
+
+# Full-sentence boilerplate templates, matched against the deaccented,
+# lower-cased, whitespace-collapsed line content. These produce natural
+# English sentences instead of word-by-word substitution — the exact
+# wording a human translator would use, not a literal calque.
+_DESCRIPTION_LINE_TEMPLATES = [
+    (re.compile(r"^vui long doc ky mo ta truoc khi mua:?$"),
+     "PLEASE READ CAREFULLY BEFORE PURCHASING:"),
+    (re.compile(r"^khong doi (?:email|mail)\.? doi (?:email|mail) = mat bao hanh\.?$"),
+     "Do not change the account email address. Changing the email will void your warranty."),
+    (re.compile(r"^khong bat 2fa\.? bat 2fa = mat bao hanh\.?$"),
+     "Do not enable two-factor authentication (2FA). Enabling 2FA will void your warranty."),
+    (re.compile(r"^khong (?:lien ket|link) hoac go (?:tai khoan )?khoi x(?: \(twitter\))?\.?$"),
+     "Do not link or unlink this account from X (Twitter)."),
+    (re.compile(r"^khong (?:lien ket|link) hoac go (?:tai khoan )?khoi google\.?$"),
+     "Do not link or unlink this account from Google."),
+    (re.compile(r"^vi pham cac dieu tren se mat bao hanh\.?$"),
+     "Violating any of the above conditions will void your warranty."),
+    (re.compile(r"^dinh dang\s*:\s*tk\s*\|\s*mk\.?$"),
+     "Format: Username | Password."),
+    (re.compile(r"^bao hanh full (\d+)\s*thang\.?$"),
+     lambda m: f"Full {m.group(1)}-month warranty."),
+    (re.compile(r"^bao hanh (\d+)\s*thang\.?$"),
+     lambda m: f"{m.group(1)}-month warranty."),
+    (re.compile(r"^khong bao hanh\.?$"),
+     "No warranty."),
+]
+
+
+def _translate_description_line(line: str) -> str:
+    """Translate a single line of a Vietnamese description into a natural
+    English sentence. Tries, in order: (1) the brand/plan/duration template
+    (casing preserved), (2) the fixed boilerplate-sentence templates
+    (accent-insensitive), (3) phrase-dictionary + shorthand substitution as
+    a last-resort fallback for text that doesn't match a known pattern."""
+    if not line.strip():
+        return line
+
+    prefix_match = _BULLET_RE.match(line)
+    prefix = prefix_match.group(1).strip() if prefix_match else ""
+    content = line[prefix_match.end():] if prefix_match else line.strip()
+    content = content.strip()
+
+    def _with_prefix(text: str) -> str:
+        return f"{prefix} {text}" if prefix else text
+
+    product_match = _PRODUCT_LINE_RE.match(content)
+    if product_match:
+        brand, plan, n = product_match.group(1).strip(), product_match.group(2).strip(), product_match.group(3)
+        return _with_prefix(f"{brand} {plan} subscription valid for {n} months.")
+
+    norm = re.sub(r"\s+", " ", _deaccent(content).lower().strip())
+    for pattern, repl in _DESCRIPTION_LINE_TEMPLATES:
+        m = pattern.match(norm)
+        if m:
+            out = repl(m) if callable(repl) else repl
+            return _with_prefix(out)
+
+    # Fallback: phrase-level dictionary + shorthand substitution. Imperfect
+    # for text outside the known boilerplate patterns, but far better than
+    # leaving raw Vietnamese — admin can always hand-edit and lock it.
+    result = content
+    for pattern, repl in _DESCRIPTION_PHRASE_PATTERNS:
+        result = pattern.sub(repl, result)
+    result = translate_shorthand_to_en(result)
+    return _with_prefix(result)
+
+
 def translate_product_name_to_en(name: str) -> str:
     """
     Auto-generate an English product name from a Vietnamese one using the
@@ -119,19 +208,17 @@ def translate_product_name_to_en(name: str) -> str:
 
 def normalize_and_translate_description(description: str) -> str:
     """
-    Auto-generate an English product description from a Vietnamese one:
-    applies the phrase-level dictionary (tk|mk -> username|password, bảo
-    hành -> warranty, ...) followed by the warranty/duration shorthand
-    table. Used to fill Product.description_en when the admin hasn't
-    supplied one — never called once description_en_locked is set.
+    Auto-generate a natural-reading English product description from a
+    Vietnamese one, line by line: known boilerplate lines (warranty
+    warnings, "tk|mk" format line, "gói ... hạn sử dụng N tháng" lines)
+    are rewritten as a human translator would phrase them, not translated
+    word-by-word. Used to fill Product.description_en once — when the
+    admin saves a product or a source syncs — never called on every view,
+    and never called once description_en_locked is set.
     """
     if not description:
         return description
-    result = description
-    for pattern, repl in _DESCRIPTION_PHRASE_PATTERNS:
-        result = pattern.sub(repl, result)
-    result = translate_shorthand_to_en(result)
-    return result
+    return "\n".join(_translate_description_line(line) for line in description.split("\n"))
 
 
 def normalize_product_data(raw_item: dict) -> dict:
