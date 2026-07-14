@@ -42,6 +42,7 @@ class ApiType(str, enum.Enum):
     zampto_standard = "zampto_standard"
     custom = "custom"
     canboso_market = "canboso_market"
+    aicenter_buyer = "aicenter_buyer"
 
 
 class OrderStatus(str, enum.Enum):
@@ -466,6 +467,13 @@ class ApiProduct(Base):
     external_item_type = Column(String(20), nullable=True)
     external_seller = Column(String(255), nullable=True)
     external_category = Column(String(100), nullable=True)  # category or emoji tag
+    # ── AI Center Buyer-specific fields (canboso.com telegram-buyer API) ────
+    external_is_slot_product = Column(Boolean, nullable=True)
+    external_slot_durations = Column(Text, nullable=True)  # JSON list, e.g. "[1,3,6,12]"
+    external_requires_customer_email = Column(Boolean, nullable=True)
+    external_requires_slot_months = Column(Boolean, nullable=True)
+    external_currency = Column(String(20), nullable=True)
+    external_usd_price = Column(Float, nullable=True)
     raw_json = Column(Text, nullable=True)
     last_sync_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=now)

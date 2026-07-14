@@ -114,10 +114,19 @@ async def create_order(
 
             while source:
                 adapter = api_manager.get_adapter(source.api_product.connection)
+                # Email-requiring suppliers (CanBoSo Market, AI Center Buyer)
+                # need a buyer email on every purchase; the bot doesn't
+                # collect one from shoppers on this manual/admin-triggered
+                # path either, so a deterministic per-user placeholder is
+                # used. Adapters that don't need it ignore it.
+                buyer_email = f"tguser{telegram_user_id}@aicenter-orders.local"
                 buy_result = await adapter.buy_product(
                     product_id=source.api_product.external_product_id,
                     quantity=quantity,
                     idempotency_key=idem_key,
+                    buyer_email=buyer_email,
+                    requires_customer_email=bool(source.api_product.external_requires_customer_email),
+                    requires_slot_months=bool(source.api_product.external_requires_slot_months),
                 )
 
                 attempt = OrderSourceAttempt(

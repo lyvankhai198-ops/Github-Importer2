@@ -196,6 +196,17 @@ def _run_migrations():
         "ALTER TABLE api_products ADD COLUMN external_seller VARCHAR(255)",
         "ALTER TABLE api_products ADD COLUMN external_category VARCHAR(100)",
 
+        # AI Center Buyer supplier integration (canboso.com/api/telegram-buyer):
+        # slot-vs-account distinction, USD pricing, and per-product purchase
+        # requirements (customer email / slot months) surfaced by its own
+        # products endpoint (independent of the CanBoSo Market fields above).
+        "ALTER TABLE api_products ADD COLUMN external_is_slot_product BOOLEAN",
+        "ALTER TABLE api_products ADD COLUMN external_slot_durations TEXT",
+        "ALTER TABLE api_products ADD COLUMN external_requires_customer_email BOOLEAN",
+        "ALTER TABLE api_products ADD COLUMN external_requires_slot_months BOOLEAN",
+        "ALTER TABLE api_products ADD COLUMN external_currency VARCHAR(20)",
+        "ALTER TABLE api_products ADD COLUMN external_usd_price FLOAT",
+
         "ALTER TABLE telegram_bot_config ADD COLUMN notify_new_products BOOLEAN DEFAULT 1",
         "ALTER TABLE telegram_bot_config ADD COLUMN notify_restock BOOLEAN DEFAULT 1",
         "ALTER TABLE telegram_bot_config ADD COLUMN broadcast_batch_size INTEGER DEFAULT 25",

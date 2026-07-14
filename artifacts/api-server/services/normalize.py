@@ -323,6 +323,91 @@ def normalize_canboso_product(raw_item: dict) -> dict:
     return base
 
 
+def normalize_aicenter_buyer_product(raw_item: dict, wallet_currency: str = None) -> dict:
+    """
+    Map an "AI Center Buyer" (canboso.com /api/telegram-buyer/products) item
+    onto the internal normalized shape used by sync_api_products, plus its
+    own supplier-specific fields. Does NOT reuse Zampto's field names —
+    AI Center Buyer has its own JSON shape:
+
+      external_id            = product._id
+      name                   = product.product_name
+      raw_name               = product.product_name_raw
+      source_price           = product.pricing (or walletPricing, VND)
+      usd_price              = product.usdPricing
+      description            = product.description
+      stock                  = derived from product.stats (see below)
+      is_slot_product        = product.isSlotProduct
+      slot_durations         = product.slotDurations
+      requires_customer_email = product.requiresCustomerEmail
+      requires_slot_months    = product.requiresSlotMonths
+      currency               = response.walletCurrency / product.walletCurrency
+    """
+    product_id = str(raw_item.get("_id") or raw_item.get("id") or "")
+    name = str(raw_item.get("product_name") or raw_item.get("name") or "")
+    raw_name = str(raw_item.get("product_name_raw") or "")
+    description = str(raw_item.get("description") or "")
+
+    price = raw_item.get("pricing")
+    if price is None:
+        price = raw_item.get("walletPricing")
+    try:
+        price = float(price) if price is not None else 0.0
+    except (TypeError, ValueError):
+        price = 0.0
+
+    usd_price_raw = raw_item.get("usdPricing")
+    try:
+        usd_price = float(usd_price_raw) if usd_price_raw is not None else None
+    except (TypeError, ValueError):
+        usd_price = None
+
+    # Stock/status: AI Center Buyer reports availability via a `stats` object
+    # (actual shape varies by product type) rather than a flat `stock` int.
+    # Fall back through the common shapes it can take before defaulting to 0.
+    stats = raw_item.get("stats") or {}
+    stock = _safe_int(
+        raw_item.get("stock") if raw_item.get("stock") is not None else (
+            stats.get("available") if isinstance(stats, dict) else None
+        ) or (
+            stats.get("stock") if isinstance(stats, dict) else None
+        ) or (
+            stats.get("quantity") if isinstance(stats, dict) else None
+        ) or 0
+    )
+    status_raw = raw_item.get("status")
+    if status_raw is None:
+        status_raw = "active" if stock > 0 else "out_of_stock"
+
+    is_slot_product = bool(raw_item.get("isSlotProduct", False))
+    slot_durations = raw_item.get("slotDurations") or []
+    requires_customer_email = bool(raw_item.get("requiresCustomerEmail", False))
+    requires_slot_months = bool(raw_item.get("requiresSlotMonths", False))
+    currency = str(raw_item.get("walletCurrency") or wallet_currency or "VND")
+
+    return {
+        "id": product_id,
+        "name": name,
+        "raw_name": raw_name,
+        "description": description,
+        "price": price,
+        "usd_price": usd_price,
+        "stock": stock,
+        "min_quantity": 1,
+        "max_quantity": None,
+        "status": str(status_raw),
+        "image_url": str(raw_item.get("image") or raw_item.get("image_url") or ""),
+        "warranty": "",
+        "duration": "",
+        "item_type": "slot" if is_slot_product else "account",
+        "is_slot_product": is_slot_product,
+        "slot_durations": slot_durations,
+        "requires_customer_email": requires_customer_email,
+        "requires_slot_months": requires_slot_months,
+        "currency": currency,
+    }
+
+
 def normalize_delivery_items(response_json: dict) -> list:
     """
     Trích xuất danh sách tài khoản/sản phẩm giao từ phản hồi API mua hàng.

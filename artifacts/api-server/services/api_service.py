@@ -66,6 +66,18 @@ async def sync_api_products(db: Session, api_connection_id: int) -> dict:
                         existing.external_seller = p.get("seller")
                     if "category" in p:
                         existing.external_category = p.get("category")
+                    if "is_slot_product" in p:
+                        existing.external_is_slot_product = p.get("is_slot_product")
+                    if "slot_durations" in p:
+                        existing.external_slot_durations = json.dumps(p.get("slot_durations") or [], ensure_ascii=False)
+                    if "requires_customer_email" in p:
+                        existing.external_requires_customer_email = p.get("requires_customer_email")
+                    if "requires_slot_months" in p:
+                        existing.external_requires_slot_months = p.get("requires_slot_months")
+                    if "currency" in p:
+                        existing.external_currency = p.get("currency")
+                    if "usd_price" in p:
+                        existing.external_usd_price = p.get("usd_price")
                     existing.raw_json = raw
                     existing.last_sync_at = now
                     existing.updated_at = now
@@ -87,6 +99,12 @@ async def sync_api_products(db: Session, api_connection_id: int) -> dict:
                         external_item_type=p.get("item_type"),
                         external_seller=p.get("seller"),
                         external_category=p.get("category"),
+                        external_is_slot_product=p.get("is_slot_product"),
+                        external_slot_durations=json.dumps(p.get("slot_durations") or [], ensure_ascii=False) if "slot_durations" in p else None,
+                        external_requires_customer_email=p.get("requires_customer_email"),
+                        external_requires_slot_months=p.get("requires_slot_months"),
+                        external_currency=p.get("currency"),
+                        external_usd_price=p.get("usd_price"),
                         raw_json=raw,
                         last_sync_at=now,
                     )

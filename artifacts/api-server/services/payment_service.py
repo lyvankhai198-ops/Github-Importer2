@@ -685,16 +685,19 @@ async def process_paid_order(order_id: int):
 
         try:
             adapter = api_manager.get_adapter(source.api_product.connection)
-            # CanBoSo Market (and any other email-requiring supplier) needs a
-            # buyer email on every purchase; the bot doesn't collect one from
-            # shoppers, so a deterministic per-user placeholder is used.
-            # Adapters that don't need it (Zampto/Custom) simply ignore it.
+            # CanBoSo Market / AI Center Buyer (and any other email-requiring
+            # supplier) needs a buyer email on every purchase; the bot doesn't
+            # collect one from shoppers, so a deterministic per-user
+            # placeholder is used. Adapters that don't need it (Zampto/Custom)
+            # simply ignore it.
             buyer_email = f"tguser{order.telegram_user_id}@aicenter-orders.local"
             buy_result = await adapter.buy_product(
                 product_id=source.api_product.external_product_id,
                 quantity=order.quantity,
                 idempotency_key=idem_key,
                 buyer_email=buyer_email,
+                requires_customer_email=bool(source.api_product.external_requires_customer_email),
+                requires_slot_months=bool(source.api_product.external_requires_slot_months),
             )
 
             attempt = OrderSourceAttempt(
