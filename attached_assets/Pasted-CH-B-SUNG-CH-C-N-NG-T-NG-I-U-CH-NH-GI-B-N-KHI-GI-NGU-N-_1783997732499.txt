@@ -1,0 +1,284 @@
+CHỈ BỔ SUNG CHỨC NĂNG TỰ ĐỘNG ĐIỀU CHỈNH GIÁ BÁN KHI GIÁ NGUỒN THAY ĐỔI.
+
+Không tạo project mới.
+Không reset database.
+Không xóa sản phẩm, đơn hàng, người dùng hoặc cấu hình API.
+Không sửa lại hệ thống Generic API.
+Phải dùng dữ liệu giá nguồn và giá bán hiện có của từng sản phẩm.
+
+==================================================
+1. NGUYÊN TẮC GIỮ NGUYÊN PHẦN CHÊNH LỆCH
+==================================================
+
+Mỗi sản phẩm phải lưu:
+
+- source_price: giá nguồn hiện tại
+- sale_price: giá bán hiện tại
+- price_margin: phần chênh lệch tuyệt đối
+- auto_adjust_price: bật/tắt tự động điều chỉnh
+- last_source_price
+- last_sale_price
+- last_price_updated_at
+
+Công thức:
+
+price_margin = sale_price - source_price
+
+Khi giá nguồn thay đổi:
+
+new_sale_price = new_source_price + price_margin
+
+Ví dụ:
+
+Giá nguồn cũ: 70.000đ
+Giá bán cũ: 100.000đ
+Phần chênh lệch: 30.000đ
+
+Nguồn tăng giá lên: 100.000đ
+
+Giá bán mới phải tự động thành:
+
+130.000đ
+
+==================================================
+2. CÁCH LƯU PHẦN CHÊNH LỆCH
+==================================================
+
+Khi sản phẩm lần đầu bật tự động điều chỉnh:
+
+price_margin = sale_price hiện tại - source_price hiện tại
+
+Không dùng phần trăm trong chế độ này.
+
+Nếu admin sửa giá bán thủ công:
+
+- cập nhật lại price_margin
+- ví dụ nguồn 100.000đ, admin sửa giá bán thành 145.000đ
+- price_margin mới = 45.000đ
+
+Nếu admin tắt auto_adjust_price:
+- giá nguồn thay đổi nhưng giá bán không tự đổi
+
+==================================================
+3. KHI API NGUỒN THAY ĐỔI GIÁ
+==================================================
+
+Trong mỗi lần sync sản phẩm:
+
+1. Đọc giá nguồn cũ.
+2. Đọc giá nguồn mới từ API.
+3. Nếu giá không đổi:
+   - không làm gì
+4. Nếu giá thay đổi:
+   - lưu last_source_price
+   - cập nhật source_price mới
+   - nếu auto_adjust_price = true:
+     new_sale_price = new_source_price + price_margin
+   - cập nhật sale_price
+   - lưu lịch sử thay đổi giá
+   - gửi thông báo admin
+5. Không được thay đổi giá bán của sản phẩm khác.
+
+Dùng Decimal hoặc Integer cho VND.
+Không dùng float.
+
+==================================================
+4. THÔNG BÁO ADMIN
+==================================================
+
+Khi giá nguồn thay đổi, gửi admin:
+
+⚠️ GIÁ NGUỒN ĐÃ THAY ĐỔI
+
+📦 Sản phẩm: {product_name}
+🏦 Giá nguồn cũ: {old_source_price}
+🏦 Giá nguồn mới: {new_source_price}
+📈 Chênh lệch giữ nguyên: {price_margin}
+💰 Giá bán cũ: {old_sale_price}
+💰 Giá bán mới: {new_sale_price}
+
+Nếu tự động điều chỉnh đang tắt:
+
+⚠️ GIÁ NGUỒN ĐÃ THAY ĐỔI
+
+📦 Sản phẩm: {product_name}
+🏦 Giá nguồn cũ: {old_source_price}
+🏦 Giá nguồn mới: {new_source_price}
+💰 Giá bán hiện tại vẫn giữ nguyên: {sale_price}
+⛔ Tự động điều chỉnh giá đang tắt.
+
+Có thể gửi qua:
+
+- Telegram admin
+- thông báo trên web admin
+- lịch sử thay đổi giá
+
+==================================================
+5. THÔNG BÁO NGƯỜI DÙNG
+==================================================
+
+Mặc định không gửi thông báo thay đổi giá tới toàn bộ người dùng để tránh spam.
+
+Chỉ cập nhật giá mới trên bot và web.
+
+Thêm setting:
+
+notify_users_on_price_change = false
+
+Nếu admin bật:
+
+Gửi:
+
+💰 GIÁ SẢN PHẨM ĐÃ CẬP NHẬT
+
+{emoji} {product_name}
+Giá mới: {new_sale_price}
+
+Có nút:
+
+🛒 Mua ngay
+
+==================================================
+6. GIAO DIỆN WEB
+==================================================
+
+Trong form thêm/sửa sản phẩm thêm:
+
+- Giá nguồn
+- Giá bán
+- Phần chênh lệch
+- Tự động điều chỉnh giá khi nguồn thay đổi
+
+Hiển thị preview:
+
+Giá nguồn: 70.000đ
+Phần chênh lệch: 30.000đ
+Giá bán dự kiến: 100.000đ
+
+Nếu admin sửa giá bán:
+- tự tính lại phần chênh lệch
+
+Nếu admin sửa phần chênh lệch:
+- tự tính lại giá bán
+
+==================================================
+7. LỊCH SỬ GIÁ
+==================================================
+
+Tạo hoặc dùng bảng product_price_history:
+
+- id
+- product_id
+- source_connection_id
+- old_source_price
+- new_source_price
+- old_sale_price
+- new_sale_price
+- margin
+- change_type
+- changed_by
+- created_at
+
+change_type:
+
+- source_sync
+- admin_edit
+- auto_adjust
+- manual_override
+
+==================================================
+8. BẢO VỆ GIÁ
+==================================================
+
+Thêm cấu hình:
+
+- min_sale_price
+- max_sale_price
+- max_source_price_increase_percent
+- require_admin_approval_above_percent
+
+Ví dụ:
+
+Nếu giá nguồn tăng quá 50%:
+- không tự cập nhật ngay
+- chuyển trạng thái chờ admin xác nhận
+- gửi cảnh báo admin
+
+Mục đích tránh API nguồn trả sai giá làm giá bán tăng bất thường.
+
+Nếu chưa cấu hình ngưỡng:
+- vẫn dùng công thức giữ nguyên phần chênh lệch
+
+==================================================
+9. TEST BẮT BUỘC
+==================================================
+
+Test 1:
+
+Nguồn cũ: 70.000đ
+Giá bán cũ: 100.000đ
+Chênh lệch: 30.000đ
+Nguồn mới: 100.000đ
+
+Kết quả:
+Giá bán mới = 130.000đ
+
+Test 2:
+
+Nguồn giảm từ 100.000đ xuống 80.000đ
+Chênh lệch: 30.000đ
+
+Kết quả:
+Giá bán mới = 110.000đ
+
+Test 3:
+
+auto_adjust_price = false
+
+Nguồn thay đổi:
+- giá bán không đổi
+- admin vẫn nhận cảnh báo
+
+Test 4:
+
+Admin sửa giá bán từ 130.000đ lên 150.000đ
+Nguồn hiện tại 100.000đ
+
+Kết quả:
+price_margin = 50.000đ
+
+Test 5:
+
+API sync lại cùng giá nguồn:
+- không tạo lịch sử trùng
+- không gửi thông báo trùng
+
+Test 6:
+
+Giá nguồn tăng bất thường vượt ngưỡng:
+- không tự áp dụng nếu cấu hình cần duyệt
+- gửi cảnh báo admin
+
+==================================================
+10. SAU KHI HOÀN THÀNH
+==================================================
+
+- chạy migration an toàn nếu cần
+- test sync giá nguồn
+- test chỉnh giá thủ công
+- test bật/tắt auto adjust
+- restart app
+- commit
+- push GitHub
+
+Commit message:
+
+feat: auto adjust sale prices from supplier price changes
+
+Báo lại:
+
+- file đã sửa
+- migration đã chạy
+- test đã pass
+- commit hash
+- push successful

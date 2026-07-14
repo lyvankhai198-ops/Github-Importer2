@@ -258,6 +258,36 @@ def _run_migrations():
         )""",
         "CREATE UNIQUE INDEX IF NOT EXISTS ux_notification_events_key ON notification_events (event_key)",
         "CREATE INDEX IF NOT EXISTS ix_notification_events_product ON notification_events (product_id)",
+
+        # ── Auto price-adjustment ("giữ nguyên phần chênh lệch") ─────────────
+        "ALTER TABLE products ADD COLUMN source_price FLOAT",
+        "ALTER TABLE products ADD COLUMN price_margin FLOAT",
+        "ALTER TABLE products ADD COLUMN auto_adjust_price BOOLEAN DEFAULT 0",
+        "ALTER TABLE products ADD COLUMN last_source_price FLOAT",
+        "ALTER TABLE products ADD COLUMN last_sale_price FLOAT",
+        "ALTER TABLE products ADD COLUMN last_price_updated_at DATETIME",
+        "ALTER TABLE products ADD COLUMN min_sale_price FLOAT",
+        "ALTER TABLE products ADD COLUMN max_sale_price FLOAT",
+        "ALTER TABLE products ADD COLUMN require_admin_approval_above_percent FLOAT",
+        "ALTER TABLE products ADD COLUMN price_pending_approval BOOLEAN DEFAULT 0",
+        "ALTER TABLE products ADD COLUMN pending_new_source_price FLOAT",
+        "ALTER TABLE telegram_bot_config ADD COLUMN notify_users_on_price_change BOOLEAN DEFAULT 0",
+        """CREATE TABLE IF NOT EXISTS product_price_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            product_id INTEGER NOT NULL,
+            source_connection_id INTEGER,
+            old_source_price FLOAT,
+            new_source_price FLOAT,
+            old_sale_price FLOAT,
+            new_sale_price FLOAT,
+            margin FLOAT,
+            change_type VARCHAR(30) NOT NULL,
+            changed_by VARCHAR(100),
+            created_at DATETIME,
+            FOREIGN KEY(product_id) REFERENCES products(id),
+            FOREIGN KEY(source_connection_id) REFERENCES api_connections(id)
+        )""",
+        "CREATE INDEX IF NOT EXISTS ix_product_price_history_product ON product_price_history (product_id)",
     ]
     with engine.connect() as conn:
         ran_language_selected_migration = False
@@ -324,6 +354,34 @@ def _run_migrations():
             conn.commit()
         except Exception:
             pass
+
+        # Backfill source_price/price_margin for existing products from their
+        # already-known data: the primary (lowest-priority) active
+        # ProductSource.last_cost for API-linked products. auto_adjust_price
+        # defaults to False, so nothing about existing sale prices changes —
+        # this only seeds the fields so admins can opt in per product.
+        try:
+            db = SessionLocal()
+            try:
+                from models import Product, ProductSource
+                candidates = db.query(Product).filter(Product.source_price.is_(None)).all()
+                for product in candidates:
+                    src = (
+                        db.query(ProductSource)
+                        .filter(ProductSource.product_id == product.id, ProductSource.is_active == True)
+                        .order_by(ProductSource.priority.asc(), ProductSource.id.asc())
+                        .first()
+                    )
+                    cost = src.last_cost if src else None
+                    product.source_price = cost if cost is not None else 0.0
+                    product.price_margin = float(round((product.sale_price or 0.0) - product.source_price))
+                if candidates:
+                    db.commit()
+                    logger.info(f"PRICE_ADJUST_BACKFILL: initialized source_price/price_margin for {len(candidates)} products")
+            finally:
+                db.close()
+        except Exception:
+            logger.exception("price_margin backfill failed")
 
 
 def _seed_payment_methods():

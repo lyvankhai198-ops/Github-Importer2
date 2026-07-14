@@ -108,6 +108,19 @@ async def products_list(
     })
 
 
+def _parse_optional_float(raw: str | None) -> float | None:
+    """Blank/whitespace-only form field -> None (no limit); otherwise parsed float."""
+    if raw is None:
+        return None
+    raw = raw.strip()
+    if not raw:
+        return None
+    try:
+        return float(raw)
+    except ValueError:
+        return None
+
+
 def _validate_product_fields(request: Request, name: str, product_code: str, sale_price: float,
                               min_quantity: int, delivery_mode: str) -> str | None:
     """Returns an error message (Vietnamese) if invalid, else None."""
@@ -145,6 +158,11 @@ async def add_product(
     description: str = Form(""),
     description_en: str = Form(""),
     sale_price: float = Form(0.0),
+    source_price: float = Form(0.0),
+    auto_adjust_price: str = Form(None),
+    min_sale_price: str = Form(""),
+    max_sale_price: str = Form(""),
+    require_admin_approval_above_percent: str = Form(""),
     min_quantity: int = Form(1),
     telegram_icon: str = Form(""),
     delivery_mode: str = Form("manual_admin"),
@@ -168,6 +186,7 @@ async def add_product(
 
     try:
         from services.product_sync import ensure_en_fields, apply_admin_icon_edit, auto_assign_icon_if_unlocked
+        from services.price_sync_service import compute_margin
 
         image_path = await _save_image(image)
         name_en_clean = name_en.strip() or None
@@ -181,6 +200,12 @@ async def add_product(
             description_en=description_en_clean,
             description_en_locked=bool(description_en_clean),
             sale_price=sale_price,
+            source_price=source_price or 0.0,
+            price_margin=compute_margin(sale_price, source_price or 0.0),
+            auto_adjust_price=bool(auto_adjust_price),
+            min_sale_price=_parse_optional_float(min_sale_price),
+            max_sale_price=_parse_optional_float(max_sale_price),
+            require_admin_approval_above_percent=_parse_optional_float(require_admin_approval_above_percent),
             price_usdt=compute_price_usdt(sale_price, _current_retail_rate(db)),
             min_quantity=min_quantity,
             delivery_mode=DeliveryMode(delivery_mode),
@@ -221,6 +246,11 @@ async def edit_product(
     description: str = Form(""),
     description_en: str = Form(""),
     sale_price: float = Form(0.0),
+    source_price: float = Form(0.0),
+    auto_adjust_price: str = Form(None),
+    min_sale_price: str = Form(""),
+    max_sale_price: str = Form(""),
+    require_admin_approval_above_percent: str = Form(""),
     min_quantity: int = Form(1),
     telegram_icon: str = Form(""),
     delivery_mode: str = Form("manual_admin"),
@@ -254,6 +284,7 @@ async def edit_product(
             apply_admin_edit, apply_admin_en_edit, ensure_en_fields,
             apply_admin_icon_edit, auto_assign_icon_if_unlocked,
         )
+        from services.price_sync_service import apply_admin_price_edit
 
         product.name = name.strip()
         product.product_code = product_code
@@ -262,8 +293,14 @@ async def edit_product(
         # resubmitting the same (possibly auto-translated) text must not
         # freeze it against future auto-translation.
         apply_admin_en_edit(product, name_en, description_en)
-        product.sale_price = sale_price
-        product.price_usdt = compute_price_usdt(sale_price, _current_retail_rate(db))
+        # Admin-entered sale_price/source_price always recompute price_margin
+        # (spec §2: editing sale price by hand re-derives the margin to keep).
+        apply_admin_price_edit(db, product, source_price or 0.0, sale_price, changed_by=request.session.get("admin_id"))
+        product.price_usdt = compute_price_usdt(product.sale_price, _current_retail_rate(db))
+        product.auto_adjust_price = bool(auto_adjust_price)
+        product.min_sale_price = _parse_optional_float(min_sale_price)
+        product.max_sale_price = _parse_optional_float(max_sale_price)
+        product.require_admin_approval_above_percent = _parse_optional_float(require_admin_approval_above_percent)
         product.min_quantity = min_quantity
         # Admin-entered icon locks it against auto-assignment; clearing it
         # back to blank unlocks auto-assignment from the name again.
@@ -543,6 +580,15 @@ async def product_detail(product_id: int, request: Request, db: Session = Depend
             .all()
         )
 
+    from models import ProductPriceHistory
+    price_history = (
+        db.query(ProductPriceHistory)
+        .filter(ProductPriceHistory.product_id == product_id)
+        .order_by(ProductPriceHistory.created_at.desc())
+        .limit(30)
+        .all()
+    )
+
     flash_msg = request.session.pop("flash", None)
     return templates.TemplateResponse(request, "product_detail.html", {
         "product": product,
@@ -550,8 +596,40 @@ async def product_detail(product_id: int, request: Request, db: Session = Depend
         "has_orders": has_orders,
         "orders_count": orders_count,
         "inventory_items": inventory_items,
+        "price_history": price_history,
         "flash": flash_msg,
     })
+
+
+@router.post("/products/{product_id}/price/approve")
+async def approve_price(product_id: int, request: Request, db: Session = Depends(get_db)):
+    if not check_auth(request):
+        return RedirectResponse(url="/login", status_code=302)
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        flash(request, "Sản phẩm không tồn tại!", "error")
+        return RedirectResponse(url="/products", status_code=302)
+    from services.price_sync_service import approve_pending_price
+    result = await approve_pending_price(db, product, exchange_rate=_current_retail_rate(db), changed_by=request.session.get("admin_id"))
+    if result.get("action") == "applied":
+        flash(request, "Đã áp dụng giá nguồn mới!")
+    else:
+        flash(request, "Không có thay đổi giá đang chờ duyệt.", "error")
+    return RedirectResponse(url=f"/products/id/{product_id}", status_code=302)
+
+
+@router.post("/products/{product_id}/price/reject")
+async def reject_price(product_id: int, request: Request, db: Session = Depends(get_db)):
+    if not check_auth(request):
+        return RedirectResponse(url="/login", status_code=302)
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        flash(request, "Sản phẩm không tồn tại!", "error")
+        return RedirectResponse(url="/products", status_code=302)
+    from services.price_sync_service import reject_pending_price
+    reject_pending_price(db, product)
+    flash(request, "Đã từ chối thay đổi giá nguồn.")
+    return RedirectResponse(url=f"/products/id/{product_id}", status_code=302)
 
 
 @router.post("/products/{product_id}/inventory/preview")

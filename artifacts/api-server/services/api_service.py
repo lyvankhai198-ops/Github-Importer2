@@ -109,6 +109,18 @@ async def sync_api_products(db: Session, api_connection_id: int) -> dict:
         transitions = []  # (product_id, back_in_stock: bool)
         restocks = []      # (product_id, added_qty, new_total) — any increase, not just 0→N
         post_sync_stock = defaultdict(int)
+        # Pick each product's PRIMARY source (active, lowest priority number,
+        # then lowest id) so price auto-adjustment has a single source of
+        # truth even when a product has several suppliers linked.
+        primary_source_by_product = {}
+        for src in sources:
+            if not src.is_active or not src.product_id:
+                continue
+            current = primary_source_by_product.get(src.product_id)
+            if current is None or (src.priority or 0) < (current.priority or 0) or \
+                    ((src.priority or 0) == (current.priority or 0) and src.id < current.id):
+                primary_source_by_product[src.product_id] = src
+
         for src in sources:
             if not src.api_product:
                 continue
@@ -127,6 +139,18 @@ async def sync_api_products(db: Session, api_connection_id: int) -> dict:
                 # Auto-assign a name-keyword emoji unless the admin already
                 # chose one manually.
                 auto_assign_icon_if_unlocked(src.product)
+
+        # Auto price-adjustment: only the primary source's cost drives
+        # Product.source_price, so multiple linked suppliers never fight
+        # over the sale price on the same sync.
+        price_sync_results = []
+        for product_id, primary_src in primary_source_by_product.items():
+            if not primary_src.product or primary_src.api_product is None:
+                continue
+            new_cost = primary_src.api_product.external_price
+            if new_cost is None:
+                continue
+            price_sync_results.append((primary_src.product, new_cost))
 
         for product_id, new_total in post_sync_stock.items():
             old_total = pre_sync_stock.get(product_id, 0)
@@ -165,6 +189,23 @@ async def sync_api_products(db: Session, api_connection_id: int) -> dict:
                 await notify_restock_broadcast(product_id, added_qty, new_total)
             except Exception as e:
                 logger.error(f"[api_service] restock broadcast error for product {product_id}: {e}")
+
+        # Auto price-adjustment: propagate each product's primary-source cost
+        # onto Product.source_price/sale_price (see services/price_sync_service.py).
+        if price_sync_results:
+            from services.price_sync_service import handle_source_price_change
+            rate = None
+            try:
+                from services.exchange_rate_service import get_exchange_config
+                rate = float(get_exchange_config(db).get("fixed_rate") or 26500.0)
+            except Exception:
+                rate = None
+            for product, new_cost in price_sync_results:
+                try:
+                    db.refresh(product)
+                    await handle_source_price_change(db, product, new_cost, source_connection_id=api_connection_id, exchange_rate=rate)
+                except Exception as e:
+                    logger.error(f"[api_service] price sync error for product {product.id}: {e}")
 
         return {
             "success": True,

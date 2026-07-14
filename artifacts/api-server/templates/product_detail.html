@@ -6,6 +6,24 @@
   <a href="/products" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> Danh sách sản phẩm</a>
 </div>
 
+{% if product.price_pending_approval %}
+<div class="alert alert-warning d-flex justify-content-between align-items-center flex-wrap gap-2">
+  <div>
+    🚨 Giá nguồn tăng bất thường — đang chờ duyệt: giá nguồn mới
+    <strong>{{ "{:,.0f}".format(product.pending_new_source_price or 0).replace(",", ".") }}đ</strong>
+    (hiện tại: {{ "{:,.0f}".format(product.source_price or 0).replace(",", ".") }}đ)
+  </div>
+  <div class="d-flex gap-2">
+    <form action="/products/{{ product.id }}/price/approve" method="post" onsubmit="return confirm('Áp dụng giá nguồn mới này?')">
+      <button type="submit" class="btn btn-sm btn-success">✔ Duyệt & áp dụng</button>
+    </form>
+    <form action="/products/{{ product.id }}/price/reject" method="post" onsubmit="return confirm('Từ chối thay đổi giá này?')">
+      <button type="submit" class="btn btn-sm btn-outline-danger">✖ Từ chối</button>
+    </form>
+  </div>
+</div>
+{% endif %}
+
 <div class="row g-3 mb-3">
   <div class="col-md-8">
     <div class="card h-100">
@@ -121,7 +139,61 @@
   <div class="text-center text-muted py-3">Kho trống</div>
   {% endfor %}
 </div>
+{% endif %}
 
+<!-- Price history ("Lịch sử giá") ── desktop table -->
+<div class="card d-none d-md-block mb-3">
+  <div class="card-header">💰 Lịch sử giá (30 gần nhất)</div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm mb-0">
+        <thead><tr><th>Thời gian</th><th>Loại</th><th>Giá nguồn</th><th>Giá bán</th><th>Chênh lệch</th></tr></thead>
+        <tbody>
+          {% for h in price_history %}
+          <tr>
+            <td><small class="text-muted">{{ h.created_at.strftime('%d/%m/%Y %H:%M') if h.created_at else '' }}</small></td>
+            <td>
+              {% if h.change_type == 'source_sync' %}<span class="badge bg-info text-dark">Đồng bộ nguồn</span>
+              {% elif h.change_type == 'auto_adjust' %}<span class="badge bg-success">Tự động điều chỉnh</span>
+              {% elif h.change_type == 'admin_edit' %}<span class="badge bg-secondary">Admin sửa tay</span>
+              {% else %}<span class="badge bg-warning text-dark">Duyệt thủ công</span>{% endif %}
+            </td>
+            <td>{{ "{:,.0f}".format(h.old_source_price or 0).replace(",", ".") }}đ → {{ "{:,.0f}".format(h.new_source_price or 0).replace(",", ".") }}đ</td>
+            <td>{{ "{:,.0f}".format(h.old_sale_price or 0).replace(",", ".") }}đ → {{ "{:,.0f}".format(h.new_sale_price or 0).replace(",", ".") }}đ</td>
+            <td>{{ "{:,.0f}".format(h.margin or 0).replace(",", ".") }}đ</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5" class="text-center text-muted py-3">Chưa có thay đổi giá nào</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Mobile price history cards -->
+<div class="d-md-none mb-3">
+  <div class="mb-2 fw-semibold text-muted small">💰 Lịch sử giá (30 gần nhất)</div>
+  {% for h in price_history %}
+  <div class="inventory-card">
+    <div class="inventory-card-value">
+      {% if h.change_type == 'source_sync' %}<span class="badge bg-info text-dark">Đồng bộ nguồn</span>
+      {% elif h.change_type == 'auto_adjust' %}<span class="badge bg-success">Tự động điều chỉnh</span>
+      {% elif h.change_type == 'admin_edit' %}<span class="badge bg-secondary">Admin sửa tay</span>
+      {% else %}<span class="badge bg-warning text-dark">Duyệt thủ công</span>{% endif %}
+      <small class="text-muted ms-2">{{ h.created_at.strftime('%d/%m/%Y %H:%M') if h.created_at else '' }}</small>
+    </div>
+    <div class="inventory-card-meta">
+      Nguồn: {{ "{:,.0f}".format(h.old_source_price or 0).replace(",", ".") }}đ → {{ "{:,.0f}".format(h.new_source_price or 0).replace(",", ".") }}đ ·
+      Bán: {{ "{:,.0f}".format(h.old_sale_price or 0).replace(",", ".") }}đ → {{ "{:,.0f}".format(h.new_sale_price or 0).replace(",", ".") }}đ
+    </div>
+  </div>
+  {% else %}
+  <div class="text-center text-muted py-3">Chưa có thay đổi giá nào</div>
+  {% endfor %}
+</div>
+
+{% if product.delivery_mode.value == 'manual_stock' and counts %}
 <!-- Add Stock Modal -->
 <div class="modal fade" id="addStockModal" tabindex="-1">
   <div class="modal-dialog modal-lg">
@@ -203,12 +275,34 @@
           <div class="form-section">
             <div class="form-section-title">2. Giá</div>
             <div class="row g-3">
-              <div class="col-md-6"><label class="form-label">Giá bán (đ)</label><input type="number" name="sale_price" class="form-control" value="{{ product.sale_price|int }}" step="1" min="0">
+              <div class="col-md-6"><label class="form-label">Giá nguồn (đ)</label><input type="number" name="source_price" class="form-control price-source-input" value="{{ product.source_price|int if product.source_price is not none else 0 }}" step="1" min="0">
+                <div class="form-text">Giá nhập từ nhà cung cấp — tự cập nhật khi đồng bộ API.</div>
+              </div>
+              <div class="col-md-6"><label class="form-label">Giá bán (đ)</label><input type="number" name="sale_price" class="form-control price-sale-input" value="{{ product.sale_price|int }}" step="1" min="0">
                 <div class="form-text">≈ {{ "%.2f"|format(product.price_usdt or 0) }} USDT — tự động tính theo tỉ giá hiện tại</div>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Phần chênh lệch (dự kiến)</label>
+                <input type="text" class="form-control price-margin-preview" value="{{ product.price_margin|int if product.price_margin is not none else 0 }}đ" disabled>
+                <div class="form-text">= Giá bán − Giá nguồn, tự tính lại khi lưu.</div>
+              </div>
+              <div class="col-md-6 d-flex align-items-end">
+                <div class="form-check form-switch">
+                  <input class="form-check-input" type="checkbox" name="auto_adjust_price" value="1" id="autoAdjustDetail" {% if product.auto_adjust_price %}checked{% endif %}>
+                  <label class="form-check-label" for="autoAdjustDetail">Tự động điều chỉnh giá bán khi giá nguồn đổi</label>
+                </div>
               </div>
               <div class="col-md-6"><label class="form-label">Bảo hành</label><input type="text" name="warranty" class="form-control" value="{{ product.warranty or '' }}" placeholder="VD: 30 ngày"></div>
               <div class="col-md-6"><label class="form-label">Thời hạn</label><input type="text" name="duration" class="form-control" value="{{ product.duration or '' }}" placeholder="VD: 1 năm"></div>
             </div>
+            <details class="mt-2">
+              <summary class="text-muted" style="cursor:pointer">Bảo vệ giá nâng cao (tùy chọn)</summary>
+              <div class="row g-3 mt-1">
+                <div class="col-md-4"><label class="form-label">Giá bán tối thiểu (đ)</label><input type="number" name="min_sale_price" class="form-control" value="{{ product.min_sale_price|int if product.min_sale_price is not none else '' }}" step="1" min="0" placeholder="Không giới hạn"></div>
+                <div class="col-md-4"><label class="form-label">Giá bán tối đa (đ)</label><input type="number" name="max_sale_price" class="form-control" value="{{ product.max_sale_price|int if product.max_sale_price is not none else '' }}" step="1" min="0" placeholder="Không giới hạn"></div>
+                <div class="col-md-4"><label class="form-label">Cần duyệt nếu giá nguồn tăng quá (%)</label><input type="number" name="require_admin_approval_above_percent" class="form-control" value="{{ product.require_admin_approval_above_percent|int if product.require_admin_approval_above_percent is not none else '' }}" step="1" min="0" placeholder="Không giới hạn"></div>
+              </div>
+            </details>
           </div>
 
           <div class="form-section">
@@ -291,6 +385,24 @@ if (sessionStorage.getItem('openAddStockModal') === '1') {
     new bootstrap.Modal(modalEl).show();
   }
 }
+
+// Live "Phần chênh lệch" (margin) preview = Giá bán − Giá nguồn, purely
+// informational — the server always recomputes and stores the real value
+// from the submitted sale_price/source_price on save.
+document.querySelectorAll('.modal').forEach(modal => {
+  const sourceInput = modal.querySelector('.price-source-input');
+  const saleInput = modal.querySelector('.price-sale-input');
+  const marginPreview = modal.querySelector('.price-margin-preview');
+  if (!sourceInput || !saleInput || !marginPreview) return;
+  function recompute() {
+    const source = parseFloat(sourceInput.value) || 0;
+    const sale = parseFloat(saleInput.value) || 0;
+    const margin = Math.round(sale - source);
+    marginPreview.value = margin.toLocaleString('vi-VN') + 'đ';
+  }
+  sourceInput.addEventListener('input', recompute);
+  saleInput.addEventListener('input', recompute);
+});
 
 // "🌐 Tạo bản tiếng Anh" — auto-translate name/description within the same
 // modal, filling the EN fields for the admin to review/edit before saving.

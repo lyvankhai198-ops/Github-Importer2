@@ -255,12 +255,40 @@
           <div class="form-section">
             <div class="form-section-title">2. Giá</div>
             <div class="row g-3">
-              <div class="col-md-6"><label class="form-label">Giá bán (đ)</label><input type="number" name="sale_price" class="form-control" value="{{ p.sale_price|int }}" step="1" min="0">
+              <div class="col-md-6"><label class="form-label">Giá nguồn (đ)</label><input type="number" name="source_price" class="form-control price-source-input" value="{{ p.source_price|int if p.source_price is not none else 0 }}" step="1" min="0">
+                <div class="form-text">Giá nhập từ nhà cung cấp — tự cập nhật khi đồng bộ API.</div>
+              </div>
+              <div class="col-md-6"><label class="form-label">Giá bán (đ)</label><input type="number" name="sale_price" class="form-control price-sale-input" value="{{ p.sale_price|int }}" step="1" min="0">
                 <div class="form-text">≈ {{ "%.2f"|format(p.price_usdt or 0) }} USDT — tự động tính theo tỉ giá hiện tại</div>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Phần chênh lệch (dự kiến)</label>
+                <input type="text" class="form-control price-margin-preview" value="{{ p.price_margin|int if p.price_margin is not none else 0 }}đ" disabled>
+                <div class="form-text">= Giá bán − Giá nguồn, tự tính lại khi lưu.</div>
+              </div>
+              <div class="col-md-6 d-flex align-items-end">
+                <div class="form-check form-switch">
+                  <input class="form-check-input" type="checkbox" name="auto_adjust_price" value="1" id="autoAdjust{{ p.id }}" {% if p.auto_adjust_price %}checked{% endif %}>
+                  <label class="form-check-label" for="autoAdjust{{ p.id }}">Tự động điều chỉnh giá bán khi giá nguồn đổi</label>
+                </div>
               </div>
               <div class="col-md-6"><label class="form-label">Bảo hành</label><input type="text" name="warranty" class="form-control" value="{{ p.warranty or '' }}" placeholder="VD: 30 ngày"></div>
               <div class="col-md-6"><label class="form-label">Thời hạn</label><input type="text" name="duration" class="form-control" value="{{ p.duration or '' }}" placeholder="VD: 1 năm"></div>
             </div>
+            <details class="mt-2">
+              <summary class="text-muted" style="cursor:pointer">Bảo vệ giá nâng cao (tùy chọn)</summary>
+              <div class="row g-3 mt-1">
+                <div class="col-md-4"><label class="form-label">Giá bán tối thiểu (đ)</label><input type="number" name="min_sale_price" class="form-control" value="{{ p.min_sale_price|int if p.min_sale_price is not none else '' }}" step="1" min="0" placeholder="Không giới hạn"></div>
+                <div class="col-md-4"><label class="form-label">Giá bán tối đa (đ)</label><input type="number" name="max_sale_price" class="form-control" value="{{ p.max_sale_price|int if p.max_sale_price is not none else '' }}" step="1" min="0" placeholder="Không giới hạn"></div>
+                <div class="col-md-4"><label class="form-label">Cần duyệt nếu giá nguồn tăng quá (%)</label><input type="number" name="require_admin_approval_above_percent" class="form-control" value="{{ p.require_admin_approval_above_percent|int if p.require_admin_approval_above_percent is not none else '' }}" step="1" min="0" placeholder="Không giới hạn"></div>
+              </div>
+            </details>
+            {% if p.price_pending_approval %}
+            <div class="alert alert-warning mt-2 mb-0 d-flex justify-content-between align-items-center flex-wrap gap-2">
+              <div>🚨 Giá nguồn mới <strong>{{ "{:,.0f}".format(p.pending_new_source_price or 0).replace(",", ".") }}đ</strong> đang chờ duyệt.</div>
+              <a href="/products/id/{{ p.id }}" class="btn btn-sm btn-outline-dark">Xem & duyệt</a>
+            </div>
+            {% endif %}
           </div>
 
           <div class="form-section">
@@ -352,8 +380,28 @@
           <div class="form-section">
             <div class="form-section-title">2. Giá</div>
             <div class="row g-3">
-              <div class="col-md-6"><label class="form-label">Giá bán (đ)</label><input type="number" name="sale_price" class="form-control" value="0" step="1" min="0"></div>
+              <div class="col-md-6"><label class="form-label">Giá nguồn (đ)</label><input type="number" name="source_price" class="form-control price-source-input" value="0" step="1" min="0"></div>
+              <div class="col-md-6"><label class="form-label">Giá bán (đ)</label><input type="number" name="sale_price" class="form-control price-sale-input" value="0" step="1" min="0"></div>
+              <div class="col-md-6">
+                <label class="form-label">Phần chênh lệch (dự kiến)</label>
+                <input type="text" class="form-control price-margin-preview" value="0đ" disabled>
+                <div class="form-text">= Giá bán − Giá nguồn, tự tính lại khi lưu.</div>
+              </div>
+              <div class="col-md-6 d-flex align-items-end">
+                <div class="form-check form-switch">
+                  <input class="form-check-input" type="checkbox" name="auto_adjust_price" value="1" id="autoAdjustAdd">
+                  <label class="form-check-label" for="autoAdjustAdd">Tự động điều chỉnh giá bán khi giá nguồn đổi</label>
+                </div>
+              </div>
             </div>
+            <details class="mt-2">
+              <summary class="text-muted" style="cursor:pointer">Bảo vệ giá nâng cao (tùy chọn)</summary>
+              <div class="row g-3 mt-1">
+                <div class="col-md-4"><label class="form-label">Giá bán tối thiểu (đ)</label><input type="number" name="min_sale_price" class="form-control" step="1" min="0" placeholder="Không giới hạn"></div>
+                <div class="col-md-4"><label class="form-label">Giá bán tối đa (đ)</label><input type="number" name="max_sale_price" class="form-control" step="1" min="0" placeholder="Không giới hạn"></div>
+                <div class="col-md-4"><label class="form-label">Cần duyệt nếu giá nguồn tăng quá (%)</label><input type="number" name="require_admin_approval_above_percent" class="form-control" step="1" min="0" placeholder="Không giới hạn"></div>
+              </div>
+            </details>
           </div>
 
           <div class="form-section">
@@ -468,6 +516,24 @@ document.querySelectorAll('.gen-en-btn').forEach(btn => {
       this.textContent = oldLabel;
     }
   });
+});
+
+// Live "Phần chênh lệch" (margin) preview = Giá bán − Giá nguồn, purely
+// informational — the server always recomputes and stores the real value
+// from the submitted sale_price/source_price on save.
+document.querySelectorAll('.modal').forEach(modal => {
+  const sourceInput = modal.querySelector('.price-source-input');
+  const saleInput = modal.querySelector('.price-sale-input');
+  const marginPreview = modal.querySelector('.price-margin-preview');
+  if (!sourceInput || !saleInput || !marginPreview) return;
+  function recompute() {
+    const source = parseFloat(sourceInput.value) || 0;
+    const sale = parseFloat(saleInput.value) || 0;
+    const margin = Math.round(sale - source);
+    marginPreview.value = margin.toLocaleString('vi-VN') + 'đ';
+  }
+  sourceInput.addEventListener('input', recompute);
+  saleInput.addEventListener('input', recompute);
 });
 
 // "➕ Thêm tài khoản" quick action on a product card jumps straight to that

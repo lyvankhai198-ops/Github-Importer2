@@ -90,6 +90,7 @@ async def save_bot_settings(
     allow_partial_delivery: str = Form(None),
     notify_new_products: str = Form(None),
     notify_restock: str = Form(None),
+    notify_users_on_price_change: str = Form(None),
     broadcast_batch_size: int = Form(25),
     broadcast_delay_ms: int = Form(300),
     products_per_page: int = Form(15),
@@ -116,6 +117,7 @@ async def save_bot_settings(
     cfg.allow_partial_delivery = allow_partial_delivery is not None
     cfg.notify_new_products = notify_new_products is not None
     cfg.notify_restock = notify_restock is not None
+    cfg.notify_users_on_price_change = notify_users_on_price_change is not None
     cfg.broadcast_batch_size = max(1, min(100, broadcast_batch_size or 25))
     cfg.broadcast_delay_ms = max(0, min(10000, broadcast_delay_ms if broadcast_delay_ms is not None else 300))
     cfg.products_per_page = max(5, min(50, products_per_page or 15))

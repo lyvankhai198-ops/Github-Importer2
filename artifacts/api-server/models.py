@@ -159,6 +159,11 @@ class TelegramBotConfig(Base):
     # pings users with a paid_waiting_stock order for that product).
     notify_new_products = Column(Boolean, default=True)
     notify_restock = Column(Boolean, default=True)
+    # Auto price-adjustment: whether a genuine sale_price change (triggered by
+    # a source price sync + auto_adjust_price) also announces to all active
+    # users. Default off to avoid spamming customers on every supplier tick —
+    # see services/price_sync_service.py.
+    notify_users_on_price_change = Column(Boolean, default=False)
     broadcast_batch_size = Column(Integer, default=25)
     broadcast_delay_ms = Column(Integer, default=300)
     created_at = Column(DateTime, default=now)
@@ -185,6 +190,30 @@ class NotificationEvent(Base):
     created_at = Column(DateTime, default=now)
     sent_at = Column(DateTime, nullable=True)
     status = Column(String(20), default="sent")  # "sent" | "skipped" | "failed"
+
+
+class ProductPriceHistory(Base):
+    """
+    Audit trail of every source_price/sale_price change on a Product, so
+    admins can see exactly when and why a price moved (see
+    services/price_sync_service.py). One row per change event — never
+    updated in place.
+    """
+    __tablename__ = "product_price_history"
+    id = Column(Integer, primary_key=True, index=True)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
+    source_connection_id = Column(Integer, ForeignKey("api_connections.id"), nullable=True)
+    old_source_price = Column(Float, nullable=True)
+    new_source_price = Column(Float, nullable=True)
+    old_sale_price = Column(Float, nullable=True)
+    new_sale_price = Column(Float, nullable=True)
+    margin = Column(Float, nullable=True)
+    # "source_sync" | "admin_edit" | "auto_adjust" | "manual_override"
+    change_type = Column(String(30), nullable=False)
+    changed_by = Column(String(100), nullable=True)
+    created_at = Column(DateTime, default=now)
+
+    product = relationship("Product")
 
 
 class SepayConfig(Base):
@@ -288,6 +317,31 @@ class Product(Base):
     image_path = Column(String(500), nullable=True)
     sale_price = Column(Float, default=0.0)
     price_usdt = Column(Float, default=0.0)   # auto-computed from sale_price + current exchange rate
+    # ── Auto price-adjustment ("giữ nguyên phần chênh lệch") ────────────────
+    # source_price is the current known supplier/cost price (backfilled from
+    # the primary ProductSource.last_cost for API-linked products, or set by
+    # hand for manual products). price_margin = sale_price - source_price is
+    # a STORED snapshot, not derived live — it's only recomputed when an
+    # admin edits sale_price/source_price by hand, or the very first time
+    # auto_adjust_price is turned on. When the supplier price changes on the
+    # next sync, sale_price is recomputed as new_source_price + price_margin
+    # (if auto_adjust_price is on) so the admin's markup is preserved.
+    source_price = Column(Float, nullable=True)
+    price_margin = Column(Float, nullable=True)
+    auto_adjust_price = Column(Boolean, default=False, nullable=False)
+    last_source_price = Column(Float, nullable=True)
+    last_sale_price = Column(Float, nullable=True)
+    last_price_updated_at = Column(DateTime, nullable=True)
+    # Price guard-rails (all optional; null/0 = no limit — see services/price_sync_service.py)
+    min_sale_price = Column(Float, nullable=True)
+    max_sale_price = Column(Float, nullable=True)
+    # If a source-price sync would raise the price by more than this percent,
+    # the change is NOT auto-applied — it's parked as a pending approval
+    # (price_pending_approval + pending_new_source_price) until an admin
+    # approves or rejects it. Null = no cap, always auto-apply per the margin formula.
+    require_admin_approval_above_percent = Column(Float, nullable=True)
+    price_pending_approval = Column(Boolean, default=False, nullable=False)
+    pending_new_source_price = Column(Float, nullable=True)
     min_quantity = Column(Integer, default=1)
     warranty = Column(String(255), nullable=True)
     duration = Column(String(255), nullable=True)
