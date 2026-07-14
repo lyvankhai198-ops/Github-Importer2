@@ -610,6 +610,7 @@ from routers import auth, dashboard, products, orders, api_connections, users, s
 from routers import webhooks  # public endpoints — no session auth
 from routers import api_clients, customer_api
 from routers import ranks
+from routers import github_webhook
 
 app.include_router(auth.router)
 app.include_router(dashboard.router)
@@ -623,6 +624,7 @@ app.include_router(api_clients.router)
 app.include_router(webhooks.router)  # POST /webhooks/sepay
 app.include_router(customer_api.router)  # public inbound customer REST API (X-API-Key auth)
 app.include_router(ranks.router)
+app.include_router(github_webhook.router)  # POST /github-webhook — VPS auto-deploy (public, HMAC-signed)
 
 
 if __name__ == "__main__":

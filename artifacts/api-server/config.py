@@ -18,3 +18,8 @@ STATIC_DIR = BASE_DIR / "static"
 TEMPLATES_DIR = BASE_DIR / "templates"
 
 PORT = int(os.environ.get("PORT", "3000"))
+
+# ── GitHub webhook auto-deploy (VPS only — see routers/github_webhook.py) ──
+GITHUB_WEBHOOK_SECRET = os.environ.get("GITHUB_WEBHOOK_SECRET", "")
+DEPLOY_SCRIPT_PATH = os.environ.get("DEPLOY_SCRIPT_PATH", "/root/deploy-aicenter.sh")
+DEPLOY_BRANCH = os.environ.get("DEPLOY_BRANCH", "main")
