@@ -1618,10 +1618,40 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             tg_user = update.effective_user
             lang = _get_lang(db, tg_user.id)
+
+            # If 🏠 Home was tapped from an unpaid order's QR/payment screen,
+            # cancel that order and delete its QR message first — editing a
+            # photo message's caption in place (the usual "edit in place"
+            # path below) would otherwise leave the QR image stuck on screen
+            # under a "Product list" caption instead of disappearing.
+            force_new_message = False
+            order = (
+                db.query(Order)
+                .filter(
+                    Order.telegram_user_id == str(tg_user.id),
+                    Order.payment_message_id == query.message.message_id,
+                )
+                .first()
+            )
+            if order:
+                ps = order.payment_status.value if hasattr(order.payment_status, "value") else str(order.payment_status or "")
+                st = order.status.value if hasattr(order.status, "value") else str(order.status or "")
+                if ps not in ("paid", "overpaid") and st not in ("cancelled", "completed"):
+                    order.status = OrderStatus.cancelled
+                    order.updated_at = datetime.utcnow()
+                    db.commit()
+                    chat_id = order.payment_chat_id or order.telegram_user_id
+                    await _safe_del(context.bot, chat_id, order.payment_message_id)
+                    force_new_message = True
+
             # Re-sync active sources + reload the DB + render the latest
             # product list, editing the current message in place instead of
-            # sending a new one wherever possible.
-            await _send_product_list(query.message, db, context, lang, edit_target=query.message)
+            # sending a new one wherever possible (skipped above if we just
+            # deleted the current message as a cancelled order's QR).
+            await _send_product_list(
+                query.message, db, context, lang,
+                edit_target=None if force_new_message else query.message,
+            )
         except Exception as e:
             logger.warning(f"[home] error: {e}")
         finally:
