@@ -34,6 +34,28 @@ def check_auth(request: Request):
     return request.session.get("admin_id")
 
 
+def _non_ascii_error(value: str, field_label: str) -> str | None:
+    """
+    Returns a Vietnamese error message if `value` contains a non-ASCII
+    character, else None. API keys and base URLs must be plain ASCII to be
+    sent as HTTP header/URL values — a phone keyboard's Vietnamese
+    autocorrect silently turning a typed "u" into "ư" (or similar) while
+    pasting/editing a key is a real recurring failure mode here: it saves
+    fine, then every sync/test call for that connection fails later with a
+    cryptic 'ascii' codec can't encode ... UnicodeEncodeError instead of a
+    clear message at the moment the bad value was actually entered.
+    """
+    bad_chars = sorted({c for c in value if ord(c) > 127})
+    if not bad_chars:
+        return None
+    shown = " ".join(bad_chars[:5])
+    return (
+        f"{field_label} chứa ký tự không hợp lệ ({shown}) — có dấu tiếng Việt, "
+        "có thể do bàn phím điện thoại tự động sửa chữ khi bạn nhập/dán. "
+        "Vui lòng kiểm tra và nhập lại (tắt tự động sửa lỗi hoặc dán từ ứng dụng ghi chú thuần văn bản)."
+    )
+
+
 def flash(request: Request, msg: str, type: str = "success"):
     request.session["flash"] = {"type": type, "msg": msg}
 
@@ -67,6 +89,10 @@ async def add_connection(
     if not check_auth(request):
         return RedirectResponse(url="/login", status_code=302)
     base_url = _resolve_base_url(base_url, api_type)
+    err = _non_ascii_error(api_key, "API Key") or _non_ascii_error(base_url, "URL")
+    if err:
+        flash(request, err, "error")
+        return RedirectResponse(url="/api-connections", status_code=302)
     conn = ApiConnection(
         name=name,
         base_url=base_url.rstrip("/"),
@@ -107,6 +133,10 @@ async def edit_connection(
         flash(request, "Không tìm thấy kết nối!", "error")
         return RedirectResponse(url="/api-connections", status_code=302)
     base_url = _resolve_base_url(base_url, api_type)
+    err = _non_ascii_error(api_key, "API Key") or _non_ascii_error(base_url, "URL")
+    if err:
+        flash(request, err, "error")
+        return RedirectResponse(url="/api-connections", status_code=302)
     conn.name = name
     conn.base_url = base_url.rstrip("/")
     if api_key:

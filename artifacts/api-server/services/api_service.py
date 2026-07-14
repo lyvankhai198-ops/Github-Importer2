@@ -12,6 +12,25 @@ from services.normalize import normalize_product_data
 logger = logging.getLogger(__name__)
 
 
+def _friendly_error_message(message: str) -> str:
+    """
+    Translates the raw UnicodeEncodeError text httpx/h11 raises when an API
+    key or base URL already saved in the database contains a non-ASCII
+    character (typically a phone keyboard's Vietnamese autocorrect turning a
+    typed "u" into "ư" while editing) into an actionable message — new saves
+    are blocked at the form (see routers/api_connections.py._non_ascii_error),
+    but a connection saved before that check existed can still hit this at
+    test/sync time.
+    """
+    if "codec can't encode character" in message:
+        return (
+            f"{message} — Khoá API hoặc URL của kết nối này chứa ký tự không hợp lệ "
+            "(có dấu tiếng Việt, có thể do bàn phím điện thoại tự sửa chữ). "
+            "Vui lòng bấm Sửa, xoá và nhập lại Khoá API/URL, rồi lưu lại."
+        )
+    return message
+
+
 async def sync_api_products(db: Session, api_connection_id: int) -> dict:
     conn = db.query(ApiConnection).filter(ApiConnection.id == api_connection_id).first()
     if not conn:
@@ -312,7 +331,10 @@ async def test_api_connection(db: Session, api_connection_id: int) -> dict:
         return {"success": False, "message": "Connection not found"}
     api_manager.invalidate(api_connection_id)
     adapter = api_manager.get_adapter(conn)
-    return await adapter.test_connection()
+    result = await adapter.test_connection()
+    if not result.get("success") and result.get("message"):
+        result["message"] = _friendly_error_message(result["message"])
+    return result
 
 
 async def get_api_balance(db: Session, api_connection_id: int) -> dict:
@@ -320,7 +342,10 @@ async def get_api_balance(db: Session, api_connection_id: int) -> dict:
     if not conn:
         return {"success": False, "message": "Connection not found", "balance": 0, "currency": "USD"}
     adapter = api_manager.get_adapter(conn)
-    return await adapter.get_balance()
+    result = await adapter.get_balance()
+    if not result.get("success") and result.get("message"):
+        result["message"] = _friendly_error_message(result["message"])
+    return result
 
 
 async def _sync_loop(api_connection_id: int, interval_minutes: int):
