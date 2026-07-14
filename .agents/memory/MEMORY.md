@@ -23,3 +23,4 @@
 - [ai-center DB test isolation trap](ai-center-db-test-isolation.md) — config.py hardcodes sqlite path and ignores DATABASE_URL env var; test scripts must monkeypatch database.engine, not set an env var
 - [Rank/tier spend aggregation](rank-spend-aggregation.md) — compute total spend live from orders (payment_status paid/overpaid, or null+completed), never trust a manually incremented counter
 - [Product notification dedup ledger](notification-events-dedup.md) — new-vs-restock decided by "has this product ever been announced", not by trigger source; unified entry point + persisted claim table prevents double-sends
+- [Price-margin-preserving auto adjustment](price-margin-preserving-adjustment.md) — sale_price tracks source_price via a persisted margin snapshot, not live derivation; primary-source-only sync + approval gating for surges

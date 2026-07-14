@@ -1,0 +1,11 @@
+---
+name: Price-margin-preserving auto adjustment
+description: How Product source/sale price auto-adjustment, guard-rails, and approval gating are designed — read before touching pricing/sync logic.
+---
+
+- `Product.price_margin` (sale_price − source_price) is a **persisted snapshot**, never derived live. It's only recomputed when: (a) admin edits sale_price/source_price by hand via the product form, or (b) an admin approves a pending price surge. A sync tick that changes source_price does NOT recompute margin — it reads the stored margin and applies `new_source_price + margin` (if `auto_adjust_price` is on).
+- **Why:** the spec explicitly requires the admin's markup to survive supplier price moves untouched; deriving margin live from current sale_price would erase that markup the moment source_price changes.
+- Multiple `ProductSource` rows can point at one Product (multi-supplier). Only the **primary** source (active, lowest `priority`, then lowest id) drives `Product.source_price` during sync — never aggregate/average across sources, or concurrent suppliers fight over the sale price every sync tick.
+- A per-product `require_admin_approval_above_percent` threshold holds back large source-price jumps (`price_pending_approval` + `pending_new_source_price`) instead of auto-applying — guards against a bad/glitched supplier API price silently blowing up the sale price. Dedup via `notification_events.claim_event` keyed on `price_pending:{product_id}:{rounded_price}` so repeat sync ticks with the same still-pending price don't re-spam the admin.
+- VND amounts here follow the codebase-wide convention of `Float` storage (see vnd-price-formatting memory) rather than introducing Decimal in one isolated spot — arithmetic is done in plain floats rounded to whole VND (`round(x)`) at each write/comparison, with a small epsilon (0.5) to avoid float-noise re-triggering "price changed" on every sync.
+- Core logic lives in `services/price_sync_service.py` (`handle_source_price_change`, `apply_admin_price_edit`, `approve_pending_price`/`reject_pending_price`); called from `services/api_service.py`'s sync loop after the stock-transition/restock-broadcast handling, and from `routers/products.py` add/edit routes.
