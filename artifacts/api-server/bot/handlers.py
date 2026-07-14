@@ -590,49 +590,52 @@ async def api_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db.close()
 
 
+def _time_of_day_key() -> str:
+    """Vietnam-local (UTC+7) time-of-day bucket for the account-info greeting."""
+    from datetime import datetime, timedelta
+    hour = (datetime.utcnow() + timedelta(hours=7)).hour
+    if 5 <= hour < 12:
+        return "greeting_morning"
+    if 12 <= hour < 18:
+        return "greeting_afternoon"
+    return "greeting_evening"
+
+
 async def _account_info_text(db, tg_user, lang: str) -> str:
+    from services import rank_service
+
     user = db.query(User).filter(User.telegram_id == str(tg_user.id)).first()
     vnd = wallet_service.get_balance(user, WalletCurrency.VND) if user else 0.0
-    usdt = wallet_service.get_balance(user, WalletCurrency.USDT) if user else 0.0
-    client = api_client_service.get_client_for_user(db, str(tg_user.id))
-    if client:
-        api_status = t(lang, {
-            ApiClientStatus.active: "api_status_active",
-            ApiClientStatus.locked: "api_status_locked",
-            ApiClientStatus.revoked: "api_status_revoked",
-        }.get(client.status, "api_status_active"))
-        api_key_masked = api_key_service.masked_display(client.key_prefix)
-        api_created_at = client.created_at.strftime("%d/%m/%Y") if client.created_at else "—"
-        api_order_count = client.total_orders or 0
-        api_total_spent_orders = (
-            db.query(Order)
-            .filter(Order.api_client_id == client.id, Order.payment_status == PaymentStatus.paid)
-            .all()
-        )
-        api_total_spent = format_vnd(sum(o.total_price or 0 for o in api_total_spent_orders))
-    else:
-        api_status = t(lang, "api_menu_no_key")
-        api_key_masked = "—"
-        api_created_at = "—"
-        api_order_count = 0
-        api_total_spent = "0"
 
+    total_spent = rank_service.compute_total_spent(db, str(tg_user.id))
+    total_accounts = rank_service.compute_total_accounts_purchased(db, str(tg_user.id))
     total_orders = getattr(user, "total_orders", 0) or 0
-    completed_orders = (
-        db.query(Order)
-        .filter(Order.telegram_user_id == str(tg_user.id), Order.status == OrderStatus.completed)
-        .count()
-    )
-    lang_display = "Tiếng Việt" if lang == "vi" else "English"
+
+    current_rank = rank_service.get_rank_for_spend(db, total_spent)
+    next_rank = rank_service.get_next_rank(db, current_rank) if current_rank else None
+    progress = rank_service.get_progress(total_spent, current_rank, next_rank)
+
+    if progress["is_max"] or not next_rank:
+        progress_section = t(lang, "rank_max_section")
+    else:
+        bar = rank_service.render_progress_bar(progress["percent"])
+        progress_section = t(lang, "rank_progress_section",
+                              bar=bar, percent=round(progress["percent"]),
+                              remaining=format_vnd(progress["remaining"]),
+                              next_rank_emoji=next_rank.emoji, next_rank_name=next_rank.name)
+
     username_str = tg_user.username or "—"
     full_name = " ".join(filter(None, [tg_user.first_name, tg_user.last_name])) or username_str
+    rank_emoji = current_rank.emoji if current_rank else "🥉"
+    rank_name = current_rank.name if current_rank else "—"
 
-    return t(lang, "account_info_full",
-              full_name=full_name, username=username_str, tg_id=tg_user.id, language=lang_display,
-              balance_vnd=format_vnd(vnd), balance_usdt=f"{usdt:.2f}",
-              api_status=api_status, api_key_masked=api_key_masked, api_created_at=api_created_at,
-              api_order_count=api_order_count, api_total_spent=api_total_spent,
-              total_orders=total_orders, completed_orders=completed_orders)
+    return t(lang, "account_info_v2",
+              time_of_day=t(lang, _time_of_day_key()),
+              full_name=full_name, tg_id=tg_user.id,
+              rank_emoji=rank_emoji, rank_name=rank_name,
+              balance=format_vnd(vnd), total_spent=format_vnd(total_spent),
+              total_orders=total_orders, total_accounts=total_accounts,
+              progress_section=progress_section)
 
 
 async def account_info_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):

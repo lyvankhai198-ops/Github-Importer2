@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}Cấp bậc - AI Center{% endblock %}
+{% block page_title %}👑 Cấp bậc thành viên{% endblock %}
+{% block content %}
+<div class="card mb-3">
+  <div class="card-body">
+    <p class="text-muted mb-0">
+      Hạng của người dùng được tự động tính từ <b>tổng chi tiêu</b> (tổng các đơn hàng đã thanh toán), không phải số dư ví.
+      Sau mỗi đơn hàng thành công, hệ thống tự kiểm tra và nâng cấp ngay nếu đủ điều kiện — không cần deploy lại code.
+    </p>
+  </div>
+</div>
+
+<div class="card mb-3">
+  <div class="card-header"><h6 class="mb-0">➕ Thêm cấp bậc mới</h6></div>
+  <div class="card-body">
+    <form action="/ranks/add" method="post" class="row g-2 align-items-end">
+      <div class="col-6 col-md-2">
+        <label class="form-label small">Emoji</label>
+        <input type="text" name="emoji" class="form-control" value="🏅" maxlength="10" required>
+      </div>
+      <div class="col-12 col-md-5">
+        <label class="form-label small">Tên cấp bậc</label>
+        <input type="text" name="name" class="form-control" placeholder="Ví dụ: Kim Cương" required>
+      </div>
+      <div class="col-8 col-md-3">
+        <label class="form-label small">Ngưỡng chi tiêu (VNĐ)</label>
+        <input type="number" name="min_spend" class="form-control" min="0" step="1000" value="0" required>
+      </div>
+      <div class="col-4 col-md-2">
+        <button type="submit" class="btn btn-primary w-100">Thêm</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header"><h6 class="mb-0">Danh sách cấp bậc (thấp → cao)</h6></div>
+  <div class="table-responsive">
+    <table class="table align-middle mb-0">
+      <thead>
+        <tr>
+          <th style="width: 60px">#</th>
+          <th>Cấp bậc</th>
+          <th>Ngưỡng chi tiêu</th>
+          <th>Trạng thái</th>
+          <th style="width: 260px">Hành động</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for rank in ranks %}
+        <tr {% if not rank.is_active %}class="text-muted"{% endif %}>
+          <td>{{ loop.index }}</td>
+          <td>
+            <form action="/ranks/{{ rank.id }}/edit" method="post" class="d-flex gap-2 align-items-center flex-wrap">
+              <input type="text" name="emoji" value="{{ rank.emoji }}" class="form-control form-control-sm" style="width: 60px" maxlength="10">
+              <input type="text" name="name" value="{{ rank.name }}" class="form-control form-control-sm" style="width: 200px" required>
+              <input type="number" name="min_spend" value="{{ rank.min_spend|int }}" class="form-control form-control-sm" style="width: 160px" min="0" step="1000">
+              <button type="submit" class="btn btn-sm btn-outline-primary">💾 Lưu</button>
+            </form>
+          </td>
+          <td>{{ "{:,.0f}".format(rank.min_spend or 0).replace(",", ".") }}đ</td>
+          <td>
+            {% if rank.is_active %}
+            <span class="badge bg-success">Đang bật</span>
+            {% else %}
+            <span class="badge bg-secondary">Đã tắt</span>
+            {% endif %}
+          </td>
+          <td>
+            <div class="d-flex gap-1">
+              <form action="/ranks/{{ rank.id }}/move" method="post">
+                <input type="hidden" name="direction" value="up">
+                <button type="submit" class="btn btn-sm btn-outline-secondary" {% if loop.first %}disabled{% endif %}>↑</button>
+              </form>
+              <form action="/ranks/{{ rank.id }}/move" method="post">
+                <input type="hidden" name="direction" value="down">
+                <button type="submit" class="btn btn-sm btn-outline-secondary" {% if loop.last %}disabled{% endif %}>↓</button>
+              </form>
+              <form action="/ranks/{{ rank.id }}/toggle" method="post">
+                <button type="submit" class="btn btn-sm btn-outline-warning">{{ "Tắt" if rank.is_active else "Bật" }}</button>
+              </form>
+              <form action="/ranks/{{ rank.id }}/delete" method="post" onsubmit="return confirm('Xoá cấp bậc này? Người dùng đang ở cấp này sẽ được tính lại ở lần mua tiếp theo.')">
+                <button type="submit" class="btn btn-sm btn-outline-danger">🗑</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="text-center text-muted py-4">Chưa có cấp bậc nào.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

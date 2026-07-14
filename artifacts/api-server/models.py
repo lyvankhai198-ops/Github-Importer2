@@ -228,8 +228,31 @@ class User(Base):
     last_active_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=now)
     updated_at = Column(DateTime, default=now, onupdate=now)
+    # Current membership rank (see Rank below). Recomputed from live total-spend
+    # after every successfully paid order — see services/rank_service.py.
+    rank_id = Column(Integer, ForeignKey("ranks.id"), nullable=True)
 
     orders = relationship("Order", back_populates="user", foreign_keys="Order.telegram_user_id")
+    rank = relationship("Rank", foreign_keys=[rank_id])
+
+
+class Rank(Base):
+    """
+    Admin-configurable membership tier ("Cấp bậc"). A user's rank is derived
+    from their live total spend (SUM of paid orders), never from a manually
+    assigned value — see services.rank_service.compute_total_spent(). Fully
+    editable from the Web Admin "Cấp bậc" page: name/emoji/threshold/order/
+    active can all change without a code deploy.
+    """
+    __tablename__ = "ranks"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False)
+    emoji = Column(String(20), nullable=False, default="🏅")
+    min_spend = Column(Float, nullable=False, default=0.0)  # VND threshold to reach this rank
+    sort_order = Column(Integer, nullable=False, default=0)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=now)
+    updated_at = Column(DateTime, default=now, onupdate=now)
 
 
 class Product(Base):

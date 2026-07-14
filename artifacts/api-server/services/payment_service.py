@@ -625,6 +625,17 @@ async def process_paid_order(order_id: int):
             logger.warning(f"[payment] order {order_id} payment_status={order.payment_status} — not ready")
             return
 
+        # Membership rank recompute — fires exactly once per order thanks to
+        # the gates above + the _processing_paid guard. Never blocks payment
+        # processing on failure (see rank_service.recompute_user_rank).
+        try:
+            from services.rank_service import recompute_user_rank
+            from services.bot_service import bot_manager
+            bot = bot_manager._application.bot if bot_manager.is_running() else None
+            await recompute_user_rank(db, order.telegram_user_id, bot=bot)
+        except Exception as e:
+            logger.error(f"[payment] rank recompute failed for order {order_id}: {e}")
+
         # Transition to processing
         order.status = OrderStatus.processing_api
         db.commit()

@@ -227,6 +227,19 @@ def _run_migrations():
         )""",
         "CREATE INDEX IF NOT EXISTS ix_order_issues_order ON order_issues (order_id)",
         "CREATE INDEX IF NOT EXISTS ix_order_issues_user ON order_issues (telegram_user_id)",
+
+        # ── Membership rank system ("Cấp bậc") ──────────────────────────────
+        """CREATE TABLE IF NOT EXISTS ranks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name VARCHAR(100) NOT NULL,
+            emoji VARCHAR(20) NOT NULL DEFAULT '🏅',
+            min_spend FLOAT NOT NULL DEFAULT 0.0,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            is_active BOOLEAN NOT NULL DEFAULT 1,
+            created_at DATETIME,
+            updated_at DATETIME
+        )""",
+        "ALTER TABLE users ADD COLUMN rank_id INTEGER",
     ]
     with engine.connect() as conn:
         ran_language_selected_migration = False
@@ -320,6 +333,36 @@ def _seed_payment_methods():
         db.close()
 
 
+def _seed_ranks():
+    """Insert default membership rank ("Cấp bậc") rows if the table is empty.
+    Purely a first-boot convenience — admins can rename/re-threshold/reorder/
+    disable any of these from Web Admin afterwards without touching code."""
+    from models import Rank
+    db = SessionLocal()
+    try:
+        if db.query(Rank).count() > 0:
+            return
+        defaults = [
+            ("🥉", "Thành viên mới",       0),
+            ("🥈", "Đồng",                  500_000),
+            ("🥇", "Bạc",                   2_000_000),
+            ("💎", "Vàng",                  5_000_000),
+            ("👑", "Bạch Kim",              10_000_000),
+            ("⚜️", "Kim Cương",             20_000_000),
+            ("🏆", "Đại lý",                50_000_000),
+            ("🚀", "Đại lý VIP",            100_000_000),
+            ("🔥", "Tổng đại lý",           200_000_000),
+            ("💠", "Nhà phân phối",         500_000_000),
+            ("🌟", "Nhà phân phối cấp cao", 1_000_000_000),
+            ("👑", "Đối tác chiến lược",    2_000_000_000),
+        ]
+        for i, (emoji, name, min_spend) in enumerate(defaults):
+            db.add(Rank(name=name, emoji=emoji, min_spend=min_spend, sort_order=i, is_active=True))
+        db.commit()
+    finally:
+        db.close()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # ── Startup ───────────────────────────────────────────────────────────────
@@ -327,6 +370,7 @@ async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     _run_migrations()
     _seed_payment_methods()
+    _seed_ranks()
     UPLOADS_DIR.mkdir(exist_ok=True)
     logger.info("DATABASE_READY")
 
@@ -475,6 +519,7 @@ app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
 from routers import auth, dashboard, products, orders, api_connections, users, settings, wallet
 from routers import webhooks  # public endpoints — no session auth
 from routers import api_clients, customer_api
+from routers import ranks
 
 app.include_router(auth.router)
 app.include_router(dashboard.router)
@@ -487,6 +532,7 @@ app.include_router(wallet.router)
 app.include_router(api_clients.router)
 app.include_router(webhooks.router)  # POST /webhooks/sepay
 app.include_router(customer_api.router)  # public inbound customer REST API (X-API-Key auth)
+app.include_router(ranks.router)
 
 
 if __name__ == "__main__":

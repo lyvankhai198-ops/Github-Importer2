@@ -195,6 +195,19 @@ async def create_order(
     product.sold_count = (product.sold_count or 0) + quantity
     db.commit()
 
+    # Membership rank recompute (this create_order path is the "instant",
+    # non-payment-gated order flow — process_paid_order never runs for it,
+    # so the rank hook has to live here instead). Best-effort, never blocks
+    # order creation on failure.
+    if order.status in (OrderStatus.completed, OrderStatus.partial_delivery):
+        try:
+            from services.rank_service import recompute_user_rank
+            from services.bot_service import bot_manager
+            bot = bot_manager._application.bot if bot_manager.is_running() else None
+            await recompute_user_rank(db, telegram_user_id, bot=bot)
+        except Exception as e:
+            logger.error(f"[order_service] rank recompute failed for order {order.id}: {e}")
+
     db.refresh(order)
     return order
 

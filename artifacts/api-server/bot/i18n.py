@@ -240,6 +240,35 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "📦 Tổng đơn hàng: {total_orders}\n"
             "✅ Đơn hoàn thành: {completed_orders}"
         ),
+        # ── Redesigned "Thông tin" (account info) with membership rank ─────────
+        "greeting_morning": "buổi sáng",
+        "greeting_afternoon": "buổi chiều",
+        "greeting_evening": "buổi tối",
+        "account_info_v2": (
+            "🌅 Chào {time_of_day} {full_name}\n"
+            "🆔 ID: <code>{tg_id}</code>\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "👑 <b>Cấp bậc:</b>\n{rank_emoji} {rank_name}\n\n"
+            "💰 <b>Số dư:</b>\n{balance} VNĐ\n\n"
+            "📉 <b>Tổng chi tiêu:</b>\n{total_spent} VNĐ\n\n"
+            "📦 <b>Tổng đơn hàng:</b>\n{total_orders}\n\n"
+            "🛍 <b>Tổng tài khoản đã mua:</b>\n{total_accounts}\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "{progress_section}"
+        ),
+        "rank_progress_section": (
+            "📈 <b>Tiến độ lên cấp tiếp theo</b>\n\n"
+            "{bar} {percent}%\n\n"
+            "Còn thiếu:\n{remaining} VNĐ\n\n"
+            "để lên:\n\n{next_rank_emoji} {next_rank_name}"
+        ),
+        "rank_max_section": "🏆 Bạn đã đạt cấp cao nhất.",
+        "rank_upgraded": (
+            "🎉 <b>CHÚC MỪNG!</b>\n\n"
+            "Bạn đã được nâng cấp lên\n\n"
+            "{rank_emoji} <b>{rank_name}</b>\n\n"
+            "Cảm ơn bạn đã đồng hành cùng AI Center."
+        ),
         "btn_account_docs": "📘 Tài liệu API",
         "menu_btn_products":  "🛍 Sản phẩm",
         "menu_btn_orders":    "📦 Đơn hàng",
@@ -635,6 +664,35 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "💳 Total API spending: {api_total_spent}\n\n"
             "📦 Total orders: {total_orders}\n"
             "✅ Completed orders: {completed_orders}"
+        ),
+        # ── Redesigned "Account info" with membership rank ──────────────────────
+        "greeting_morning": "morning",
+        "greeting_afternoon": "afternoon",
+        "greeting_evening": "evening",
+        "account_info_v2": (
+            "🌅 Good {time_of_day}, {full_name}\n"
+            "🆔 ID: <code>{tg_id}</code>\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "👑 <b>Rank:</b>\n{rank_emoji} {rank_name}\n\n"
+            "💰 <b>Balance:</b>\n{balance} VND\n\n"
+            "📉 <b>Total spent:</b>\n{total_spent} VND\n\n"
+            "📦 <b>Total orders:</b>\n{total_orders}\n\n"
+            "🛍 <b>Total accounts purchased:</b>\n{total_accounts}\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "{progress_section}"
+        ),
+        "rank_progress_section": (
+            "📈 <b>Progress to next rank</b>\n\n"
+            "{bar} {percent}%\n\n"
+            "Remaining:\n{remaining} VND\n\n"
+            "to reach:\n\n{next_rank_emoji} {next_rank_name}"
+        ),
+        "rank_max_section": "🏆 You've reached the highest rank.",
+        "rank_upgraded": (
+            "🎉 <b>CONGRATULATIONS!</b>\n\n"
+            "You've been upgraded to\n\n"
+            "{rank_emoji} <b>{rank_name}</b>\n\n"
+            "Thank you for being with AI Center."
         ),
         "btn_account_docs": "📘 API Documentation",
         "menu_btn_products":  "🛍 Products",

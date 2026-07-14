@@ -15,6 +15,18 @@ def _get_lang(db, tg_id: str) -> str:
 
 # ── Delivery notifications ─────────────────────────────────────────────────────
 
+async def notify_user_rank_upgrade(bot, telegram_user_id: str, rank_emoji: str, rank_name: str, lang: str = "vi"):
+    """Sent once, right after a user's spend crosses into a new rank
+    threshold (see services/rank_service.py). Never raises — a failed
+    congrats DM must not block the order flow that triggered it."""
+    try:
+        from bot.i18n import t
+        text = t(lang, "rank_upgraded", rank_emoji=rank_emoji, rank_name=rank_name)
+        await bot.send_message(chat_id=int(telegram_user_id), text=text, parse_mode="HTML")
+    except Exception as e:
+        logger.error(f"notify_user_rank_upgrade error: {e}")
+
+
 async def notify_admin_new_order(bot, order: Order, admin_telegram_id: str):
     if not admin_telegram_id:
         return
