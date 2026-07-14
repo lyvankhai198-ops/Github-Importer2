@@ -11,9 +11,15 @@ Tests for the Telegram custom emoji product-icon picker:
 """
 import pytest
 
-from models import Product, DeliveryMode, SourceType
+from models import Product, DeliveryMode, SourceType, EmojiIcon
 from services.product_sync import apply_admin_icon_edit, auto_assign_icon_if_unlocked, parse_edited_fields
-from services.telegram_emoji import render_icon_html, parse_sticker_set_name
+from services.telegram_emoji import render_icon_html, parse_sticker_set_name, import_icons_from_entities
+
+
+class FakeEntity:
+    """Stand-in for telegram.MessageEntity — only .custom_emoji_id is read."""
+    def __init__(self, custom_emoji_id):
+        self.custom_emoji_id = custom_emoji_id
 
 
 def make_product(db_session, **kwargs):
@@ -102,6 +108,40 @@ async def test_fetch_custom_emoji_stickers_without_bot_token_raises(db_session):
     from services.telegram_emoji import fetch_custom_emoji_stickers, TelegramEmojiImportError
     with pytest.raises(TelegramEmojiImportError):
         await fetch_custom_emoji_stickers("IconsEmoji_JABA", db_session)
+
+
+# ── 10. Importing from forwarded-message entities adds new icons and skips
+#     ones already in the library (by custom_emoji_id) ─────────────────────
+def test_import_icons_from_entities_adds_and_dedupes(db_session):
+    db_session.add(EmojiIcon(
+        name="Đã có sẵn", custom_emoji_id="111", fallback_emoji="⭐",
+        sort_order=1, is_active=True,
+    ))
+    db_session.commit()
+
+    entities_map = {
+        FakeEntity("111"): "⭐",  # already in the library -> skipped
+        FakeEntity("222"): "🎉",  # new
+        FakeEntity("333"): "🔥",  # new
+    }
+    result = import_icons_from_entities(db_session, entities_map)
+    assert result == {"added": 2, "skipped_duplicate": 1}
+
+    all_ids = {row.custom_emoji_id for row in db_session.query(EmojiIcon).all()}
+    assert all_ids == {"111", "222", "333"}
+
+
+# ── 11. Duplicate custom_emoji_id within the same forwarded message is only
+#     added once, even though it appears as two separate entities ──────────
+def test_import_icons_from_entities_dedupes_within_same_batch(db_session):
+    entities_map = {
+        FakeEntity("444"): "🐱",
+        FakeEntity("444"): "🐱",  # same id twice (dict key collapses this,
+                                   # but exercise the seen_in_batch guard too)
+    }
+    result = import_icons_from_entities(db_session, entities_map)
+    assert result["added"] == 1
+    assert db_session.query(EmojiIcon).filter(EmojiIcon.custom_emoji_id == "444").count() == 1
 
 
 # ── 9. Out-of-stock detail rendering never shows a chosen custom emoji ─────

@@ -137,3 +137,46 @@ async def fetch_custom_emoji_stickers(sticker_set_name: str, db: Session) -> lis
             "vui lòng thêm icon bằng tay ở form bên dưới."
         )
     return icons
+
+
+def import_icons_from_entities(db: Session, entities_map: dict) -> dict:
+    """
+    Bulk-add EmojiIcon rows from a Telegram message's custom_emoji entities.
+
+    Covers the case getStickerSet can't handle: an admin pastes/forwards a
+    message that mixes individual custom emoji pulled from many different
+    sticker packs (not one single named pack) — there is no Bot API call to
+    list "every custom emoji in an arbitrary message" except reading the
+    entities of a message the bot actually received. So the admin forwards
+    that message to the bot (see bot/handlers.py message_handler), which
+    calls this with `msg.parse_entities(types=["custom_emoji"])` — a dict of
+    {MessageEntity: substring}, substring already correctly sliced by the
+    library despite Telegram's UTF-16 offset/length quirks.
+
+    Returns {"added": int, "skipped_duplicate": int} and commits.
+    """
+    from models import EmojiIcon
+
+    existing_ids = {row[0] for row in db.query(EmojiIcon.custom_emoji_id).all()}
+    max_sort = db.query(EmojiIcon).count()
+    added = 0
+    skipped = 0
+    seen_in_batch = set()
+    for entity, fallback_text in entities_map.items():
+        custom_emoji_id = str(getattr(entity, "custom_emoji_id", "") or "")
+        if not custom_emoji_id or custom_emoji_id in existing_ids or custom_emoji_id in seen_in_batch:
+            skipped += 1
+            continue
+        seen_in_batch.add(custom_emoji_id)
+        max_sort += 1
+        db.add(EmojiIcon(
+            name=f"Icon nhập {max_sort}",
+            custom_emoji_id=custom_emoji_id,
+            fallback_emoji=(fallback_text or "⭐").strip() or "⭐",
+            sticker_set_name=None,
+            sort_order=max_sort,
+            is_active=True,
+        ))
+        added += 1
+    db.commit()
+    return {"added": added, "skipped_duplicate": skipped}

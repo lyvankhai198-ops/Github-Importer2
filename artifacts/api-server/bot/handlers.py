@@ -2708,6 +2708,30 @@ async def media_message_handler(update: Update, context: ContextTypes.DEFAULT_TY
 
 
 async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # ── Admin bulk icon import: forward/paste a message containing Telegram
+    # custom emoji here and it's read straight off the message entities —
+    # this is the only way to pull custom_emoji_id for icons mixed together
+    # from several different sticker packs (getStickerSet only covers one
+    # named pack at a time). See services/telegram_emoji.import_icons_from_entities.
+    entities_map = update.message.parse_entities(types=["custom_emoji"])
+    if entities_map:
+        db = SessionLocal()
+        try:
+            admin_id = _get_admin_id(db)
+            tg_user = update.effective_user
+            if admin_id and str(tg_user.id) == str(admin_id):
+                from services.telegram_emoji import import_icons_from_entities
+                result = import_icons_from_entities(db, entities_map)
+                await update.message.reply_text(
+                    f"✨ Đã phát hiện {len(entities_map)} icon tùy chỉnh trong tin nhắn.\n"
+                    f"➕ Đã thêm mới: {result['added']}\n"
+                    f"⏭ Đã có sẵn (bỏ qua): {result['skipped_duplicate']}\n\n"
+                    "Vào trang quản trị → Kho icon để đặt tên và dùng cho sản phẩm."
+                )
+                return
+        finally:
+            db.close()
+
     state = context.user_data.get("state")
     db = SessionLocal()
     try:
