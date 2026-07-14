@@ -189,10 +189,12 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "issue_not_found": "⚠️ Không tìm thấy báo lỗi.",
         "refund_success_admin": "✅ Đã hoàn {amount} vào ví của khách cho đơn <code>{code}</code>.",
         "refund_success_user": (
-            "💰 <b>Đơn hàng <code>{code}</code> đã được hoàn tiền!</b>\n\n"
-            "Số tiền: <b>{amount}</b> đã được cộng vào ví của bạn."
+            "✅ <b>HOÀN TIỀN THÀNH CÔNG</b>\n\n"
+            "🧾 Mã đơn: <code>{code}</code>\n"
+            "💰 Số tiền hoàn: <b>{amount}</b>\n"
+            "👛 Số dư mới: <b>{new_balance}</b>"
         ),
-        "refund_already_done": "⚠️ Đơn hàng này đã được hoàn tiền trước đó.",
+        "refund_already_done": "⚠️ Giao dịch này đã được hoàn tiền trước đó.",
         "refund_warranty_expired": "⚠️ Đơn hàng đã hết thời gian bảo hành, không thể hoàn tiền.",
         "refund_not_authorized": "🚫 Bạn không có quyền thực hiện thao tác này.",
         "support_contact": "💬 Liên hệ hỗ trợ: @{username}",
@@ -583,10 +585,12 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "issue_not_found": "⚠️ Issue not found.",
         "refund_success_admin": "✅ Refunded {amount} to the customer's wallet for order <code>{code}</code>.",
         "refund_success_user": (
-            "💰 <b>Order <code>{code}</code> was refunded!</b>\n\n"
-            "Amount: <b>{amount}</b> was credited to your wallet."
+            "✅ <b>REFUND SUCCESSFUL</b>\n\n"
+            "🧾 Order: <code>{code}</code>\n"
+            "💰 Refund amount: <b>{amount}</b>\n"
+            "👛 New balance: <b>{new_balance}</b>"
         ),
-        "refund_already_done": "⚠️ This order was already refunded.",
+        "refund_already_done": "⚠️ This transaction was already refunded.",
         "refund_warranty_expired": "⚠️ The order's warranty has expired — no refund available.",
         "refund_not_authorized": "🚫 You are not authorized to perform this action.",
         "support_contact": "💬 Contact support: @{username}",

@@ -1766,6 +1766,10 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 context.user_data.clear()
                 context.user_data["state"] = "waiting_admin_reject_reason"
                 context.user_data["admin_issue_id"] = issue_id
+                # Strip the action keyboard right away — reject is a one-way
+                # action once initiated, so it must not be double-tappable
+                # while the admin is typing the reason.
+                await _finalize_admin_issue_message(context.bot, query.message.chat_id, query.message.message_id)
                 await context.bot.send_message(chat_id=tg_user.id, text=t(lang, "issue_reject_prompt"))
                 await query.answer()
                 return
@@ -1779,6 +1783,10 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 issue.handled_at = datetime.utcnow()
                 db.commit()
                 await query.answer(t(lang, "issue_resolved_admin", id=issue.id), show_alert=True)
+                await _finalize_admin_issue_message(
+                    context.bot, query.message.chat_id, query.message.message_id,
+                    f"✅ Issue #{issue.id} đã được đánh dấu xử lý bởi {tg_user.id}.",
+                )
                 return
 
             if action == "admin_issue_refund":
@@ -1792,6 +1800,9 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     result = refund_service.perform_refund(db, issue, order, str(tg_user.id))
                 except AlreadyProcessedError:
                     await query.answer(t(lang, "refund_already_done"), show_alert=True)
+                    await _finalize_admin_issue_message(
+                        context.bot, query.message.chat_id, query.message.message_id,
+                    )
                     return
                 except Exception as e:
                     logger.error(f"[admin_issue_refund] issue={issue_id} error: {e}")
@@ -1806,13 +1817,22 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"{format_vnd(result['amount'])}đ" if result["currency"] == WalletCurrency.VND
                     else f"{result['amount']:.4f} USDT"
                 )
+                new_balance_str = (
+                    f"{format_vnd(result['balance_after'])}đ" if result["currency"] == WalletCurrency.VND
+                    else f"{result['balance_after']:.4f} USDT"
+                )
                 await query.answer(t(lang, "refund_success_admin", amount=amount_str, code=order.order_code),
                                     show_alert=True)
+                await _finalize_admin_issue_message(
+                    context.bot, query.message.chat_id, query.message.message_id,
+                    f"✅ Đã hoàn {amount_str} vào ví cho đơn <code>{order.order_code}</code> (bởi {tg_user.id}).",
+                )
                 try:
                     buyer_lang = _get_lang(db, order.telegram_user_id)
                     await context.bot.send_message(
                         chat_id=int(order.payment_chat_id or order.telegram_user_id),
-                        text=t(buyer_lang, "refund_success_user", code=order.order_code, amount=amount_str),
+                        text=t(buyer_lang, "refund_success_user", code=order.order_code,
+                               amount=amount_str, new_balance=new_balance_str),
                         parse_mode="HTML",
                     )
                 except Exception as e:
@@ -2557,6 +2577,26 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ── Message handler ────────────────────────────────────────────────────────────
+
+async def _finalize_admin_issue_message(bot, chat_id, message_id, status_line: str = None):
+    """
+    After an admin acts on an issue (refund/reject/resolve), strip the
+    action keyboard from the original admin DM so it can't be tapped again
+    — works uniformly for plain-text and photo/video/document alerts since
+    it only touches the reply_markup, never the text/caption body. A
+    separate status message (rather than editing the caption/text) is sent
+    to record what happened, so this never fails on media messages.
+    """
+    try:
+        await bot.edit_message_reply_markup(chat_id=chat_id, message_id=message_id, reply_markup=None)
+    except Exception as e:
+        logger.warning(f"[_finalize_admin_issue_message] strip keyboard failed (non-fatal): {e}")
+    if status_line:
+        try:
+            await bot.send_message(chat_id=chat_id, text=status_line, parse_mode="HTML")
+        except Exception as e:
+            logger.warning(f"[_finalize_admin_issue_message] status message failed (non-fatal): {e}")
+
 
 async def _create_and_notify_issue(context, db, order, tg_user, issue_text: str = None,
                                     media_type: str = None, telegram_file_id: str = None) -> "OrderIssue":
