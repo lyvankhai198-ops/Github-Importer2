@@ -283,6 +283,9 @@ def _run_migrations():
         "ALTER TABLE products ADD COLUMN price_pending_approval BOOLEAN DEFAULT 0",
         "ALTER TABLE products ADD COLUMN pending_new_source_price FLOAT",
         "ALTER TABLE telegram_bot_config ADD COLUMN notify_users_on_price_change BOOLEAN DEFAULT 0",
+        # Admin-only price-change alerts (customers are never notified —
+        # that logic was fully removed, not just gated off).
+        "ALTER TABLE telegram_bot_config ADD COLUMN notify_admin_on_price_change BOOLEAN DEFAULT 1",
         """CREATE TABLE IF NOT EXISTS product_price_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             product_id INTEGER NOT NULL,

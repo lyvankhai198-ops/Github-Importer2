@@ -125,10 +125,10 @@
                 </div>
                 <div class="col-sm-6">
                   <div class="form-check form-switch">
-                    <input class="form-check-input" type="checkbox" name="notify_users_on_price_change" id="notifyUsersOnPriceChange" {{ 'checked' if cfg.notify_users_on_price_change else '' }}>
-                    <label class="form-check-label" for="notifyUsersOnPriceChange">Báo tất cả khách khi giá bán thay đổi</label>
+                    <input class="form-check-input" type="checkbox" name="notify_admin_on_price_change" id="notifyAdminOnPriceChange" {{ 'checked' if cfg.notify_admin_on_price_change is not false else '' }}>
+                    <label class="form-check-label" for="notifyAdminOnPriceChange">Báo cho Admin khi giá nguồn thay đổi</label>
                   </div>
-                  <div class="form-text">Mặc định tắt — chỉ gửi khi giá bán thực sự đổi do tự động điều chỉnh giá nguồn.</div>
+                  <div class="form-text">Chỉ gửi cho Admin qua Telegram. Khách hàng không bao giờ được thông báo khi giá thay đổi.</div>
                 </div>
                 <div class="col-sm-6">
                   <label class="form-label">Số tin nhắn mỗi đợt gửi</label>

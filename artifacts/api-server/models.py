@@ -160,11 +160,15 @@ class TelegramBotConfig(Base):
     # pings users with a paid_waiting_stock order for that product).
     notify_new_products = Column(Boolean, default=True)
     notify_restock = Column(Boolean, default=True)
-    # Auto price-adjustment: whether a genuine sale_price change (triggered by
-    # a source price sync + auto_adjust_price) also announces to all active
-    # users. Default off to avoid spamming customers on every supplier tick —
-    # see services/price_sync_service.py.
+    # Auto price-adjustment notifications: ADMIN-ONLY. Customers must never
+    # be notified about source/sale price changes — that logic has been
+    # permanently removed from services/price_sync_service.py, not just
+    # gated off. This column is kept (unused) so any historical DB value
+    # doesn't error out; it is never read or written anymore.
     notify_users_on_price_change = Column(Boolean, default=False)
+    # Whether the admin Telegram account gets pinged on every source-price
+    # change (both when auto_adjust_price is on and off). Default on.
+    notify_admin_on_price_change = Column(Boolean, default=True)
     broadcast_batch_size = Column(Integer, default=25)
     broadcast_delay_ms = Column(Integer, default=300)
     created_at = Column(DateTime, default=now)

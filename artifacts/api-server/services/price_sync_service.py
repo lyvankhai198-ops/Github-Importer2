@@ -209,15 +209,10 @@ async def _apply_source_price_change(
     )
     db.commit()
 
+    # ADMIN-ONLY notification. Customers must never be notified about a
+    # source/sale price change — there is no code path here (or anywhere
+    # else in this module) that broadcasts a price change to users.
     await notify_admin_source_price_changed(db, product, old_source_price, new_source_price, old_sale_price, new_sale_price)
-
-    if sale_price_changed:
-        cfg = _get_bot_config(db)
-        if cfg and getattr(cfg, "notify_users_on_price_change", False):
-            try:
-                await notify_users_price_changed(db, product, new_sale_price)
-            except Exception as e:
-                logger.error(f"[price_sync] user price-change notify failed for product {product.id}: {e}")
 
     return {
         "action": "applied",
@@ -265,19 +260,31 @@ def _fmt(v) -> str:
     return f"{format_vnd(v)}đ"
 
 
+def _admin_notify_enabled(cfg) -> bool:
+    return bool(cfg) and getattr(cfg, "notify_admin_on_price_change", True) is not False
+
+
 async def notify_admin_source_price_changed(db: Session, product: Product, old_source_price, new_source_price, old_sale_price, new_sale_price):
+    """
+    ADMIN-ONLY notification (Telegram). Customers are never notified about a
+    price change — there is no broadcast call anywhere in this function or
+    module. Gated on TelegramBotConfig.notify_admin_on_price_change (default
+    True).
+    """
     from services.bot_service import bot_manager
     cfg = _get_bot_config(db)
+    if not _admin_notify_enabled(cfg):
+        return
     admin_id = cfg.admin_telegram_id if cfg else None
     if not admin_id or not bot_manager.is_running():
         return
     if product.auto_adjust_price:
         text = (
-            "⚠️ GIÁ NGUỒN ĐÃ THAY ĐỔI\n\n"
+            "✅ ĐÃ TỰ ĐỘNG CẬP NHẬT GIÁ\n\n"
             f"📦 Sản phẩm: {product.name}\n"
             f"🏦 Giá nguồn cũ: {_fmt(old_source_price)}\n"
             f"🏦 Giá nguồn mới: {_fmt(new_source_price)}\n"
-            f"📈 Chênh lệch giữ nguyên: {_fmt(product.price_margin)}\n"
+            f"📊 Chênh lệch giữ nguyên: {_fmt(product.price_margin)}\n"
             f"💰 Giá bán cũ: {_fmt(old_sale_price)}\n"
             f"💰 Giá bán mới: {_fmt(new_sale_price)}"
         )
@@ -290,6 +297,7 @@ async def notify_admin_source_price_changed(db: Session, product: Product, old_s
             f"💰 Giá bán hiện tại vẫn giữ nguyên: {_fmt(old_sale_price)}\n"
             "⛔ Tự động điều chỉnh giá đang tắt."
         )
+    # No inline keyboard/buttons on admin price-change alerts (no "Mua ngay").
     try:
         await bot_manager.send_message(admin_id, text)
     except Exception as e:
@@ -297,8 +305,13 @@ async def notify_admin_source_price_changed(db: Session, product: Product, old_s
 
 
 async def notify_admin_price_surge_pending(db: Session, product: Product, old_source_price, new_source_price, percent_change: float):
+    """ADMIN-ONLY notification for a price surge parked for approval. Never
+    sent to customers. Gated on notify_admin_on_price_change like the
+    notification above."""
     from services.bot_service import bot_manager
     cfg = _get_bot_config(db)
+    if not _admin_notify_enabled(cfg):
+        return
     admin_id = cfg.admin_telegram_id if cfg else None
     if not admin_id or not bot_manager.is_running():
         return
@@ -314,19 +327,3 @@ async def notify_admin_price_surge_pending(db: Session, product: Product, old_so
         await bot_manager.send_message(admin_id, text)
     except Exception as e:
         logger.error(f"[price_sync] admin pending-approval notify failed for product {product.id}: {e}")
-
-
-async def notify_users_price_changed(db: Session, product: Product, new_sale_price: float):
-    """Optional customer-facing broadcast, gated on
-    TelegramBotConfig.notify_users_on_price_change. Reuses the same
-    "text + 🛒 Mua ngay" broadcast helper used for new-product/restock
-    announcements."""
-    from services.broadcast_service import _broadcast_message_with_buy_button
-    from services.normalize import format_vnd
-    icon = product.telegram_icon or "📦"
-    text = (
-        "💰 GIÁ SẢN PHẨM ĐÃ CẬP NHẬT\n\n"
-        f"{icon} {product.name}\n"
-        f"Giá mới: {format_vnd(new_sale_price)}đ"
-    )
-    await _broadcast_message_with_buy_button(db, {"vi": text, "en": text}, product.id)
