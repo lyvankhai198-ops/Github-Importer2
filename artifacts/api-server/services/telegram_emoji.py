@@ -50,6 +50,28 @@ def render_icon_html(fallback_emoji: str | None, custom_emoji_id: str | None) ->
     return fallback
 
 
+def render_description_blockquote(header_html: str, escaped_desc: str) -> str:
+    """
+    Wraps a product's description in Telegram's native <blockquote> HTML tag
+    so it renders as a distinct tinted card with its own quote-mark icon
+    (drawn by the Telegram client, not something further style-able from
+    here) instead of a plain wall of text — this is what the admin asked
+    for after showing a reference screenshot of another bot's product card.
+
+    `header_html` should already be a pre-rendered i18n string (may contain
+    <b> tags); `escaped_desc` must already be html.escape()'d by the caller
+    (this function does no escaping itself, since callers may need to place
+    HTML like <tg-emoji> elsewhere in the surrounding message).
+
+    Descriptions longer than ~400 characters get the `expandable` attribute
+    so a long ruleset collapses behind Telegram's "Show more" toggle instead
+    of pushing the buy button off-screen on a short product card.
+    """
+    body = f"{header_html}\n{escaped_desc}"
+    expandable = " expandable" if len(body) > 400 else ""
+    return f"<blockquote{expandable}>{body}</blockquote>"
+
+
 def parse_sticker_set_name(link_or_name: str) -> str:
     """
     Accepts either a bare sticker set short name ("IconsEmoji_JABA") or a

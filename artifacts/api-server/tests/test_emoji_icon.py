@@ -13,7 +13,10 @@ import pytest
 
 from models import Product, DeliveryMode, SourceType, EmojiIcon
 from services.product_sync import apply_admin_icon_edit, auto_assign_icon_if_unlocked, parse_edited_fields
-from services.telegram_emoji import render_icon_html, parse_sticker_set_name, import_icons_from_entities
+from services.telegram_emoji import (
+    render_icon_html, parse_sticker_set_name, import_icons_from_entities,
+    render_description_blockquote,
+)
 
 
 class FakeEntity:
@@ -142,6 +145,21 @@ def test_import_icons_from_entities_dedupes_within_same_batch(db_session):
     result = import_icons_from_entities(db_session, entities_map)
     assert result["added"] == 1
     assert db_session.query(EmojiIcon).filter(EmojiIcon.custom_emoji_id == "444").count() == 1
+
+
+# ── 12. Description blockquote formatting ───────────────────────────────────
+def test_render_description_blockquote_short_is_not_expandable():
+    html_out = render_description_blockquote("💬 <b>Mô tả:</b>", "• Dòng 1\n• Dòng 2")
+    assert html_out == "<blockquote>💬 <b>Mô tả:</b>\n• Dòng 1\n• Dòng 2</blockquote>"
+    assert "expandable" not in html_out
+
+
+def test_render_description_blockquote_long_is_expandable():
+    long_desc = "• " + ("Điều khoản rất dài. " * 30)
+    html_out = render_description_blockquote("💬 <b>Mô tả:</b>", long_desc)
+    assert html_out.startswith("<blockquote expandable>")
+    assert html_out.endswith("</blockquote>")
+    assert long_desc in html_out
 
 
 # ── 9. Out-of-stock detail rendering never shows a chosen custom emoji ─────

@@ -1339,10 +1339,6 @@ async def _render_product_detail(query, context, db, lang: str, product_id: int)
         warr = translate_shorthand_to_en(p.warranty) if lang == "en" else p.warranty
         lines.append(t(lang, "product_warranty", val=html.escape(warr)))
 
-    lines.append("")
-    lines.append(t(lang, "product_info_header"))
-    lines.append(t(lang, "product_read_carefully_warning"))
-
     # Description: single source of truth for language-correct, cleanly
     # formatted description text — see services.localization. Translations
     # are generated once (on save, on API sync, or the first time a shopper
@@ -1352,7 +1348,15 @@ async def _render_product_detail(query, context, db, lang: str, product_id: int)
     external_desc = api_src.external_description if api_src else None
     desc = get_localized_product_description(p, lang, db=db, external_description=external_desc)
     if desc:
-        lines.append(html.escape(desc))
+        # Rendered as a native Telegram blockquote card instead of plain
+        # wall-of-text, per the admin's requested look. The admin's own
+        # description text already contains any "please read carefully"
+        # rules for this specific product, so no separate generic warning
+        # header is added here anymore — that used to duplicate what the
+        # description itself says. See render_description_blockquote().
+        from services.telegram_emoji import render_description_blockquote
+        lines.append("")
+        lines.append(render_description_blockquote(t(lang, "product_description_header"), html.escape(desc)))
 
     # Deduplicated admin-only alert if the on-demand translation above
     # (or an earlier save/sync) left this product's translation failed —
