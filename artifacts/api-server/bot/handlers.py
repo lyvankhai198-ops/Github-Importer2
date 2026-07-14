@@ -193,6 +193,21 @@ async def _require_language_selected(update: Update, db) -> bool:
     return True
 
 
+async def _cleanup_flow_state(context: ContextTypes.DEFAULT_TYPE, chat_id):
+    """
+    Delete any leftover prompt message from an abandoned in-progress flow
+    (e.g. "Enter the quantity you want to buy:") and clear user_data. Every
+    command/button that acts as a navigation reset (/start, /menu, /product,
+    /cancel, 🏠 Home, etc.) must call this instead of a bare
+    context.user_data.clear() — otherwise switching screens mid-flow leaves
+    the old prompt message orphaned in the chat.
+    """
+    qty_prompt_id = context.user_data.get("quantity_prompt_message_id")
+    if qty_prompt_id:
+        await _safe_del(context.bot, chat_id, qty_prompt_id)
+    context.user_data.clear()
+
+
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db = SessionLocal()
     try:
@@ -212,7 +227,7 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # /start is also a hard reset: cancel any in-progress input flow or
         # temp navigation state left over from before, same as 🏠 Trang chủ.
-        context.user_data.clear()
+        await _cleanup_flow_state(context, update.effective_chat.id)
         admin_id = _get_admin_id(db)
         is_admin = str(tg_user.id) == str(admin_id)
         welcome = _get_welcome_message(db)
@@ -243,7 +258,7 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         # /menu is also a hard reset: cancel any in-progress input flow or
         # temp navigation state, same as 🏠 Trang chủ.
-        context.user_data.clear()
+        await _cleanup_flow_state(context, update.effective_chat.id)
         tg_user = update.effective_user
         user = get_or_create_user(db, str(tg_user.id), tg_user.username, tg_user.first_name, tg_user.last_name)
         lang = _get_lang(db, tg_user.id)
@@ -376,6 +391,12 @@ async def products_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not await _require_language_selected(update, db):
             return
         lang = _get_lang(db, update.effective_user.id)
+        # /product(s) is also a navigation reset: cancel any in-progress
+        # input flow (e.g. waiting_quantity) and delete its leftover prompt
+        # message, same as 🏠 Trang chủ — see the screenshot report where
+        # "Enter the quantity you want to buy:" stayed in the chat after
+        # /product was used to go back to the list.
+        await _cleanup_flow_state(context, update.effective_chat.id)
         await _send_product_list(update.message, db, context, lang)
     finally:
         db.close()
@@ -392,7 +413,7 @@ async def orders_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not await _require_language_selected(update, db):
             return
         lang = _get_lang(db, update.effective_user.id)
-        context.user_data.clear()
+        await _cleanup_flow_state(context, update.effective_chat.id)
         context.user_data["state"] = "waiting_order_search"
         await update.message.reply_text(t(lang, "order_search_prompt"))
     finally:
@@ -522,6 +543,7 @@ async def wallet_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lang = _get_lang(db, update.effective_user.id)
         tg_user = update.effective_user
         get_or_create_user(db, str(tg_user.id), tg_user.username, tg_user.first_name, tg_user.last_name)
+        await _cleanup_flow_state(context, update.effective_chat.id)
         await _send_wallet_menu(update.message, None, db, tg_user, lang, edit=False)
     finally:
         db.close()
@@ -585,6 +607,7 @@ async def api_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lang = _get_lang(db, update.effective_user.id)
         tg_user = update.effective_user
         get_or_create_user(db, str(tg_user.id), tg_user.username, tg_user.first_name, tg_user.last_name)
+        await _cleanup_flow_state(context, update.effective_chat.id)
         await _send_api_menu(update.message, db, tg_user, lang, edit=False, bot=context.bot)
     finally:
         db.close()
@@ -647,6 +670,7 @@ async def account_info_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         lang = _get_lang(db, update.effective_user.id)
         tg_user = update.effective_user
         get_or_create_user(db, str(tg_user.id), tg_user.username, tg_user.first_name, tg_user.last_name)
+        await _cleanup_flow_state(context, update.effective_chat.id)
         text = await _account_info_text(db, tg_user, lang)
         await update.message.reply_text(text, parse_mode="HTML", reply_markup=account_info_keyboard(lang=lang))
     finally:
@@ -659,6 +683,7 @@ async def support_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not await _require_language_selected(update, db):
             return
         lang = _get_lang(db, update.effective_user.id)
+        await _cleanup_flow_state(context, update.effective_chat.id)
         support = _get_support_username(db)
         if support:
             await update.message.reply_text(t(lang, "support_contact", username=support))
@@ -695,10 +720,7 @@ async def cancel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     leftover prompt message from that flow (e.g. "Enter the quantity you want
     to buy:") so cancelling doesn't leave orphaned messages in the chat.
     """
-    qty_prompt_id = context.user_data.get("quantity_prompt_message_id")
-    if qty_prompt_id:
-        await _safe_del(context.bot, update.effective_chat.id, qty_prompt_id)
-    context.user_data.clear()
+    await _cleanup_flow_state(context, update.effective_chat.id)
     db = SessionLocal()
     try:
         tg_user = update.effective_user
@@ -1588,13 +1610,10 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Cancel any in-progress input flow (e.g. waiting_quantity, a wallet
         # deposit amount prompt, a pending txid entry) and any temp
         # navigation state — 🏠 Trang chủ is a hard reset back to the
-        # product list, not just another menu screen. Delete any leftover
-        # prompt message from that flow (e.g. "Enter the quantity you want
-        # to buy:") so going home doesn't leave orphaned messages in the chat.
-        qty_prompt_id = context.user_data.get("quantity_prompt_message_id")
-        if qty_prompt_id:
-            await _safe_del(context.bot, query.message.chat_id, qty_prompt_id)
-        context.user_data.clear()
+        # product list, not just another menu screen. Also deletes any
+        # leftover prompt message from that flow (e.g. "Enter the quantity
+        # you want to buy:") so going home doesn't leave orphaned messages.
+        await _cleanup_flow_state(context, query.message.chat_id)
         db = SessionLocal()
         try:
             tg_user = update.effective_user
