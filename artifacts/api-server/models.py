@@ -311,6 +311,29 @@ class Rank(Base):
     updated_at = Column(DateTime, default=now, onupdate=now)
 
 
+class EmojiIcon(Base):
+    """
+    Admin-managed library of Telegram custom emoji, used by the "Chọn icon
+    sản phẩm" picker on the product add/edit pages (see
+    routers/emoji_icons.py). Populated either by importing a whole custom
+    emoji sticker pack (services/telegram_emoji.fetch_custom_emoji_stickers,
+    e.g. from https://t.me/addemoji/IconsEmoji_JABA) or by an admin typing
+    in a single icon's name/custom_emoji_id/fallback_emoji by hand when
+    auto-import isn't possible (no bot token configured, pack unreachable, etc).
+    Products never store an image for this — only the Telegram custom_emoji_id
+    (Product.telegram_custom_emoji_id), which Telegram itself renders.
+    """
+    __tablename__ = "emoji_icons"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False)
+    custom_emoji_id = Column(String(100), unique=True, nullable=False)
+    fallback_emoji = Column(String(20), nullable=False, default="⭐")
+    sticker_set_name = Column(String(255), nullable=True)  # which pack this came from, if imported
+    sort_order = Column(Integer, nullable=False, default=0)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=now)
+
+
 class Product(Base):
     __tablename__ = "products"
     id = Column(Integer, primary_key=True, index=True)
@@ -354,7 +377,15 @@ class Product(Base):
     delivery_mode = Column(SAEnum(DeliveryMode), default=DeliveryMode.manual)
     is_active = Column(Boolean, default=True)
     is_pinned = Column(Boolean, default=False)             # pinned products sort first
-    telegram_icon = Column(String(100), nullable=True)     # emoji/icon shown in bot list
+    telegram_icon = Column(String(100), nullable=True)     # fallback emoji shown in bot list / used when no custom emoji is set
+    # Telegram custom emoji "document_id" chosen from the icon library (see
+    # EmojiIcon below). When set, the bot renders it via
+    # <tg-emoji emoji-id="...">fallback</tg-emoji> in HTML messages —
+    # telegram_icon above is always kept in sync as the fallback character
+    # shown to non-Premium users and anywhere HTML entities aren't supported
+    # (e.g. inline keyboard button text). Locked/unlocked together with
+    # telegram_icon via services.product_sync.apply_admin_icon_edit.
+    telegram_custom_emoji_id = Column(String(100), nullable=True)
     allow_manual_order = Column(Boolean, default=False)     # allow ordering while out of stock (manual_admin-style)
     sold_count = Column(Integer, default=0)
     # Comma-separated subset of {"description", "image_path", "warranty", "duration"}.

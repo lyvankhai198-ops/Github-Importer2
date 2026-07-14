@@ -139,10 +139,16 @@ def _display_name(product, lang: str) -> str:
     return product.name
 
 
+def _icon_html(product) -> str:
+    """Telegram icon for this product — see services/telegram_emoji.render_icon_html."""
+    from services.telegram_emoji import render_icon_html
+    return render_icon_html(product.telegram_icon, getattr(product, "telegram_custom_emoji_id", None))
+
+
 def _new_product_lines(product, stock_info: dict | None, lang: str) -> list[str]:
     from services.normalize import format_vnd, format_usdt
     from bot.i18n import t
-    icon = product.telegram_icon or "📦"
+    icon = _icon_html(product)
     price = format_usdt(product.price_usdt) if lang == "en" else f"{format_vnd(product.sale_price)}đ"
     lines = [
         t(lang, "notify_new_product_title"),
@@ -166,7 +172,7 @@ def _new_product_lines(product, stock_info: dict | None, lang: str) -> list[str]
 def _restock_lines(product, added_qty: int, new_total: int, lang: str) -> list[str]:
     from services.normalize import format_vnd, format_usdt
     from bot.i18n import t
-    icon = product.telegram_icon or "📦"
+    icon = _icon_html(product)
     price = format_usdt(product.price_usdt) if lang == "en" else f"{format_vnd(product.sale_price)}đ"
     return [
         t(lang, "notify_restock_title"),

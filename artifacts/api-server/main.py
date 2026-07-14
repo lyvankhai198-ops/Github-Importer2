@@ -155,6 +155,18 @@ def _run_migrations():
         "ALTER TABLE products ADD COLUMN translation_source_hash VARCHAR(64)",
         "ALTER TABLE products ADD COLUMN translated_at DATETIME",
         "ALTER TABLE products ADD COLUMN translation_error TEXT",
+        # Telegram custom emoji icon picker (see models.EmojiIcon)
+        "ALTER TABLE products ADD COLUMN telegram_custom_emoji_id VARCHAR(100)",
+        """CREATE TABLE IF NOT EXISTS emoji_icons (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name VARCHAR(100) NOT NULL,
+            custom_emoji_id VARCHAR(100) NOT NULL UNIQUE,
+            fallback_emoji VARCHAR(20) NOT NULL DEFAULT '⭐',
+            sticker_set_name VARCHAR(255),
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            is_active BOOLEAN NOT NULL DEFAULT 1,
+            created_at DATETIME
+        )""",
         # Legacy-bot user import: wallet balance carried over, plus automatic
         # blocked-in-Telegram detection (distinct from admin-issued is_banned).
         "ALTER TABLE users ADD COLUMN balance FLOAT DEFAULT 0.0",
@@ -652,6 +664,7 @@ from routers import auth, dashboard, products, orders, api_connections, users, s
 from routers import webhooks  # public endpoints — no session auth
 from routers import api_clients, customer_api
 from routers import ranks
+from routers import emoji_icons
 from routers import github_webhook
 
 app.include_router(auth.router)
@@ -666,6 +679,7 @@ app.include_router(api_clients.router)
 app.include_router(webhooks.router)  # POST /webhooks/sepay
 app.include_router(customer_api.router)  # public inbound customer REST API (X-API-Key auth)
 app.include_router(ranks.router)
+app.include_router(emoji_icons.router)
 app.include_router(github_webhook.router)  # POST /github-webhook — VPS auto-deploy (public, HMAC-signed)
 
 

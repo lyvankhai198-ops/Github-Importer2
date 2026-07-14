@@ -90,11 +90,14 @@ async def products_list(
     brand_keys = sorted({compute_brand_key(p.name) for p in db.query(Product.name).all() if compute_brand_key(p.name)})
 
     api_connections = db.query(ApiConnection).filter(ApiConnection.is_active == True).all()
+    from models import EmojiIcon
+    emoji_icons = db.query(EmojiIcon).filter(EmojiIcon.is_active == True).order_by(EmojiIcon.sort_order.asc(), EmojiIcon.id.asc()).all()
     flash_msg = request.session.pop("flash", None)
     return templates.TemplateResponse(request, "products.html", {
         
         "products": products,
         "api_connections": api_connections,
+        "emoji_icons": emoji_icons,
         "search": search,
         "source_type_filter": source_type,
         "is_active_filter": is_active,
@@ -165,6 +168,7 @@ async def add_product(
     require_admin_approval_above_percent: str = Form(""),
     min_quantity: int = Form(1),
     telegram_icon: str = Form(""),
+    telegram_custom_emoji_id: str = Form(""),
     delivery_mode: str = Form("manual_admin"),
     allow_manual_order: str = Form(None),
     is_active: str = Form("true"),
@@ -224,7 +228,7 @@ async def add_product(
         )
         # Admin-entered icon locks it against auto-assignment; otherwise
         # auto-assign one from the name-keyword mapping (e.g. "Grok" → 🤖).
-        apply_admin_icon_edit(product, telegram_icon)
+        apply_admin_icon_edit(product, telegram_icon, telegram_custom_emoji_id)
         auto_assign_icon_if_unlocked(product)
         # Auto-translate whichever side the admin left blank (direction
         # depends on source_language, resolved above), so bilingual display
@@ -263,6 +267,7 @@ async def edit_product(
     require_admin_approval_above_percent: str = Form(""),
     min_quantity: int = Form(1),
     telegram_icon: str = Form(""),
+    telegram_custom_emoji_id: str = Form(""),
     delivery_mode: str = Form("manual_admin"),
     allow_manual_order: str = Form(None),
     is_active: str = Form("true"),
@@ -324,7 +329,7 @@ async def edit_product(
         product.min_quantity = min_quantity
         # Admin-entered icon locks it against auto-assignment; clearing it
         # back to blank unlocks auto-assignment from the name again.
-        apply_admin_icon_edit(product, telegram_icon)
+        apply_admin_icon_edit(product, telegram_icon, telegram_custom_emoji_id)
         auto_assign_icon_if_unlocked(product)
         product.delivery_mode = DeliveryMode(delivery_mode)
         product.allow_manual_order = bool(allow_manual_order)

@@ -327,11 +327,26 @@
           <div class="form-section">
             <div class="form-section-title">4. Hiển thị bot</div>
             <div class="row g-3">
-              <div class="col-md-6">
-                <label class="form-label">Icon Telegram (emoji)</label>
-                <input type="text" name="telegram_icon" class="form-control emoji-icon-input" value="{{ p.telegram_icon or '' }}" placeholder="Để trống = tự nhận diện theo tên">
-                <div class="emoji-suggestions mt-1"></div>
-                <div class="form-text">Để trống để hệ thống tự chọn icon theo tên sản phẩm (VD: Grok → 🤖). Đã chọn icon tay sẽ không bị ghi đè khi đồng bộ API.</div>
+              <div class="col-md-6 icon-picker" data-default-fallback="{{ p.telegram_icon or '' }}">
+                <label class="form-label">Chọn icon sản phẩm</label>
+                <input type="hidden" name="telegram_icon" class="icon-picker-fallback" value="{{ p.telegram_icon or '' }}">
+                <input type="hidden" name="telegram_custom_emoji_id" class="icon-picker-custom-id" value="{{ p.telegram_custom_emoji_id or '' }}">
+                <div class="icon-picker-preview d-flex align-items-center gap-2 border rounded p-2 mb-2">
+                  <span class="icon-picker-preview-emoji" style="font-size:1.8rem">{{ p.telegram_icon or '📦' }}</span>
+                  <span class="icon-picker-preview-label text-muted small">{% if p.telegram_custom_emoji_id %}Icon tùy chỉnh đã chọn{% elif p.telegram_icon %}Emoji thường (không phải icon tùy chỉnh){% else %}Chưa chọn icon (tự nhận diện theo tên){% endif %}</span>
+                </div>
+                <div class="d-flex gap-2 mb-2">
+                  <button type="button" class="btn btn-sm btn-outline-primary icon-picker-open">🎨 Đổi icon</button>
+                  <button type="button" class="btn btn-sm btn-outline-danger icon-picker-clear">✖ Xóa icon</button>
+                </div>
+                <div class="icon-picker-grid border rounded p-2" style="display:none; max-height:180px; overflow-y:auto;">
+                  {% for icon in emoji_icons %}
+                  <button type="button" class="btn btn-sm btn-outline-secondary me-1 mb-1 icon-picker-choice" data-fallback="{{ icon.fallback_emoji }}" data-custom-id="{{ icon.custom_emoji_id }}" data-name="{{ icon.name }}" title="{{ icon.name }}">{{ icon.fallback_emoji }}</button>
+                  {% else %}
+                  <div class="text-muted small">Kho icon đang trống. <a href="/emoji-icons" target="_blank">Thêm icon tại đây</a>.</div>
+                  {% endfor %}
+                </div>
+                <div class="form-text">Chưa chọn icon = hệ thống tự nhận diện theo tên sản phẩm (mặc định 📦 nếu không nhận diện được). <a href="/emoji-icons" target="_blank">Quản lý kho icon</a>.</div>
               </div>
               <div class="col-md-6"><label class="form-label">Ảnh sản phẩm</label><input type="file" name="image" class="form-control" accept="image/*"></div>
             </div>
@@ -432,11 +447,26 @@
           <div class="form-section">
             <div class="form-section-title">4. Hiển thị bot</div>
             <div class="row g-3">
-              <div class="col-md-6">
-                <label class="form-label">Icon Telegram (emoji)</label>
-                <input type="text" name="telegram_icon" class="form-control emoji-icon-input" placeholder="Để trống = tự nhận diện theo tên">
-                <div class="emoji-suggestions mt-1"></div>
-                <div class="form-text">Để trống để hệ thống tự chọn icon theo tên sản phẩm (VD: Grok → 🤖).</div>
+              <div class="col-md-6 icon-picker" data-default-fallback="">
+                <label class="form-label">Chọn icon sản phẩm</label>
+                <input type="hidden" name="telegram_icon" class="icon-picker-fallback" value="">
+                <input type="hidden" name="telegram_custom_emoji_id" class="icon-picker-custom-id" value="">
+                <div class="icon-picker-preview d-flex align-items-center gap-2 border rounded p-2 mb-2">
+                  <span class="icon-picker-preview-emoji" style="font-size:1.8rem">📦</span>
+                  <span class="icon-picker-preview-label text-muted small">Chưa chọn icon (tự nhận diện theo tên)</span>
+                </div>
+                <div class="d-flex gap-2 mb-2">
+                  <button type="button" class="btn btn-sm btn-outline-primary icon-picker-open">🎨 Chọn icon</button>
+                  <button type="button" class="btn btn-sm btn-outline-danger icon-picker-clear">✖ Xóa icon</button>
+                </div>
+                <div class="icon-picker-grid border rounded p-2" style="display:none; max-height:180px; overflow-y:auto;">
+                  {% for icon in emoji_icons %}
+                  <button type="button" class="btn btn-sm btn-outline-secondary me-1 mb-1 icon-picker-choice" data-fallback="{{ icon.fallback_emoji }}" data-custom-id="{{ icon.custom_emoji_id }}" data-name="{{ icon.name }}" title="{{ icon.name }}">{{ icon.fallback_emoji }}</button>
+                  {% else %}
+                  <div class="text-muted small">Kho icon đang trống. <a href="/emoji-icons" target="_blank">Thêm icon tại đây</a>.</div>
+                  {% endfor %}
+                </div>
+                <div class="form-text">Chưa chọn icon = hệ thống tự nhận diện theo tên sản phẩm (mặc định 📦 nếu không nhận diện được). <a href="/emoji-icons" target="_blank">Quản lý kho icon</a>.</div>
               </div>
               <div class="col-md-6"><label class="form-label">Ảnh sản phẩm</label><input type="file" name="image" class="form-control" accept="image/*" id="imageUpload"></div>
               <div class="col-12"><img id="imagePreview" src="" style="max-height:100px;display:none" class="rounded"></div>
@@ -472,29 +502,36 @@ document.getElementById('imageUpload')?.addEventListener('change', function() {
   }
 });
 
-// Emoji picker suggestions — mirrors the server-side keyword→emoji mapping
-// (services/normalize.py auto_assign_emoji) so the admin sees the same
-// icons the auto-assignment would pick, plus a few generic extras. Leaving
-// the field blank keeps auto-assignment active; clicking a suggestion fills
-// it (which locks it against future auto-assignment on save).
-const EMOJI_SUGGESTIONS = ['🤖','🟢','🧠','✨','🎨','🎬','🅰️','🖥️','🎥','🎞️','🪟','🟡','🔌','🔑','📦','⭐','🎮','📱','💎'];
-document.querySelectorAll('.emoji-icon-input').forEach(input => {
-  const box = input.parentElement.querySelector('.emoji-suggestions');
-  if (!box) return;
-  EMOJI_SUGGESTIONS.forEach(emoji => {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'btn btn-sm btn-outline-secondary me-1 mb-1';
-    btn.textContent = emoji;
-    btn.addEventListener('click', () => { input.value = emoji; });
-    box.appendChild(btn);
+// Telegram custom emoji icon picker — "Chọn icon sản phẩm". Each .icon-picker
+// wraps one hidden telegram_icon (fallback char) + telegram_custom_emoji_id
+// pair. Selecting a library icon fills both from its data-* attributes;
+// clearing resets both to blank so server-side auto-assignment (by name
+// keyword) takes over again on save (see services/product_sync.py).
+document.querySelectorAll('.icon-picker-open').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const wrap = btn.closest('.icon-picker');
+    const grid = wrap.querySelector('.icon-picker-grid');
+    grid.style.display = (grid.style.display === 'none' || !grid.style.display) ? 'block' : 'none';
   });
-  const clearBtn = document.createElement('button');
-  clearBtn.type = 'button';
-  clearBtn.className = 'btn btn-sm btn-outline-danger me-1 mb-1';
-  clearBtn.textContent = '✖ Xóa (tự nhận diện)';
-  clearBtn.addEventListener('click', () => { input.value = ''; });
-  box.appendChild(clearBtn);
+});
+document.querySelectorAll('.icon-picker-choice').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const wrap = btn.closest('.icon-picker');
+    wrap.querySelector('.icon-picker-fallback').value = btn.dataset.fallback || '';
+    wrap.querySelector('.icon-picker-custom-id').value = btn.dataset.customId || '';
+    wrap.querySelector('.icon-picker-preview-emoji').textContent = btn.dataset.fallback || '📦';
+    wrap.querySelector('.icon-picker-preview-label').textContent = `Đã chọn: ${btn.dataset.name}`;
+    wrap.querySelector('.icon-picker-grid').style.display = 'none';
+  });
+});
+document.querySelectorAll('.icon-picker-clear').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const wrap = btn.closest('.icon-picker');
+    wrap.querySelector('.icon-picker-fallback').value = '';
+    wrap.querySelector('.icon-picker-custom-id').value = '';
+    wrap.querySelector('.icon-picker-preview-emoji').textContent = '📦';
+    wrap.querySelector('.icon-picker-preview-label').textContent = 'Chưa chọn icon (tự nhận diện theo tên)';
+  });
 });
 
 // "🌐 Tạo bản tiếng Anh" — auto-translate name/description within the same

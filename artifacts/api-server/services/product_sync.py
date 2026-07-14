@@ -223,19 +223,32 @@ def ensure_en_fields(product) -> bool:
     return sync_translations(product)
 
 
-def apply_admin_icon_edit(product, new_icon: str | None) -> bool:
+def apply_admin_icon_edit(product, new_icon: str | None, new_custom_emoji_id: str | None = None) -> bool:
     """
-    Apply an admin-submitted telegram_icon value. A non-blank value locks
-    the icon against future auto-assignment (auto_assign_icon_if_unlocked
-    below); clearing it back to blank unlocks it so keyword-based
-    auto-assignment can populate it again on the next save/sync.
-    Returns True if the stored icon value changed.
+    Apply an admin-submitted icon selection: `new_icon` is the plain
+    fallback emoji character (shown to non-Premium users and anywhere HTML
+    entities aren't supported, e.g. inline keyboard button text) and
+    `new_custom_emoji_id` is the optional Telegram custom emoji document ID
+    chosen from the icon library (services/telegram_emoji.py +
+    routers/emoji_icons.py) — when set, the bot renders
+    <tg-emoji emoji-id="..."> with this as the fallback text.
+
+    The two fields are locked/unlocked together as a single unit: setting
+    either one locks both against future keyword-based auto-assignment
+    (auto_assign_icon_if_unlocked below); clearing both back to blank
+    unlocks auto-assignment again on the next save/sync.
+    Returns True if either stored value changed.
     """
     edited = parse_edited_fields(product.manually_edited_fields)
     new_icon = (new_icon or "").strip() or None
-    changed = new_icon != (product.telegram_icon or None)
+    new_custom_emoji_id = (new_custom_emoji_id or "").strip() or None
+    changed = (
+        new_icon != (product.telegram_icon or None)
+        or new_custom_emoji_id != (getattr(product, "telegram_custom_emoji_id", None) or None)
+    )
     product.telegram_icon = new_icon
-    if new_icon:
+    product.telegram_custom_emoji_id = new_custom_emoji_id
+    if new_icon or new_custom_emoji_id:
         edited.add("telegram_icon")
     else:
         edited.discard("telegram_icon")

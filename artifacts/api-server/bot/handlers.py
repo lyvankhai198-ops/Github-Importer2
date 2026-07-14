@@ -1313,9 +1313,18 @@ async def _render_product_detail(query, context, db, lang: str, product_id: int)
             display_name = translate_shorthand_to_en(p.name)
 
     detail_icon = (getattr(p, "telegram_icon", None) or "").strip() or "📦"
+    detail_custom_emoji_id = (getattr(p, "telegram_custom_emoji_id", None) or "").strip()
     if status in ("out_of_stock", "unavailable"):
         detail_icon = "❌"
-    lines = [f"{detail_icon} <b>{html.escape(display_name)}</b>\n"]
+        detail_custom_emoji_id = ""  # never show a chosen custom emoji on the error state
+    # Telegram custom emoji (from the "Chọn icon sản phẩm" picker — see
+    # services/telegram_emoji.py + routers/emoji_icons.py) render via the
+    # <tg-emoji emoji-id="..."> HTML tag; the fallback emoji inside it is
+    # what non-Premium Telegram users see instead. Requires parse_mode="HTML"
+    # on the send/edit call below (already the case for every path here).
+    from services.telegram_emoji import render_icon_html
+    detail_icon_html = render_icon_html(detail_icon, detail_custom_emoji_id)
+    lines = [f"{detail_icon_html} <b>{html.escape(display_name)}</b>\n"]
     if lang == "en":
         lines.append(t(lang, "product_price", price=format_usdt(p.price_usdt)))
     else:
