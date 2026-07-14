@@ -45,6 +45,12 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "btn_back": "◀️ Quay lại",
         "btn_home": "🏠 Trang chủ",
         "btn_check_again": "🔄 Kiểm tra lại",
+        # ── Automatic new-product / restock broadcasts ──────────────────────────
+        "notify_new_product_title": "🆕 <b>SẢN PHẨM MỚI</b>",
+        "notify_restock_title": "🔄 <b>ĐÃ BỔ SUNG SẢN PHẨM</b>",
+        "notify_price_line": "💰 Giá: {price}",
+        "notify_current_stock_line": "📦 Tồn kho hiện tại: {stock}",
+        "notify_added_line": "➕ Thêm: {qty}",
         # ── Out of stock ──────────────────────────────────────────────────────
         "out_of_stock_title": "🔴 SẢN PHẨM ĐÃ HẾT HÀNG",
         "out_of_stock_body": "Sản phẩm này hiện không còn hàng tại nguồn.\nVui lòng quay lại sau hoặc chọn sản phẩm khác.",
@@ -470,6 +476,12 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "btn_back": "◀️ Back",
         "btn_home": "🏠 Home",
         "btn_check_again": "🔄 Check again",
+        # ── Automatic new-product / restock broadcasts ──────────────────────────
+        "notify_new_product_title": "🆕 <b>NEW PRODUCT</b>",
+        "notify_restock_title": "🔄 <b>RESTOCKED</b>",
+        "notify_price_line": "💰 Price: {price}",
+        "notify_current_stock_line": "📦 Current stock: {stock}",
+        "notify_added_line": "➕ Added: {qty}",
         # ── Out of stock ──────────────────────────────────────────────────────
         "out_of_stock_title": "🔴 OUT OF STOCK",
         "out_of_stock_body": "This product is currently out of stock at the source.\nPlease come back later or choose another product.",

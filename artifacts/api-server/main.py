@@ -240,6 +240,24 @@ def _run_migrations():
             updated_at DATETIME
         )""",
         "ALTER TABLE users ADD COLUMN rank_id INTEGER",
+
+        # ── Automatic product sync / restock notification dedup ledger ──────
+        """CREATE TABLE IF NOT EXISTS notification_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            event_type VARCHAR(30) NOT NULL,
+            product_id INTEGER,
+            source_id INTEGER,
+            previous_stock INTEGER,
+            current_stock INTEGER,
+            added_quantity INTEGER,
+            event_key VARCHAR(150) NOT NULL,
+            created_at DATETIME,
+            sent_at DATETIME,
+            status VARCHAR(20) DEFAULT 'sent',
+            FOREIGN KEY(product_id) REFERENCES products(id)
+        )""",
+        "CREATE UNIQUE INDEX IF NOT EXISTS ux_notification_events_key ON notification_events (event_key)",
+        "CREATE INDEX IF NOT EXISTS ix_notification_events_product ON notification_events (product_id)",
     ]
     with engine.connect() as conn:
         ran_language_selected_migration = False

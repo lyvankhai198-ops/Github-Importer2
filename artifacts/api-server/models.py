@@ -165,6 +165,28 @@ class TelegramBotConfig(Base):
     updated_at = Column(DateTime, default=now, onupdate=now)
 
 
+class NotificationEvent(Base):
+    """
+    Dedup/audit ledger for automatic "new product" / "restock" broadcasts.
+    event_key is unique so the same real-world event (a specific product
+    becoming newly available, or reaching a specific stock total) can never
+    be announced twice, no matter how many times a scheduler tick, API sync,
+    or admin action re-triggers the underlying check.
+    """
+    __tablename__ = "notification_events"
+    id = Column(Integer, primary_key=True, index=True)
+    event_type = Column(String(30), nullable=False)  # "new_product" | "restock"
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=True)
+    source_id = Column(Integer, nullable=True)  # api_connection_id when triggered by an API sync, else NULL
+    previous_stock = Column(Integer, nullable=True)
+    current_stock = Column(Integer, nullable=True)
+    added_quantity = Column(Integer, nullable=True)
+    event_key = Column(String(150), unique=True, nullable=False, index=True)
+    created_at = Column(DateTime, default=now)
+    sent_at = Column(DateTime, nullable=True)
+    status = Column(String(20), default="sent")  # "sent" | "skipped" | "failed"
+
+
 class SepayConfig(Base):
     """SePay payment gateway configuration. Sensitive fields are Fernet-encrypted."""
     __tablename__ = "sepay_config"
