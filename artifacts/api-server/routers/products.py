@@ -93,7 +93,7 @@ async def products_list(
     from models import EmojiIcon
     emoji_icons = db.query(EmojiIcon).filter(EmojiIcon.is_active == True).order_by(EmojiIcon.sort_order.asc(), EmojiIcon.id.asc()).all()
     flash_msg = request.session.pop("flash", None)
-    return templates.TemplateResponse(request, "products.html", {
+    response = templates.TemplateResponse(request, "products.html", {
         
         "products": products,
         "api_connections": api_connections,
@@ -109,6 +109,12 @@ async def products_list(
         "per_page": per_page,
         "flash": flash_msg,
     })
+    # Force a fresh server fetch on browser back/forward navigation (bfcache)
+    # instead of showing a stale snapshot from before a create/edit/delete —
+    # e.g. right after creating a product from a source, hitting "back" must
+    # show the product that was just created, not the old cached list.
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    return response
 
 
 def _parse_optional_float(raw: str | None) -> float | None:
@@ -486,7 +492,7 @@ async def api_sources(request: Request, db: Session = Depends(get_db), conn_id: 
     connections = db.query(ApiConnection).all()
     all_products = db.query(Product).filter(Product.is_active == True).all()
     flash_msg = request.session.pop("flash", None)
-    return templates.TemplateResponse(request, "product_sources.html", {
+    response = templates.TemplateResponse(request, "product_sources.html", {
         
         "api_products": api_products,
         "connections": connections,
@@ -497,6 +503,10 @@ async def api_sources(request: Request, db: Session = Depends(get_db), conn_id: 
         "per_page": per_page,
         "flash": flash_msg,
     })
+    # Same bfcache-busting as /products — after creating a product from a
+    # source, "back" must show it in the list immediately, not a stale snapshot.
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    return response
 
 
 @router.get("/products/api-sources/{api_product_id}/create-product")
