@@ -2143,6 +2143,15 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         finally:
             db.close()
 
+        # If the shopper tapped "🛒 Mua" before on another product (or the
+        # same one) without finishing, an old "Enter the quantity..." prompt
+        # may still be sitting in the chat with its message_id about to be
+        # overwritten below — delete it now or it becomes permanently
+        # orphaned (only the latest id ever gets tracked/cleaned up).
+        old_prompt_id = context.user_data.get("quantity_prompt_message_id")
+        if old_prompt_id:
+            await _safe_del(context.bot, query.message.chat_id, old_prompt_id)
+
         context.user_data["buying_product_id"] = product_id
         context.user_data["state"] = "waiting_quantity"
         context.user_data.pop("processing_order", None)
