@@ -4,10 +4,21 @@ and formats a description into clean bulleted Telegram text.
 
 protect_terms()/restore_terms() swap out URLs, emails, "tk|mk"-style
 shorthand, 2FA/OTP, warranty codes (BHF/KBH), long API-key-looking tokens,
-and known brand names for private-use-area placeholder tokens before the
-text is handed to any translator (LibreTranslate or the LLM), then restore
-the exact original substrings afterwards — so none of them can be
-mistranslated or reworded, regardless of which provider ran.
+and known brand names for ASCII placeholder tokens (the "{{PHn}}" template-
+variable style, which the LLM translator's system prompt explicitly tells
+it to preserve verbatim) before the text is handed to any translator
+(LibreTranslate or the LLM), then restore the exact original substrings
+afterwards — so none of them can be mistranslated or reworded, regardless
+of which provider ran.
+
+IMPORTANT: earlier versions used invisible Unicode private-use-area
+characters (U+E000/U+E001) as the placeholder brackets. Claude silently
+drops unrecognized invisible characters while keeping any plain-text digits
+between them, so "\ue0000\ue001" (protecting e.g. "CapCut") came back from
+the LLM as a bare "0" — the bracket punctuation vanished but the counter
+digit survived as leftover garbage text, corrupting the brand name right out
+of the translation. Never go back to invisible/control-like placeholder
+characters for anything that has to survive an LLM round-trip.
 
 format_description() runs at render time (bot/handlers.py) on both
 languages' stored descriptions: it strips excess blank lines, normalizes
@@ -16,10 +27,13 @@ and collapses stray repeated punctuation — never touching the actual words.
 """
 import re
 
-# Private-use-area brackets — vanishingly unlikely to appear in real product
-# text or survive being echoed back unchanged by a translation provider.
-_PH_OPEN = "\uE000"
-_PH_CLOSE = "\uE001"
+# ASCII template-variable-style brackets. Chosen over invisible Unicode
+# private-use characters specifically because LLMs are extensively trained
+# to preserve this exact "{{...}}" interpolation-placeholder pattern
+# verbatim (i18n/templating convention) when told to — see module docstring
+# for why the old scheme silently corrupted brand names.
+_PH_OPEN = "{{PH"
+_PH_CLOSE = "}}"
 
 _BRAND_NAMES = [
     "ChatGPT Plus", "ChatGPT", "OpenAI", "Grok", "Gemini", "Claude", "Canva",

@@ -49,7 +49,15 @@ _SYSTEM_PROMPT = (
     "line.\n"
     "7. Rephrase awkward literal translations into natural English sentences a "
     "native speaker would write (not a word-for-word calque).\n"
-    "8. Output ONLY the translated description text — no commentary, no "
+    "8. The text may contain placeholder tokens of the exact literal form "
+    "\"{{PH0}}\", \"{{PH1}}\", \"{{PH2}}\", etc. (an opening \"{{PH\", one or "
+    "more digits, a closing \"}}\"). These stand in for protected brand names, "
+    "URLs, emails, and codes. You MUST copy every such token through "
+    "COMPLETELY UNCHANGED, character-for-character, in the exact same "
+    "position relative to the surrounding words — never translate, expand, "
+    "explain, drop, or alter a single character of one, even if it looks "
+    "out of place in the sentence.\n"
+    "9. Output ONLY the translated description text — no commentary, no "
     "notes, no headers, no surrounding quotation marks."
 )
 
@@ -124,7 +132,15 @@ _SYSTEM_PROMPT_EN_TO_VI = (
     "line.\n"
     "7. Rephrase awkward literal translations into natural Vietnamese a "
     "native speaker would write (not a word-for-word calque).\n"
-    "8. Output ONLY the translated description text — no commentary, no "
+    "8. The text may contain placeholder tokens of the exact literal form "
+    "\"{{PH0}}\", \"{{PH1}}\", \"{{PH2}}\", etc. (an opening \"{{PH\", one or "
+    "more digits, a closing \"}}\"). These stand in for protected brand names, "
+    "URLs, emails, and codes. You MUST copy every such token through "
+    "COMPLETELY UNCHANGED, character-for-character, in the exact same "
+    "position relative to the surrounding words — never translate, expand, "
+    "explain, drop, or alter a single character of one, even if it looks "
+    "out of place in the sentence.\n"
+    "9. Output ONLY the translated description text — no commentary, no "
     "notes, no headers, no surrounding quotation marks."
 )
 

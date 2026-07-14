@@ -83,6 +83,35 @@ def test_protected_terms_survive_a_translator_that_mangles_everything_else():
     assert "Netflix" in restored
 
 
+def test_protect_placeholders_are_ascii_not_invisible_unicode():
+    """
+    Regression guard: an earlier version used invisible Unicode
+    private-use-area characters (U+E000/U+E001) as placeholder brackets.
+    Claude silently drops unrecognized invisible characters while keeping
+    any plain-text digits between them, so a protected brand name came back
+    from the LLM as a bare leftover digit instead of the brand name — see
+    text_protect.py's module docstring. Placeholders must stay plain ASCII.
+    """
+    _, mapping = protect_terms("Mua Netflix ngay, xem https://shop.com/help.")
+    for key in mapping:
+        assert all(ord(c) < 128 for c in key), f"placeholder {key!r} contains a non-ASCII character"
+
+
+def test_restore_terms_survives_llm_dropping_placeholder_punctuation():
+    # Simulate the exact failure mode that motivated the ASCII placeholder
+    # switch: a "translator" that strips non-alphanumeric punctuation from
+    # placeholder tokens but keeps any digits inside them. With the current
+    # "{{PHn}}" scheme the digits are surrounded by letters ("PH"), which a
+    # translator has no reason to treat as strippable punctuation, so the
+    # token — and therefore the restore — survives.
+    text = "Mua Netflix ngay, xem https://shop.com/help."
+    protected, mapping = protect_terms(text)
+    for key in mapping:
+        assert key.replace("{{PH", "").replace("}}", "").isdigit()
+    restored = restore_terms(protected, mapping)
+    assert restored == text
+
+
 def test_translate_text_end_to_end_preserves_url_and_brand(monkeypatch):
     from services.translation_service import translate_text
 
