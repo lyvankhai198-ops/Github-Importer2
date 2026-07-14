@@ -24,7 +24,15 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-_MODEL = "claude-haiku-4-5"
+# "claude-haiku-4-5" is a model *alias* only recognized by the Replit AI
+# Integrations proxy (AI_INTEGRATIONS_ANTHROPIC_BASE_URL pointing at Replit's
+# own endpoint). If AI_INTEGRATIONS_ANTHROPIC_BASE_URL is pointed at the real
+# Anthropic API instead (self-hosted deployment using your own API key), that
+# alias is not a valid model id there and every call will fail with a 400 and
+# silently fall back to the weak rule-based translator. Override via
+# TRANSLATION_ANTHROPIC_MODEL when using a real Anthropic API key (e.g.
+# "claude-3-5-haiku-20241022").
+_MODEL = os.environ.get("TRANSLATION_ANTHROPIC_MODEL", "claude-haiku-4-5")
 _ANTHROPIC_VERSION = "2023-06-01"
 
 _SYSTEM_PROMPT = (
@@ -107,6 +115,12 @@ def translate_description_to_english(description: str) -> str | None:
         blocks = data.get("content") or []
         text = "".join(b.get("text", "") for b in blocks if b.get("type") == "text").strip()
         return text or None
+    except httpx.HTTPStatusError as e:
+        logger.error(
+            "[translation] LLM description translation failed: HTTP %s — %s",
+            e.response.status_code, e.response.text[:500],
+        )
+        return None
     except Exception:
         logger.exception("[translation] LLM description translation failed")
         return None
@@ -180,6 +194,12 @@ def translate_description_to_vietnamese(description: str) -> str | None:
         blocks = data.get("content") or []
         text = "".join(b.get("text", "") for b in blocks if b.get("type") == "text").strip()
         return text or None
+    except httpx.HTTPStatusError as e:
+        logger.error(
+            "[translation] LLM description translation (en->vi) failed: HTTP %s — %s",
+            e.response.status_code, e.response.text[:500],
+        )
+        return None
     except Exception:
         logger.exception("[translation] LLM description translation (en->vi) failed")
         return None

@@ -1,5 +1,8 @@
 # Tự host LibreTranslate cho dịch mô tả sản phẩm (VPS production)
 
+> Lưu ý: nếu VPS ít RAM (dưới 2GB), xem `anthropic-own-key-setup.md` thay
+> vì hướng dẫn này — dùng API key riêng không tốn RAM.
+
 Bot đã hỗ trợ sẵn LibreTranslate — chỉ cần chạy LibreTranslate trên VPS và khai
 báo 1 biến môi trường, không cần sửa code (`services/translation_service.py`
 tự động thử LibreTranslate trước, nếu không có/không phản hồi mới rơi xuống
