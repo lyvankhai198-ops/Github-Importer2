@@ -691,8 +691,13 @@ async def cancel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     /cancel (also triggered by "❌ Hủy bỏ" / "❌ Cancel" free text) — universal
     escape hatch: clears any in-progress flow (e.g. waiting_quantity) and
-    returns the user to the main menu, from anywhere in the bot.
+    returns the user to the main menu, from anywhere in the bot. Deletes any
+    leftover prompt message from that flow (e.g. "Enter the quantity you want
+    to buy:") so cancelling doesn't leave orphaned messages in the chat.
     """
+    qty_prompt_id = context.user_data.get("quantity_prompt_message_id")
+    if qty_prompt_id:
+        await _safe_del(context.bot, update.effective_chat.id, qty_prompt_id)
     context.user_data.clear()
     db = SessionLocal()
     try:
@@ -1583,7 +1588,12 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Cancel any in-progress input flow (e.g. waiting_quantity, a wallet
         # deposit amount prompt, a pending txid entry) and any temp
         # navigation state — 🏠 Trang chủ is a hard reset back to the
-        # product list, not just another menu screen.
+        # product list, not just another menu screen. Delete any leftover
+        # prompt message from that flow (e.g. "Enter the quantity you want
+        # to buy:") so going home doesn't leave orphaned messages in the chat.
+        qty_prompt_id = context.user_data.get("quantity_prompt_message_id")
+        if qty_prompt_id:
+            await _safe_del(context.bot, query.message.chat_id, qty_prompt_id)
         context.user_data.clear()
         db = SessionLocal()
         try:
