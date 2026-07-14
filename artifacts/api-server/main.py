@@ -146,6 +146,15 @@ def _run_migrations():
         # needs re-translating" apart from "already translated, nothing to do"
         # without re-calling the translator (and re-billing) on every sync.
         "ALTER TABLE products ADD COLUMN description_en_source TEXT",
+        # Translation bookkeeping (see services/product_sync.sync_translations).
+        # Existing rows default to source_language='vi'/status='pending' via
+        # the ALTER TABLE default and are backfilled precisely in main.py's
+        # startup routine right after migrations run (see _backfill_translation_bookkeeping).
+        "ALTER TABLE products ADD COLUMN source_language VARCHAR(5) DEFAULT 'vi'",
+        "ALTER TABLE products ADD COLUMN translation_status VARCHAR(20) DEFAULT 'pending'",
+        "ALTER TABLE products ADD COLUMN translation_source_hash VARCHAR(64)",
+        "ALTER TABLE products ADD COLUMN translated_at DATETIME",
+        "ALTER TABLE products ADD COLUMN translation_error TEXT",
         # Legacy-bot user import: wallet balance carried over, plus automatic
         # blocked-in-Telegram detection (distinct from admin-issued is_banned).
         "ALTER TABLE users ADD COLUMN balance FLOAT DEFAULT 0.0",
@@ -396,6 +405,39 @@ def _run_migrations():
                 db.close()
         except Exception:
             logger.exception("price_margin backfill failed")
+
+        # Backfill translation bookkeeping for existing products (added by
+        # this migration) without touching any existing name/description
+        # text: mark rows that already have a translated counterpart as
+        # "translated" with a hash of their current Vietnamese description,
+        # everything else as "pending" so the next save/sync/view fills it
+        # in normally. source_language defaults to 'vi' (existing shop data
+        # is Vietnamese-authored).
+        try:
+            import hashlib
+            db = SessionLocal()
+            try:
+                from models import Product
+                candidates = db.query(Product).filter(Product.translation_status.is_(None)).all()
+                backfilled = 0
+                for product in candidates:
+                    product.source_language = product.source_language or "vi"
+                    if product.description and product.description_en:
+                        product.translation_status = "translated"
+                        product.translation_source_hash = hashlib.sha256(
+                            product.description.encode("utf-8")
+                        ).hexdigest()
+                        product.translated_at = product.updated_at
+                    else:
+                        product.translation_status = "pending"
+                    backfilled += 1
+                if candidates:
+                    db.commit()
+                    logger.info(f"TRANSLATION_BOOKKEEPING_BACKFILL: initialized {backfilled} products")
+            finally:
+                db.close()
+        except Exception:
+            logger.exception("translation bookkeeping backfill failed")
 
 
 def _seed_payment_methods():

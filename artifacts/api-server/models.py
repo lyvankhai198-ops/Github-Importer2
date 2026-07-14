@@ -371,6 +371,20 @@ class Product(Base):
     # description_en. Lets auto-translation detect "source changed since we
     # last translated it" without re-calling the translator on every sync.
     description_en_source = Column(Text, nullable=True)
+    # ── Translation bookkeeping (see services/product_sync.sync_translations) ──
+    # Which side (name/description or name_en/description_en) the admin/API
+    # source actually supplied — "vi" (default) or "en". Decides which
+    # direction auto-translation runs: vi->en fills name_en/description_en
+    # (existing behavior); en->vi fills name/description instead.
+    source_language = Column(String(5), nullable=True, default="vi")
+    # "pending" | "translated" | "failed" | "manual" (frozen by an admin
+    # hand-edit of the target language — see description_en_locked).
+    translation_status = Column(String(20), nullable=True, default="pending")
+    # SHA-256 of the source-language description last (successfully or not)
+    # sent to the translator, so an unchanged source is never re-translated.
+    translation_source_hash = Column(String(64), nullable=True)
+    translated_at = Column(DateTime, nullable=True)
+    translation_error = Column(Text, nullable=True)
     created_at = Column(DateTime, default=now)
     updated_at = Column(DateTime, default=now, onupdate=now)
 

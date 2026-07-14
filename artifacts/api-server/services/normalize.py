@@ -206,6 +206,46 @@ def translate_product_name_to_en(name: str) -> str:
     return translate_shorthand_to_en(name or "")
 
 
+# ── English shorthand → Vietnamese translation table (reverse direction) ───
+# Used when a product's source_language is "en" (admin typed the English
+# name first) to auto-fill the Vietnamese name. Mirrors _WARRANTY_PATTERNS;
+# longer/more specific patterns are matched first.
+_WARRANTY_PATTERNS_REVERSE = [
+    (re.compile(r"\b(\d+)-Day Warranty\b", re.IGNORECASE), lambda m: f"BH {m.group(1)} Ngày"),
+    (re.compile(r"\b(\d+)-Month Warranty\b", re.IGNORECASE), lambda m: f"BH {m.group(1)} Tháng"),
+    (re.compile(r"\b(\d+)-Year Warranty\b", re.IGNORECASE), lambda m: f"BH {m.group(1)} Năm"),
+    (re.compile(r"\bFull Warranty\b", re.IGNORECASE), "BHF"),
+    (re.compile(r"\bNo Warranty\b", re.IGNORECASE), "KBH"),
+    (re.compile(r"\bAdd Family\b", re.IGNORECASE), "Add Fam"),
+    (re.compile(r"\bShared Slot\b", re.IGNORECASE), "Slot"),
+    (re.compile(r"\bLicense Key\b", re.IGNORECASE), "Key"),
+    (re.compile(r"\bDays\b", re.IGNORECASE), "Ngày"),
+    (re.compile(r"\bMonths\b", re.IGNORECASE), "Tháng"),
+    (re.compile(r"\bYears\b", re.IGNORECASE), "Năm"),
+]
+
+
+def translate_shorthand_to_vi(text: str) -> str:
+    """Reverse of translate_shorthand_to_en: apply the fixed English-shorthand
+    → Vietnamese table (e.g. "Full Warranty" -> "BHF", "3 Months" -> "3 Tháng")."""
+    if not text:
+        return text
+    result = text
+    for pattern, repl in _WARRANTY_PATTERNS_REVERSE:
+        result = pattern.sub(repl, result)
+    return result
+
+
+def translate_product_name_to_vi(name_en: str) -> str:
+    """
+    Auto-generate a Vietnamese product name from an English one using the
+    fixed reverse shorthand table. Used to fill Product.name when
+    source_language == "en" (the admin typed the English name first).
+    Brand names are left untouched since they carry no VI/EN distinction.
+    """
+    return translate_shorthand_to_vi(name_en or "")
+
+
 def normalize_and_translate_description(description: str) -> str:
     """
     Auto-generate a natural-reading English product description from a

@@ -240,8 +240,12 @@
               <div class="col-12">
                 <label class="form-label">Mô tả (English) {% if p.description_en_locked %}<span class="badge bg-secondary">🔒 đã sửa tay</span>{% endif %}</label>
                 <textarea name="description_en" class="form-control en-out-desc" rows="2">{{ p.description_en or '' }}</textarea>
-                <button type="button" class="btn btn-sm btn-outline-info mt-1 gen-en-btn">🌐 Dịch lại mô tả tiếng Anh</button>
-                <div class="form-text">Tự dịch từ tên/mô tả tiếng Việt bằng AI — bạn có thể chỉnh lại trước khi lưu.</div>
+                <button type="button" class="btn btn-sm btn-outline-info mt-1 gen-en-btn">🌐 Dịch lại sang tiếng Anh</button>
+                <button type="button" class="btn btn-sm btn-outline-info mt-1 gen-vi-btn">🌐 Dịch lại sang tiếng Việt</button>
+                <div class="form-text">
+                  Tự dịch bằng AI — bạn có thể chỉnh lại trước khi lưu.
+                  {% if p.translation_status == "failed" %}<span class="badge bg-danger">⚠️ Dịch thất bại lần gần nhất</span>{% endif %}
+                </div>
               </div>
               <div class="col-md-6"><label class="form-label">Trạng thái</label>
                 <select name="is_active" class="form-select">
@@ -366,7 +370,8 @@
                 <label class="form-label">Mô tả (English)</label>
                 <textarea name="description_en" class="form-control en-out-desc" rows="2"></textarea>
                 <button type="button" class="btn btn-sm btn-outline-info mt-1 gen-en-btn">🌐 Tạo bản tiếng Anh</button>
-                <div class="form-text">Tự dịch từ tên/mô tả tiếng Việt — bạn có thể chỉnh lại trước khi lưu.</div>
+                <button type="button" class="btn btn-sm btn-outline-info mt-1 gen-vi-btn">🌐 Dịch lại sang tiếng Việt</button>
+                <div class="form-text">Tự dịch bằng AI — bạn có thể chỉnh lại trước khi lưu. Bỏ trống ô tiếng Việt và điền tiếng Anh nếu sản phẩm nguồn là tiếng Anh.</div>
               </div>
               <div class="col-md-6"><label class="form-label">Trạng thái</label>
                 <select name="is_active" class="form-select">
@@ -511,6 +516,34 @@ document.querySelectorAll('.gen-en-btn').forEach(btn => {
       const descOut = modal.querySelector('.en-out-desc');
       if (nameOut && data.name_en) nameOut.value = data.name_en;
       if (descOut && data.description_en) descOut.value = data.description_en;
+    } finally {
+      this.disabled = false;
+      this.textContent = oldLabel;
+    }
+  });
+});
+
+// "🌐 Dịch lại sang tiếng Việt" — reverse-direction counterpart: auto-
+// translate the English name/description into Vietnamese for admin review
+// before saving (used for English-sourced products, e.g. supplier data
+// that only has an English description).
+document.querySelectorAll('.gen-vi-btn').forEach(btn => {
+  btn.addEventListener('click', async function() {
+    const modal = this.closest('.modal-body') || this.closest('form');
+    const nameEnSrc = modal.querySelector('.en-out-name')?.value || '';
+    const descEnSrc = modal.querySelector('.en-out-desc')?.value || '';
+    if (!nameEnSrc && !descEnSrc) return;
+    this.disabled = true;
+    const oldLabel = this.textContent;
+    this.textContent = 'Đang dịch...';
+    try {
+      const body = new URLSearchParams({ name_en: nameEnSrc, description_en: descEnSrc });
+      const resp = await fetch('/products/generate_vi', { method: 'POST', body });
+      const data = await resp.json();
+      const nameOut = modal.querySelector('.en-src-name');
+      const descOut = modal.querySelector('.en-src-desc');
+      if (nameOut && data.name) nameOut.value = data.name;
+      if (descOut && data.description) descOut.value = data.description;
     } finally {
       this.disabled = false;
       this.textContent = oldLabel;

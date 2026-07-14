@@ -185,20 +185,28 @@ async def add_product(
         return RedirectResponse(url="/products", status_code=302)
 
     try:
-        from services.product_sync import ensure_en_fields, apply_admin_icon_edit, auto_assign_icon_if_unlocked
+        from services.product_sync import resolve_bilingual_fields, sync_translations, apply_admin_icon_edit, auto_assign_icon_if_unlocked
+        from services.translation_alerts import notify_admin_translation_failed
         from services.price_sync_service import compute_margin
 
         image_path = await _save_image(image)
-        name_en_clean = name_en.strip() or None
-        description_en_clean = description_en or None
+        # Detect which language box the admin actually filled in — if only
+        # the Vietnamese box has English-looking text and both English
+        # boxes are blank, treat it as an English-sourced product (see
+        # resolve_bilingual_fields) so translation fills the Vietnamese
+        # side instead of the (default) English side.
+        r_name, r_desc, r_name_en, r_desc_en, src_lang = resolve_bilingual_fields(
+            None, None, name, description, name_en, description_en
+        )
         product = Product(
-            name=name.strip(),
-            name_en=name_en_clean,
-            name_en_locked=bool(name_en_clean),
+            name=(r_name or r_name_en or "").strip(),
+            name_en=r_name_en,
+            name_en_locked=bool(r_name_en),
             product_code=product_code,
-            description=description,
-            description_en=description_en_clean,
-            description_en_locked=bool(description_en_clean),
+            description=r_desc or "",
+            description_en=r_desc_en,
+            description_en_locked=bool(r_desc_en),
+            source_language=src_lang,
             sale_price=sale_price,
             source_price=source_price or 0.0,
             price_margin=compute_margin(sale_price, source_price or 0.0),
@@ -218,12 +226,14 @@ async def add_product(
         # auto-assign one from the name-keyword mapping (e.g. "Grok" → 🤖).
         apply_admin_icon_edit(product, telegram_icon)
         auto_assign_icon_if_unlocked(product)
-        # Auto-translate name/description into English wherever the admin
-        # left the English field blank, so bilingual display never falls
-        # back to raw untranslated Vietnamese text.
-        ensure_en_fields(product)
+        # Auto-translate whichever side the admin left blank (direction
+        # depends on source_language, resolved above), so bilingual display
+        # never falls back to raw untranslated text in either language.
+        sync_translations(product)
         db.add(product)
         db.commit()
+        if product.translation_status == "failed":
+            await notify_admin_translation_failed(db, product)
         flash(request, "Sản phẩm đã được thêm thành công!")
         if product.is_active:
             from services.broadcast_service import notify_new_product_broadcast
@@ -281,18 +291,28 @@ async def edit_product(
 
     try:
         from services.product_sync import (
-            apply_admin_edit, apply_admin_en_edit, ensure_en_fields,
+            apply_admin_edit, apply_admin_en_edit, sync_translations, resolve_bilingual_fields,
             apply_admin_icon_edit, auto_assign_icon_if_unlocked,
         )
+        from services.translation_alerts import notify_admin_translation_failed
         from services.price_sync_service import apply_admin_price_edit
 
-        product.name = name.strip()
+        # Detect which language box the admin actually filled in this time
+        # (see resolve_bilingual_fields) — usually a no-op that just passes
+        # the submitted values through unchanged, but lets an admin flip a
+        # product between Vietnamese-sourced and English-sourced by simply
+        # typing in the "other" box, or flip back with an explicit VI edit.
+        r_name, r_desc, r_name_en, r_desc_en, src_lang = resolve_bilingual_fields(
+            product.source_language, product.description, name, description, name_en, description_en
+        )
+        product.source_language = src_lang
+        product.name = (r_name or r_name_en or product.name or "").strip()
         product.product_code = product_code
         # name_en/description_en: only flag as manually-locked when the
         # admin's submitted value actually differs from what's stored —
         # resubmitting the same (possibly auto-translated) text must not
         # freeze it against future auto-translation.
-        apply_admin_en_edit(product, name_en, description_en)
+        apply_admin_en_edit(product, r_name_en, r_desc_en)
         # Admin-entered sale_price/source_price always recompute price_margin
         # (spec §2: editing sale price by hand re-derives the margin to keep).
         apply_admin_price_edit(db, product, source_price or 0.0, sale_price, changed_by=request.session.get("admin_id"))
@@ -313,11 +333,20 @@ async def edit_product(
         # description/warranty/duration: only flag as "manually edited" (and
         # thus frozen against future API sync) when the admin actually
         # changed the value — resubmitting the same text leaves it untouched.
-        apply_admin_edit(product, {
-            "description": description,
-            "warranty": warranty,
-            "duration": duration,
-        })
+        # When source_language == "en", `description` (vi) is a translation
+        # target, not an admin-authored field — never freeze it against API
+        # sync via manually_edited_fields; sync_translations() below fills it.
+        if src_lang == "vi":
+            apply_admin_edit(product, {
+                "description": r_desc or "",
+                "warranty": warranty,
+                "duration": duration,
+            })
+        else:
+            apply_admin_edit(product, {
+                "warranty": warranty,
+                "duration": duration,
+            })
 
         image_path = await _save_image(image)
         if image_path:
@@ -325,12 +354,15 @@ async def edit_product(
             from services.product_sync import mark_fields_edited
             mark_fields_edited(product, {"image_path"})
 
-        # Fill in any English field the admin left blank (and didn't just
-        # unlock above) so display never falls back to raw Vietnamese text.
-        ensure_en_fields(product)
+        # Fill in whichever side the admin left blank (direction depends on
+        # source_language, resolved above) so display never falls back to
+        # raw untranslated text in either language.
+        sync_translations(product)
 
         db.commit()
         db.refresh(product)
+        if product.translation_status == "failed":
+            await notify_admin_translation_failed(db, product)
         flash(request, "Sản phẩm đã được cập nhật!")
     except Exception:
         db.rollback()
@@ -359,9 +391,35 @@ async def generate_en_preview(
         return JSONResponse({"error": "Unauthorized"}, status_code=401)
     from services.normalize import translate_product_name_to_en
     from services.translation_service import translate_description_with_fallback
+    from services.text_protect import format_description
+    desc_en = translate_description_with_fallback(description) if description else ""
     return JSONResponse({
         "name_en": translate_product_name_to_en(name) if name else "",
-        "description_en": translate_description_with_fallback(description) if description else "",
+        "description_en": format_description(desc_en) if desc_en else "",
+    })
+
+
+@router.post("/products/generate_vi")
+async def generate_vi_preview(
+    request: Request,
+    name_en: str = Form(""),
+    description_en: str = Form(""),
+):
+    """
+    "🌐 Dịch lại sang tiếng Việt" — the reverse-direction counterpart of
+    generate_en_preview: returns an auto-translated Vietnamese name/
+    description preview from the current English text for the admin to
+    review/edit before saving. Does not touch the database.
+    """
+    if not check_auth(request):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    from services.normalize import translate_product_name_to_vi
+    from services.translation_service import translate_description_to_vi_with_fallback
+    from services.text_protect import format_description
+    desc_vi = translate_description_to_vi_with_fallback(description_en) if description_en else ""
+    return JSONResponse({
+        "name": translate_product_name_to_vi(name_en) if name_en else "",
+        "description": format_description(desc_vi) if desc_vi else "",
     })
 
 

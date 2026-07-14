@@ -9,10 +9,12 @@ silently overwritten again. Stock is not tracked here: it is always
 computed live from ProductSource/ApiProduct, never stored/copied onto
 Product, so there is nothing to "protect" for it.
 """
+import hashlib
 import logging
+from datetime import datetime
 
-from services.normalize import translate_product_name_to_en
-from services.translation_service import translate_description_with_fallback
+from services.normalize import translate_product_name_to_en, translate_product_name_to_vi
+from services.language_detect import detect_language
 
 logger = logging.getLogger(__name__)
 
@@ -81,38 +83,144 @@ def apply_admin_en_edit(product, name_en: str | None, description_en: str | None
     return changed
 
 
-def ensure_en_fields(product) -> bool:
+def _hash_text(text: str) -> str:
+    return hashlib.sha256((text or "").encode("utf-8")).hexdigest()
+
+
+def resolve_bilingual_fields(prior_source_language, prior_description, name, description, name_en, description_en):
     """
-    Keep Product.name_en/description_en auto-translated from the
-    Vietnamese name/description, but only for fields NOT locked by an
-    admin edit. name_en is cheap (regex table) and re-derived every call so
-    an improved translator automatically fixes previously auto-generated
-    text. description_en goes through the LLM translator (see
-    translation_service), which is not free — it is only (re)generated when
-    it is missing or the Vietnamese source has actually changed since the
-    last translation (tracked via description_en_source), so a periodic API
-    sync never re-translates unchanged descriptions. An admin edit is the
-    only thing that freezes a field (see apply_admin_en_edit). Safe to call
-    on every sync. Returns True if anything changed.
+    Decide which language box the admin actually supplied given the raw
+    submitted form values, returning
+    (name, description, name_en, description_en, source_language) with the
+    swap applied when needed:
+
+    - If the product was previously English-sourced (prior_source_language
+      == "en"), it stays that way UNLESS the admin's submitted Vietnamese
+      `description` actually differs from what's currently stored there —
+      an explicit hand-edit of the Vietnamese box switches the source back
+      to "vi".
+    - Otherwise (new product, or previously Vietnamese-sourced): if the
+      admin typed English-looking text into the Vietnamese name/description
+      box and left both English boxes blank, treat that as an
+      English-sourced product — move the text into the English slot and
+      clear the Vietnamese slot so translation regenerates it. Any other
+      combination (including both sides explicitly filled) keeps the
+      normal Vietnamese-source flow unchanged.
+    """
+    name = (name or "").strip() or None
+    description = (description or "").strip() or None
+    name_en = (name_en or "").strip() or None
+    description_en = (description_en or "").strip() or None
+
+    if prior_source_language == "en":
+        if description is not None and description != (prior_description or None):
+            return name, description, name_en, description_en, "vi"
+        return None, None, name_en, description_en, "en"
+
+    probe = description or name or ""
+    lang = detect_language(probe) if probe else "vi"
+    if lang == "en" and not description_en and not name_en:
+        return None, None, name, description, "en"
+    return name, description, name_en, description_en, "vi"
+
+
+def sync_translations(product) -> bool:
+    """
+    Keep the "other" language in sync with product.source_language
+    ("vi" default, or "en" when the admin/API source supplied English
+    text first — see resolve_bilingual_fields). Replaces the old
+    one-directional ensure_en_fields().
+
+    - name/name_en: cheap, deterministic (shorthand table), re-derived
+      every call in whichever direction is NOT the source — never blocks,
+      never calls a network translator.
+    - description/description_en: the expensive, semantically-rich side.
+      Only (re)translated when the source text's hash actually changed
+      since the last successful translation (translation_source_hash), so
+      an unchanged description never re-calls the translator. Frozen by
+      description_en_locked when source_language == "vi" (an admin
+      hand-edit of description_en). Failures are recorded on the product
+      (translation_status/translation_error) and never raise — callers
+      must never let a translation failure block a save or an API sync.
+
+    Returns True if anything on `product` changed.
     """
     changed = False
-    if not product.name_en_locked and product.name:
-        translated = translate_product_name_to_en(product.name)
-        if translated and translated != product.name_en:
-            product.name_en = translated
-            changed = True
-    if not product.description_en_locked and product.description:
-        needs_translation = (
-            not product.description_en
-            or product.description != (product.description_en_source or None)
-        )
-        if needs_translation:
-            translated = translate_description_with_fallback(product.description)
-            if translated and translated != product.description_en:
-                product.description_en = translated
-                product.description_en_source = product.description
+    src_lang = product.source_language or "vi"
+
+    # ---- name (cheap, deterministic, always safe) ----
+    if src_lang == "vi":
+        if not product.name_en_locked and product.name:
+            translated = translate_product_name_to_en(product.name)
+            if translated and translated != product.name_en:
+                product.name_en = translated
                 changed = True
+    else:
+        if product.name_en:
+            translated = translate_product_name_to_vi(product.name_en)
+            if translated and translated != product.name:
+                product.name = translated
+                changed = True
+
+    # ---- description (expensive, hash-tracked, status-tracked) ----
+    if src_lang == "vi":
+        source_text = product.description
+        locked = bool(product.description_en_locked)
+    else:
+        source_text = product.description_en
+        locked = False  # the vi side has no admin-lock flag of its own
+
+    if locked:
+        if product.translation_status != "manual":
+            product.translation_status = "manual"
+            changed = True
+        return changed
+
+    if not source_text:
+        return changed
+
+    current_hash = _hash_text(source_text)
+    target_has_value = (
+        product.description_en if src_lang == "vi" else product.description
+    )
+    already_current = (
+        product.translation_source_hash == current_hash
+        and product.translation_status == "translated"
+        and bool(target_has_value)
+    )
+    if already_current:
+        return changed
+
+    from services.translation_service import translate_text
+    from services.text_protect import format_description
+
+    target_lang = "en" if src_lang == "vi" else "vi"
+    try:
+        translated = translate_text(source_text, src_lang, target_lang)
+        if not translated:
+            raise RuntimeError("translator returned no result")
+        translated = format_description(translated)
+        if src_lang == "vi":
+            product.description_en = translated
+            product.description_en_source = source_text
+        else:
+            product.description = translated
+        product.translation_source_hash = current_hash
+        product.translated_at = datetime.utcnow()
+        product.translation_status = "translated"
+        product.translation_error = None
+    except Exception as e:
+        product.translation_status = "failed"
+        product.translation_error = str(e)[:500]
+        logger.error(f"[translation] product {getattr(product, 'id', '?')} ({src_lang}->{target_lang}) failed: {e}")
+    changed = True
     return changed
+
+
+def ensure_en_fields(product) -> bool:
+    """Backward-compatible alias for sync_translations() — kept so any
+    caller that imports the old name keeps working unchanged."""
+    return sync_translations(product)
 
 
 def apply_admin_icon_edit(product, new_icon: str | None) -> bool:

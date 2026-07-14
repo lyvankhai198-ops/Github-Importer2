@@ -1321,6 +1321,7 @@ async def _render_product_detail(query, context, db, lang: str, product_id: int)
     else:
         lines.append(t(lang, "product_price", price=f"{format_vnd(p.sale_price)}"))
     lines.append(stock_text)
+    lines.append(t(lang, "product_sold_count", count=p.sold_count or 0))
     lines.append(t(lang, "product_min_qty", qty=min_qty))
     if p.duration:
         dur = translate_shorthand_to_en(p.duration) if lang == "en" else p.duration
@@ -1329,16 +1330,31 @@ async def _render_product_detail(query, context, db, lang: str, product_id: int)
         warr = translate_shorthand_to_en(p.warranty) if lang == "en" else p.warranty
         lines.append(t(lang, "product_warranty", val=html.escape(warr)))
 
-    # Description: single source of truth for language-correct
-    # description text — see services.localization. description_en
-    # is generated once (on save, on API sync, or the first time an
-    # English shopper views it) and reused as-is afterwards; English
-    # shoppers NEVER see a fallback to the Vietnamese text.
+    lines.append("")
+    lines.append(t(lang, "product_info_header"))
+    lines.append(t(lang, "product_read_carefully_warning"))
+
+    # Description: single source of truth for language-correct, cleanly
+    # formatted description text — see services.localization. Translations
+    # are generated once (on save, on API sync, or the first time a shopper
+    # views the missing side) and reused as-is afterwards; a shopper NEVER
+    # sees the other language's raw text mixed into their own card.
     from services.localization import get_localized_product_description
     external_desc = api_src.external_description if api_src else None
     desc = get_localized_product_description(p, lang, db=db, external_description=external_desc)
     if desc:
-        lines.append(t(lang, "product_description", desc=html.escape(desc)))
+        lines.append(html.escape(desc))
+
+    # Deduplicated admin-only alert if the on-demand translation above
+    # (or an earlier save/sync) left this product's translation failed —
+    # never shown to the shopper, who already got the same-language
+    # fallback text from get_localized_product_description.
+    if p.translation_status == "failed":
+        try:
+            from services.translation_alerts import notify_admin_translation_failed
+            await notify_admin_translation_failed(db, p)
+        except Exception:
+            logger.exception(f"[bot] translation-failure alert errored for product {p.id}")
 
     text_msg = "\n".join(lines)
     image_url = p.image_path or (api_src.external_image_url if api_src else None)

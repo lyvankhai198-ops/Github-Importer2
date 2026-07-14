@@ -119,7 +119,8 @@ async def sync_api_products(db: Session, api_connection_id: int) -> dict:
         # propagate image/description/warranty/duration onto the linked
         # Product itself — skipping any field the admin has manually edited
         # (see services/product_sync.py).
-        from services.product_sync import sync_product_from_api_product, ensure_en_fields, auto_assign_icon_if_unlocked
+        from services.product_sync import sync_product_from_api_product, sync_translations, auto_assign_icon_if_unlocked
+        from services.translation_alerts import notify_admin_translation_failed
         from models import DeliveryMode
         sources = db.query(ProductSource).join(ApiProduct).filter(
             ApiProduct.api_connection_id == api_connection_id
@@ -150,10 +151,17 @@ async def sync_api_products(db: Session, api_connection_id: int) -> dict:
             if src.product and src.product.source_type == SourceType.api and \
                     src.product.delivery_mode == DeliveryMode.api_auto:
                 sync_product_from_api_product(src.product, src.api_product)
-                # Keep name_en/description_en auto-filled from the (possibly
-                # just-updated) Vietnamese text, unless the admin has locked
-                # either field with a hand-typed value.
-                ensure_en_fields(src.product)
+                # Keep the non-source language auto-filled/re-translated from
+                # the (possibly just-updated) source text, unless the admin
+                # has locked it with a hand-typed value. Never fails the
+                # sync — a translation failure is recorded on the product
+                # and reported via a deduplicated admin-only alert below.
+                sync_translations(src.product)
+                if src.product.translation_status == "failed":
+                    try:
+                        await notify_admin_translation_failed(db, src.product)
+                    except Exception:
+                        logger.exception(f"[api_sync] translation-failure alert errored for product {src.product.id}")
                 # Auto-assign a name-keyword emoji unless the admin already
                 # chose one manually.
                 auto_assign_icon_if_unlocked(src.product)
