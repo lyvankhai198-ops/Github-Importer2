@@ -205,6 +205,9 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
+        # /start is also a hard reset: cancel any in-progress input flow or
+        # temp navigation state left over from before, same as 🏠 Trang chủ.
+        context.user_data.clear()
         admin_id = _get_admin_id(db)
         is_admin = str(tg_user.id) == str(admin_id)
         welcome = _get_welcome_message(db)
@@ -212,7 +215,8 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             welcome,
             reply_markup=main_menu_keyboard(lang=lang, is_admin=is_admin),
         )
-        # Returning users see the latest products immediately — no extra tap.
+        # Returning users see the latest (synced) products immediately — no
+        # extra tap required.
         await _send_product_list(update.message, db, context, lang)
     finally:
         db.close()
@@ -232,6 +236,9 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         if not await _require_language_selected(update, db):
             return
+        # /menu is also a hard reset: cancel any in-progress input flow or
+        # temp navigation state, same as 🏠 Trang chủ.
+        context.user_data.clear()
         tg_user = update.effective_user
         user = get_or_create_user(db, str(tg_user.id), tg_user.username, tg_user.first_name, tg_user.last_name)
         lang = _get_lang(db, tg_user.id)
@@ -252,6 +259,9 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text, parse_mode="HTML",
             reply_markup=main_menu_keyboard(lang=lang, is_admin=is_admin),
         )
+        # Same as /start: land the user straight on the synced product list,
+        # not a bare menu they have to tap Products again from.
+        await _send_product_list(update.message, db, context, lang)
     finally:
         db.close()
 
@@ -269,22 +279,57 @@ async def myid_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-async def _send_product_list(message_target, db, context, lang: str):
+async def _try_edit_message(msg, text: str, reply_markup, parse_mode="HTML") -> bool:
     """
-    Shared "sync then render page 0 of products" flow, used by /products,
-    the 🛍 Products button, and — per the always-show-products-on-start
-    requirement — /start and the post-language-picker screen too.
+    Best-effort "update the current message in place" used by 🏠 Trang chủ /
+    🏠 Home so re-rendering the product list doesn't spam a new message.
+    Tries edit_text (plain/text messages) then edit_caption (photo messages,
+    e.g. a product-detail view with an image) and reports success/failure so
+    the caller can fall back to sending a fresh message only if both fail.
+    "Message is not modified" (user re-opened an already-identical screen)
+    counts as success — nothing needs to change on screen.
+    """
+    try:
+        await msg.edit_text(text, parse_mode=parse_mode, reply_markup=reply_markup)
+        return True
+    except Exception as e:
+        if "not modified" in str(e).lower():
+            return True
+    try:
+        await msg.edit_caption(caption=text, parse_mode=parse_mode, reply_markup=reply_markup)
+        return True
+    except Exception as e:
+        if "not modified" in str(e).lower():
+            return True
+    return False
+
+
+async def _send_product_list(message_target, db, context, lang: str, edit_target=None):
+    """
+    Shared "sync then render latest page-0 product list" flow, used by
+    /products, the 🛍 Products button, /start, /menu, and — per the
+    🏠 Trang chủ / 🏠 Home requirement — the home button itself.
+
+    If `edit_target` (a Message) is given, the result is rendered by editing
+    that message in place (text or caption) instead of sending new messages,
+    to avoid spamming the chat; `message_target` is still used as the
+    fallback reply target if editing isn't possible (e.g. message too old).
     """
     # Auto-sync every active API source before rendering — no manual
     # "Refresh" tap required. Skipped entirely if there's no active API
-    # connection at all (nothing to sync).
+    # connection at all (nothing to sync). sync_active_supplier_products
+    # itself is a no-op if the last full sync completed within 30s, runs all
+    # sources in parallel with a per-source timeout, and never zeroes out
+    # stock for a source that errored/timed out — it just reports it.
     from models import ApiConnection
     from services.api_service import sync_active_supplier_products
 
+    has_sources = db.query(ApiConnection).filter(ApiConnection.is_active == True).first() is not None
     sync_failed = []
     status_msg = None
-    if db.query(ApiConnection).filter(ApiConnection.is_active == True).first():
-        status_msg = await message_target.reply_text(t(lang, "products_syncing"))
+    if has_sources:
+        if edit_target is None:
+            status_msg = await message_target.reply_text(t(lang, "products_syncing"))
         try:
             sync_result = await sync_active_supplier_products(db)
             sync_failed = sync_result.get("failed", [])
@@ -303,7 +348,9 @@ async def _send_product_list(message_target, db, context, lang: str):
             pass
 
     if not products:
-        await message_target.reply_text(t(lang, "product_list_empty"))
+        text = t(lang, "product_list_empty")
+        if edit_target is None or not await _try_edit_message(edit_target, text, None):
+            await message_target.reply_text(text)
         return
 
     if context is not None:
@@ -311,11 +358,11 @@ async def _send_product_list(message_target, db, context, lang: str):
     title = t(lang, "product_list_title")
     if sync_failed:
         title += "\n" + t(lang, "products_sync_partial_warning")
-    await message_target.reply_text(
-        title,
-        parse_mode="HTML",
-        reply_markup=product_list_keyboard(products, lang=lang, page=0, per_page=per_page),
-    )
+    kbd = product_list_keyboard(products, lang=lang, page=0, per_page=per_page)
+
+    if edit_target is not None and await _try_edit_message(edit_target, title, kbd):
+        return
+    await message_target.reply_text(title, parse_mode="HTML", reply_markup=kbd)
 
 
 async def products_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1417,20 +1464,27 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ── home ──
     if data == "home":
+        # Ack the tap immediately (per spec: confirm the callback right away,
+        # then sync, then render) so the button doesn't feel stuck/slow.
+        try:
+            await query.answer()
+        except Exception:
+            pass
+        # Cancel any in-progress input flow (e.g. waiting_quantity, a wallet
+        # deposit amount prompt, a pending txid entry) and any temp
+        # navigation state — 🏠 Trang chủ is a hard reset back to the
+        # product list, not just another menu screen.
+        context.user_data.clear()
         db = SessionLocal()
         try:
             tg_user = update.effective_user
             lang = _get_lang(db, tg_user.id)
-            admin_id = _get_admin_id(db)
-            is_admin = str(tg_user.id) == str(admin_id)
-            welcome = _get_welcome_message(db)
-            await query.message.reply_text(
-                welcome,
-                reply_markup=main_menu_keyboard(lang=lang, is_admin=is_admin),
-            )
-            await query.message.delete()
-        except Exception:
-            pass
+            # Re-sync active sources + reload the DB + render the latest
+            # product list, editing the current message in place instead of
+            # sending a new one wherever possible.
+            await _send_product_list(query.message, db, context, lang, edit_target=query.message)
+        except Exception as e:
+            logger.warning(f"[home] error: {e}")
         finally:
             db.close()
         return
