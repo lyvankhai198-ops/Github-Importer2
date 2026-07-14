@@ -1,0 +1,124 @@
+CHỈ SỬA LỖI KHÔNG CUỘN ĐƯỢC FORM THÊM/SỬA SẢN PHẨM TRÊN MOBILE.
+
+Không sửa logic sản phẩm.
+Không đổi database.
+Không sửa API hoặc bot.
+Chỉ sửa HTML/CSS/JavaScript của modal form sản phẩm.
+
+Hiện trạng:
+- Trên iPhone Safari, mở form Sửa sản phẩm.
+- Nội dung form dài nhưng không kéo xuống được hết.
+- Thanh nút Hủy / Lưu sản phẩm ở cuối che nội dung.
+- Body đang bị khóa scroll nhưng vùng modal không có scroll riêng.
+
+Yêu cầu sửa:
+
+1. Modal phải có chiều cao tối đa theo màn hình:
+
+height: 100dvh;
+max-height: 100dvh;
+
+Có fallback:
+
+height: 100vh;
+max-height: 100vh;
+
+2. Cấu trúc modal phải chia thành:
+
+- modal-header: cố định phía trên
+- modal-body: vùng duy nhất được cuộn
+- modal-footer: cố định phía dưới
+
+3. CSS cần tương đương:
+
+.product-modal {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100dvh;
+    max-height: 100dvh;
+    overflow: hidden;
+}
+
+.product-modal__header {
+    flex: 0 0 auto;
+}
+
+.product-modal__body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    padding-bottom: calc(110px + env(safe-area-inset-bottom));
+}
+
+.product-modal__footer {
+    flex: 0 0 auto;
+    position: sticky;
+    bottom: 0;
+    z-index: 20;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    background: white;
+}
+
+4. Không đặt overflow: hidden lên modal-body.
+
+5. Kiểm tra và loại bỏ các lỗi CSS như:
+
+body.modal-open {
+    position: fixed;
+}
+
+Nếu vẫn dùng position: fixed để khóa body thì phải lưu và khôi phục vị trí cuộn đúng cách. Không được khiến vùng modal mất khả năng scroll.
+
+6. Nếu modal đang dùng:
+
+position: fixed;
+inset: 0;
+
+thì container bên trong vẫn phải có:
+
+min-height: 0;
+overflow: hidden;
+
+và body form phải có:
+
+overflow-y: auto;
+
+7. Trên iPhone Safari:
+- dùng 100dvh thay cho chỉ 100vh
+- hỗ trợ safe-area-inset-bottom
+- input phải có font-size tối thiểu 16px
+- khi bàn phím mở, người dùng vẫn kéo được tới input cuối và nút Lưu
+
+8. Footer không được che trường cuối cùng.
+Thêm padding-bottom đủ lớn cho modal-body.
+
+9. Khi mở modal:
+- cuộn bắt đầu từ đầu form
+- không làm trang nền cuộn theo
+
+10. Khi đóng modal:
+- khôi phục body scroll bình thường
+- không giữ class modal-open sai trạng thái
+
+Test bắt buộc trên viewport:
+
+375x812
+390x844
+430x932
+
+Test:
+- mở Sửa sản phẩm
+- kéo từ đầu xuống cuối
+- xem được toàn bộ các nhóm form
+- nhập vào trường cuối
+- bàn phím không chặn nút Lưu
+- nhấn Hủy/Lưu được
+- đóng modal rồi trang nền cuộn bình thường
+
+Commit message:
+
+fix: enable mobile scrolling in product form modal
