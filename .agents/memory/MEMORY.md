@@ -22,3 +22,4 @@
 - [brand_key computed on the fly](brand-key-on-the-fly.md) — bot product-list brand grouping key is derived at query time from name, not a persisted column, to avoid a migration when only sort order needs it
 - [ai-center DB test isolation trap](ai-center-db-test-isolation.md) — config.py hardcodes sqlite path and ignores DATABASE_URL env var; test scripts must monkeypatch database.engine, not set an env var
 - [Rank/tier spend aggregation](rank-spend-aggregation.md) — compute total spend live from orders (payment_status paid/overpaid, or null+completed), never trust a manually incremented counter
+- [Product notification dedup ledger](notification-events-dedup.md) — new-vs-restock decided by "has this product ever been announced", not by trigger source; unified entry point + persisted claim table prevents double-sends

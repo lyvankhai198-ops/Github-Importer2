@@ -1,0 +1,326 @@
+CHỈ SỬA CHỨC NĂNG ĐỒNG BỘ VÀ THÔNG BÁO SẢN PHẨM TRÊN PROJECT HIỆN TẠI.
+
+Không tạo project mới.
+Không reset database.
+Không xóa sản phẩm, người dùng, đơn hàng, kho hoặc cấu hình API.
+Không sửa lại hệ thống Generic API đã hoàn thành.
+Không sửa ví, thanh toán, hoàn tiền hoặc giao diện web ngoài phần liên quan.
+
+==================================================
+1. TỰ ĐỒNG BỘ SẢN PHẨM
+==================================================
+
+Khi xảy ra một trong các trường hợp sau:
+
+- Admin thêm sản phẩm thủ công trên web.
+- Admin thêm tài khoản vào kho làm tồn kho tăng.
+- API nguồn đồng bộ được sản phẩm mới.
+- Sản phẩm API từ hết hàng chuyển sang còn hàng.
+- Tồn kho API tăng so với lần đồng bộ trước.
+
+Hệ thống phải tự động:
+
+1. cập nhật sản phẩm trong database
+2. cập nhật tồn kho
+3. phát hiện sản phẩm mới hoặc số lượng tăng
+4. gửi thông báo tới người dùng Telegram đang active
+5. không cần restart bot
+6. không cần admin bấm làm mới
+
+==================================================
+2. PHÂN BIỆT SỰ KIỆN
+==================================================
+
+Phải phân biệt rõ:
+
+A. Sản phẩm mới hoàn toàn
+
+is_new_product = true
+
+B. Sản phẩm cũ được thêm hàng
+
+added_quantity = current_stock - previous_stock
+
+Chỉ gửi thông báo khi:
+
+- sản phẩm mới được tạo
+- hoặc current_stock > previous_stock
+
+Không gửi khi:
+
+- tồn kho giảm do khách mua
+- API lỗi
+- dữ liệu không thay đổi
+- scheduler chạy lại cùng một dữ liệu
+- admin chỉ sửa mô tả hoặc giá mà không thêm hàng
+
+==================================================
+3. CHỐNG GỬI THÔNG BÁO LẶP
+==================================================
+
+Tạo hoặc dùng bảng notification_events.
+
+Lưu tối thiểu:
+
+- id
+- event_type
+- product_id
+- source_id
+- previous_stock
+- current_stock
+- added_quantity
+- event_key
+- created_at
+- sent_at
+- status
+
+event_key phải unique.
+
+Ví dụ:
+
+new_product:{product_id}
+
+restock:{product_id}:{current_stock}
+
+Nếu event_key đã tồn tại và đã gửi:
+- không gửi lại lần hai
+
+==================================================
+4. THÔNG BÁO SẢN PHẨM MỚI
+==================================================
+
+Mẫu tin nhắn:
+
+🆕 SẢN PHẨM MỚI
+
+{emoji} {product_name}
+📦 Tồn kho hiện tại: {current_stock}
+💰 Giá: {formatted_price}
+
+Bên dưới có nút:
+
+🛒 Mua ngay
+
+Nếu có mô tả ngắn thì có thể hiển thị thêm:
+
+📝 {short_description}
+
+Không hiển thị:
+
+- giá nhập
+- API key
+- tên nguồn nội bộ
+- dữ liệu bí mật
+
+==================================================
+5. THÔNG BÁO NHẬP THÊM HÀNG
+==================================================
+
+Mẫu giống ảnh:
+
+🔄 ĐÃ BỔ SUNG SẢN PHẨM
+
+{emoji} {product_name}
+➕ Thêm: {added_quantity}
+📦 Tồn kho hiện tại: {current_stock}
+💰 Giá: {formatted_price}
+
+Bên dưới có nút:
+
+🛒 Mua ngay
+
+==================================================
+6. NÚT MUA NGAY
+==================================================
+
+Callback của nút phải dùng product_id.
+
+Ví dụ:
+
+buy_now:{product_id}
+
+Khi người dùng bấm:
+
+🛒 Mua ngay
+
+Bot phải:
+
+1. trả lời callback ngay
+2. đọc sản phẩm mới nhất từ database
+3. kiểm tra sản phẩm còn active
+4. kiểm tra tồn kho hiện tại
+5. nếu dữ liệu nguồn đã cũ thì refresh riêng nguồn đó
+6. còn hàng thì mở thẳng trang chi tiết sản phẩm
+7. hiển thị nút chọn số lượng hoặc bắt đầu luồng mua
+8. hết hàng thì báo:
+
+❌ Sản phẩm hiện đã hết hàng.
+
+Không tạo đơn khi hết hàng.
+
+==================================================
+7. ĐỐI TƯỢNG NHẬN THÔNG BÁO
+==================================================
+
+Mặc định gửi tới:
+
+- tất cả Telegram user đang active
+- chưa block bot
+- đã chọn ngôn ngữ
+- không bị khóa
+
+Thêm setting trên web:
+
+notify_new_products = true
+notify_restock = true
+
+Nếu setting tắt:
+- không gửi loại thông báo tương ứng
+
+Có thể dùng thêm:
+
+notification_target = all_active_users
+
+Sau này dễ mở rộng sang channel hoặc nhóm riêng.
+
+==================================================
+8. GỬI THEO BATCH
+==================================================
+
+Không gửi toàn bộ cùng lúc.
+
+Gửi theo batch để tránh Telegram rate limit.
+
+Có cấu hình:
+
+broadcast_batch_size
+broadcast_delay_ms
+
+Ví dụ:
+
+broadcast_batch_size = 20
+broadcast_delay_ms = 1000
+
+Nếu một user block bot:
+
+- đánh dấu user inactive hoặc blocked
+- tiếp tục gửi user khác
+- không dừng toàn bộ tiến trình
+
+==================================================
+9. NGÔN NGỮ
+==================================================
+
+Nếu user dùng tiếng Việt:
+- gửi tiếng Việt
+
+Nếu user dùng tiếng Anh:
+- gửi tiếng Anh
+
+Nội dung tiếng Anh tương ứng:
+
+🆕 NEW PRODUCT
+
+{emoji} {product_name}
+📦 Current stock: {current_stock}
+💰 Price: {formatted_price}
+
+Button:
+
+🛒 Buy now
+
+Với nhập hàng:
+
+🔄 RESTOCKED
+
+{emoji} {product_name}
+➕ Added: {added_quantity}
+📦 Current stock: {current_stock}
+💰 Price: {formatted_price}
+
+==================================================
+10. ẢNH SẢN PHẨM
+==================================================
+
+Nếu sản phẩm có ảnh hợp lệ:
+
+- gửi ảnh sản phẩm
+- caption chứa nội dung thông báo
+- nút Mua ngay đặt dưới ảnh
+
+Nếu không có ảnh:
+- gửi text bình thường
+
+Ảnh lỗi không được làm thông báo thất bại.
+Nếu ảnh lỗi:
+- fallback sang text
+
+==================================================
+11. TEST BẮT BUỘC
+==================================================
+
+Test 1:
+- Admin tạo sản phẩm mới.
+- User nhận đúng một thông báo.
+- Có nút Mua ngay.
+
+Test 2:
+- Admin thêm 10 tài khoản vào kho.
+- User nhận:
+  ➕ Thêm: 10
+- Tồn kho hiện tại đúng.
+
+Test 3:
+- API sync xuất hiện sản phẩm mới.
+- User nhận thông báo sản phẩm mới.
+
+Test 4:
+- API tăng tồn kho từ 1 lên 11.
+- User nhận:
+  ➕ Thêm: 10
+
+Test 5:
+- API sync lại vẫn là 11.
+- Không gửi thông báo lần hai.
+
+Test 6:
+- Tồn kho giảm từ 11 xuống 10 vì khách mua.
+- Không gửi thông báo.
+
+Test 7:
+- User bấm Mua ngay.
+- Mở đúng sản phẩm.
+
+Test 8:
+- Sản phẩm vừa hết hàng.
+- Bấm Mua ngay phải báo hết hàng.
+- Không tạo đơn.
+
+Test 9:
+- Một user block bot.
+- Các user khác vẫn nhận thông báo.
+
+==================================================
+12. SAU KHI HOÀN THÀNH
+==================================================
+
+- Chạy migration an toàn nếu cần.
+- Test scheduler.
+- Test thêm sản phẩm thủ công.
+- Test sync API.
+- Test nút Mua ngay.
+- Restart bot.
+- Commit.
+- Push GitHub.
+
+Commit message:
+
+feat: add automatic product sync and restock notifications
+
+Báo lại:
+
+- file đã sửa
+- migration đã chạy
+- test đã pass
+- commit hash
+- push successful
