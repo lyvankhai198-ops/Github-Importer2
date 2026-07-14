@@ -1,0 +1,95 @@
+CHỈ SỬA CHỨC NĂNG NÚT 🏠 TRANG CHỦ TRÊN BOT TELEGRAM.
+
+Không sửa phần khác.
+Không tạo project mới.
+Không xóa database.
+Không thay đổi giao diện web.
+Không sửa API, ví, đơn hàng hoặc thanh toán.
+
+Yêu cầu:
+
+1. Tìm toàn bộ handler/callback đang xử lý các nút:
+
+🏠 Trang chủ
+🏠 Home
+/menu
+/start
+
+2. Khi người dùng bấm 🏠 Trang chủ, bot phải:
+
+- hủy trạng thái nhập liệu hiện tại nếu có
+- xóa flow mua hàng đang dở
+- xóa navigation state tạm
+- đồng bộ nhanh sản phẩm từ các API nguồn đang active
+- cập nhật tồn kho trong database
+- đọc lại danh sách sản phẩm mới nhất
+- hiển thị ngay danh sách sản phẩm tại trang chủ
+
+Không chỉ hiện menu trống.
+Không quay về lời chào rồi bắt bấm Sản phẩm lần nữa.
+
+3. Luồng đúng:
+
+Người dùng bấm 🏠 Trang chủ
+→ bot xác nhận callback ngay
+→ chạy sync sản phẩm
+→ đọc lại database
+→ render danh sách sản phẩm mới nhất
+
+4. Tối ưu tốc độ:
+
+- Nếu sản phẩm vừa sync trong vòng 30 giây thì không gọi lại API.
+- Nếu cần sync, chạy các nguồn song song.
+- Timeout từng nguồn tối đa 5–8 giây.
+- Một nguồn lỗi không làm trang chủ bị lỗi.
+- Nếu sync lỗi, vẫn hiển thị dữ liệu gần nhất trong database.
+- Không đặt tồn kho về 0 khi API nguồn lỗi.
+
+5. Khi render Trang chủ:
+
+- hiển thị danh sách sản phẩm mới nhất
+- giữ đúng ngôn ngữ của user
+- giữ đúng emoji/icon sản phẩm
+- giữ đúng giá VND hoặc USDT theo ngôn ngữ
+- sản phẩm hết hàng phải hiện đúng trạng thái
+- không hiển thị nút Làm mới bắt buộc
+
+6. Áp dụng cho cả:
+
+- callback nút 🏠 Trang chủ
+- callback nút 🏠 Home
+- lệnh /menu
+- lệnh /start đối với user đã chọn ngôn ngữ
+
+7. Người dùng mới chưa chọn ngôn ngữ:
+
+- /start vẫn phải hiện màn hình chọn ngôn ngữ
+- sau khi chọn ngôn ngữ, tự mở Trang chủ và hiển thị danh sách sản phẩm
+
+8. Không gửi nhiều tin nhắn rác.
+
+Ưu tiên:
+- edit_message_text
+- edit_message_caption
+- hoặc chỉnh tin hiện tại nếu có thể
+
+9. Test bắt buộc:
+
+- Admin thêm sản phẩm mới trên web.
+- User bấm 🏠 Trang chủ.
+- Sản phẩm mới xuất hiện ngay.
+- API nguồn tăng tồn kho.
+- User bấm 🏠 Trang chủ.
+- Tồn kho mới hiển thị.
+- Một API nguồn lỗi.
+- Trang chủ vẫn mở được bằng dữ liệu cũ.
+- User đang nhập số lượng rồi bấm Trang chủ.
+- Flow nhập số lượng bị hủy và quay về danh sách sản phẩm.
+
+10. Sau khi sửa:
+
+- restart bot
+- chạy test
+- commit
+- push GitHub
+- báo file đã sửa và commit hash
