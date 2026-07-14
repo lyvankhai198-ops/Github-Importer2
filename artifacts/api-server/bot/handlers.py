@@ -324,48 +324,53 @@ async def _try_edit_message(msg, text: str, reply_markup, parse_mode="HTML") -> 
     return False
 
 
+async def _trigger_background_sync():
+    """
+    Fire-and-forget refresh of every active API source, used so opening the
+    product list never makes the shopper wait on a live supplier HTTP call
+    (previously ~1-8s per source, felt slow). Runs on its own DB session/task
+    so it can't block or fail the render that triggered it; still capped by
+    sync_active_supplier_products' own 30s cache lock, so rapid taps don't
+    hammer the supplier API.
+    """
+    from services.api_service import sync_active_supplier_products
+    sess = SessionLocal()
+    try:
+        await sync_active_supplier_products(sess)
+    except Exception as e:
+        logger.error(f"[_trigger_background_sync] failed: {e}")
+    finally:
+        sess.close()
+
+
 async def _send_product_list(message_target, db, context, lang: str, edit_target=None):
     """
-    Shared "sync then render latest page-0 product list" flow, used by
-    /products, the 🛍 Products button, /start, /menu, and — per the
-    🏠 Trang chủ / 🏠 Home requirement — the home button itself.
+    Shared "render latest page-0 product list" flow, used by /products, the
+    🛍 Products button, /start, /menu, and — per the 🏠 Trang chủ / 🏠 Home
+    requirement — the home button itself.
+
+    Renders immediately from whatever is already in the DB (fast — no live
+    supplier HTTP call in the request path) and kicks off a background
+    refresh of every active API source so the *next* view reflects any
+    changes; it never blocks or delays this render. Background sync itself
+    never zeroes out stock for a source that errored/timed out — it just
+    reports it, and it's also run periodically on its own schedule per
+    connection, so staleness is bounded even between shopper visits.
 
     If `edit_target` (a Message) is given, the result is rendered by editing
     that message in place (text or caption) instead of sending new messages,
     to avoid spamming the chat; `message_target` is still used as the
     fallback reply target if editing isn't possible (e.g. message too old).
     """
-    # Auto-sync every active API source before rendering — no manual
-    # "Refresh" tap required. Skipped entirely if there's no active API
-    # connection at all (nothing to sync). sync_active_supplier_products
-    # itself is a no-op if the last full sync completed within 30s, runs all
-    # sources in parallel with a per-source timeout, and never zeroes out
-    # stock for a source that errored/timed out — it just reports it.
     from models import ApiConnection
-    from services.api_service import sync_active_supplier_products
 
     has_sources = db.query(ApiConnection).filter(ApiConnection.is_active == True).first() is not None
-    sync_failed = []
-    status_msg = None
     if has_sources:
-        if edit_target is None:
-            status_msg = await message_target.reply_text(t(lang, "products_syncing"))
-        try:
-            sync_result = await sync_active_supplier_products(db)
-            sync_failed = sync_result.get("failed", [])
-            db.expire_all()  # pick up commits made by the parallel sync sessions
-        except Exception as e:
-            logger.error(f"[_send_product_list] sync_active_supplier_products failed: {e}")
+        asyncio.create_task(_trigger_background_sync())
 
     show_oos = _get_show_out_of_stock(db)
     per_page = _get_products_per_page(db)
     products = get_active_products_for_bot(db, show_out_of_stock=show_oos)
-
-    if status_msg:
-        try:
-            await status_msg.delete()
-        except Exception:
-            pass
 
     if not products:
         text = t(lang, "product_list_empty")
@@ -376,8 +381,6 @@ async def _send_product_list(message_target, db, context, lang: str, edit_target
     if context is not None:
         context.user_data["last_products_page"] = 0
     title = t(lang, "product_list_title")
-    if sync_failed:
-        title += "\n" + t(lang, "products_sync_partial_warning")
     kbd = product_list_keyboard(products, lang=lang, page=0, per_page=per_page)
 
     if edit_target is not None and await _try_edit_message(edit_target, title, kbd):
