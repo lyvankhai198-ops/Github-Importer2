@@ -294,29 +294,48 @@ body {
   .topbar-title { font-size: 0.95rem; }
 
   /* Full-screen fixed modals on mobile — fixes the previously misaligned
-     product-edit modal (was centered/cut off with an unreachable footer). */
+     product-edit modal (was centered/cut off with an unreachable footer).
+     modal-dialog/content use a fixed 100vh/100dvh box (not height:100%,
+     which on iOS Safari inherits an ambiguous parent height and lets the
+     footer creep off-screen or the body scroll instead of modal-body). */
   .modal {
     z-index: 1090;
   }
   .modal-dialog {
     position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
+    inset: 0;
     margin: 0;
     max-width: 100%;
     width: 100%;
-    height: 100%;
+    height: 100vh;
+    height: 100dvh;
+    max-height: 100vh;
+    max-height: 100dvh;
     display: flex;
   }
   .modal-content {
     width: 100%;
     height: 100%;
+    max-height: 100%;
+    min-height: 0;
     border-radius: 0;
     border: none;
     display: flex;
     flex-direction: column;
+    overflow: hidden;
+  }
+  /* Product add/edit modals wrap modal-body + modal-footer in a <form>.
+     Flex sizing only applies to DIRECT children of a flex container, so
+     without this the form (a plain block) grows to full content height
+     and modal-body's flex:1/overflow-y never takes effect — this was the
+     actual cause of "can't scroll to the end on iPhone Safari". Make the
+     form itself part of the flex column so its children inherit sizing. */
+  .modal-content > form {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
   }
   .modal-header {
     flex: 0 0 auto;
@@ -327,9 +346,15 @@ body {
   }
   .modal-body {
     flex: 1 1 auto;
+    min-height: 0;
     overflow-y: auto;
+    overflow-x: hidden;
     -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
     padding: 14px;
+    /* Keep the last field clear of the sticky footer + iPhone home
+       indicator, even when the on-screen keyboard is open. */
+    padding-bottom: calc(110px + env(safe-area-inset-bottom));
   }
   .modal-footer {
     flex: 0 0 auto;
@@ -338,6 +363,7 @@ body {
     z-index: 1091;
     background: var(--card-bg);
     box-shadow: 0 -2px 8px rgba(0,0,0,0.08);
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
   }
 }
 
