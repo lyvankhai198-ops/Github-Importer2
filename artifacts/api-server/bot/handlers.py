@@ -2057,6 +2057,10 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ── back to product list ──
     if data == "back_products":
+        # Same as 🏠 Home: cancel any in-progress input flow (e.g.
+        # waiting_quantity from tapping 🛒 Mua on the product just viewed)
+        # and delete its leftover prompt message before going back to the list.
+        await _cleanup_flow_state(context, query.message.chat_id)
         db = SessionLocal()
         try:
             lang = _get_lang(db, update.effective_user.id)
