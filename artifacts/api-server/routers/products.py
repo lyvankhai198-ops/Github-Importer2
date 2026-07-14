@@ -499,6 +499,19 @@ async def api_sources(request: Request, db: Session = Depends(get_db), conn_id: 
     })
 
 
+@router.get("/products/api-sources/{api_product_id}/create-product")
+async def create_product_from_source_get_guard(api_product_id: int, request: Request):
+    """
+    This action only supports POST (it's a form submit). Mobile browsers
+    sometimes replay the last request as GET when the user taps "back"
+    after submitting, which used to surface a raw {"detail":"Method Not
+    Allowed"} JSON page. Redirect back to the source list instead of
+    showing that error — the original POST already completed or failed
+    on its own, so there's nothing to redo here.
+    """
+    return RedirectResponse(url="/products/api-sources", status_code=302)
+
+
 @router.post("/products/api-sources/{api_product_id}/create-product")
 async def create_product_from_source(
     api_product_id: int,
