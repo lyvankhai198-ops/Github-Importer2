@@ -200,6 +200,33 @@ def _run_migrations():
         "ALTER TABLE telegram_bot_config ADD COLUMN notify_restock BOOLEAN DEFAULT 1",
         "ALTER TABLE telegram_bot_config ADD COLUMN broadcast_batch_size INTEGER DEFAULT 25",
         "ALTER TABLE telegram_bot_config ADD COLUMN broadcast_delay_ms INTEGER DEFAULT 300",
+
+        # ── Order search / issue reporting / wallet refunds ─────────────────
+        # Warranty snapshot at purchase time + refund bookkeeping on Order.
+        "ALTER TABLE orders ADD COLUMN warranty_days INTEGER",
+        "ALTER TABLE orders ADD COLUMN refunded_amount FLOAT DEFAULT 0.0",
+        "ALTER TABLE orders ADD COLUMN refunded_at DATETIME",
+        "ALTER TABLE orders ADD COLUMN refunded_by VARCHAR(100)",
+        """CREATE TABLE IF NOT EXISTS order_issues (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            order_id INTEGER NOT NULL,
+            telegram_user_id VARCHAR(50) NOT NULL,
+            telegram_chat_id VARCHAR(50),
+            issue_text TEXT,
+            media_type VARCHAR(20),
+            telegram_file_id VARCHAR(300),
+            status VARCHAR(20) NOT NULL DEFAULT 'open',
+            calculated_refund_amount FLOAT,
+            calculated_refund_currency VARCHAR(10),
+            created_at DATETIME,
+            handled_by VARCHAR(100),
+            handled_at DATETIME,
+            resolution_note TEXT,
+            FOREIGN KEY(order_id) REFERENCES orders(id),
+            FOREIGN KEY(telegram_user_id) REFERENCES users(telegram_id)
+        )""",
+        "CREATE INDEX IF NOT EXISTS ix_order_issues_order ON order_issues (order_id)",
+        "CREATE INDEX IF NOT EXISTS ix_order_issues_user ON order_issues (telegram_user_id)",
     ]
     with engine.connect() as conn:
         ran_language_selected_migration = False

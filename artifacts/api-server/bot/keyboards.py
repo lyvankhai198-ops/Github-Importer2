@@ -310,6 +310,36 @@ def partial_delivery_keyboard(order_id: int, support_username: str = "", lang: s
     return InlineKeyboardMarkup(rows)
 
 
+# ── Order search / issue reporting ──────────────────────────────────────────
+
+def order_search_list_keyboard(orders: list, lang: str = "vi") -> InlineKeyboardMarkup:
+    """One button per matching order: order code • product • purchase time."""
+    rows = []
+    for o in orders:
+        product_name = o.product.name if o.product else str(o.product_id)
+        label = f"{o.order_code} • {product_name[:20]} • {o.created_at.strftime('%d/%m/%Y')}"
+        rows.append([InlineKeyboardButton(label[:64], callback_data=f"order_pick:{o.id}")])
+    rows.append([InlineKeyboardButton(t(lang, "btn_home"), callback_data="home")])
+    return InlineKeyboardMarkup(rows)
+
+
+def order_detail_keyboard(order_id: int, lang: str = "vi") -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(t(lang, "btn_report_issue"), callback_data=f"report_issue:{order_id}")],
+        [InlineKeyboardButton(t(lang, "btn_home"), callback_data="home")],
+    ])
+
+
+def admin_issue_keyboard(issue_id: int, lang: str = "vi") -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("👁 Xem đơn", callback_data=f"admin_issue_view:{issue_id}")],
+        [InlineKeyboardButton("💬 Trả lời khách", callback_data=f"admin_issue_reply:{issue_id}")],
+        [InlineKeyboardButton("💰 Hoàn tiền về ví", callback_data=f"admin_issue_refund:{issue_id}")],
+        [InlineKeyboardButton("❌ Từ chối", callback_data=f"admin_issue_reject:{issue_id}")],
+        [InlineKeyboardButton("✅ Đánh dấu đã xử lý", callback_data=f"admin_issue_resolve:{issue_id}")],
+    ])
+
+
 # ── Legacy compat (payment_keyboard used without lang in payment_service) ──────
 def confirm_order_keyboard(product_id: int, quantity: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([

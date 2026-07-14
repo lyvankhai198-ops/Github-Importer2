@@ -133,6 +133,7 @@ def create_pending_payment_order(
     order_code = "ORD-" + uuid.uuid4().hex[:8].upper()
     total = product.sale_price * quantity
 
+    from services.warranty import parse_warranty_to_days
     order = Order(
         order_code=order_code,
         telegram_user_id=telegram_user_id,
@@ -147,6 +148,7 @@ def create_pending_payment_order(
         payment_method=payment_method,
         payment_currency="VND",
         payment_expires_at=datetime.utcnow() + timedelta(minutes=timeout),
+        warranty_days=parse_warranty_to_days(product.warranty),
     )
 
     if payment_method == "bank_transfer":
@@ -188,6 +190,7 @@ def create_crypto_payment_order(
     order_code = "ORD-" + uuid.uuid4().hex[:8].upper()
     total = product.sale_price * quantity
 
+    from services.warranty import parse_warranty_to_days
     order = Order(
         order_code=order_code,
         telegram_user_id=telegram_user_id,
@@ -208,6 +211,7 @@ def create_crypto_payment_order(
         required_confirmations=required_confirmations,
         confirmations=0,
         payment_expires_at=datetime.utcnow() + timedelta(minutes=timeout_minutes),
+        warranty_days=parse_warranty_to_days(product.warranty),
     )
     db.add(order)
     db.commit()
@@ -244,6 +248,7 @@ def create_binance_order(
     order_code = "ORD-" + uuid.uuid4().hex[:8].upper()
     total = product.sale_price * quantity
 
+    from services.warranty import parse_warranty_to_days
     order = Order(
         order_code=order_code,
         telegram_user_id=telegram_user_id,
@@ -261,6 +266,7 @@ def create_binance_order(
         expected_crypto_amount=expected_crypto_amount,
         payment_network="BINANCE",
         payment_expires_at=datetime.utcnow() + timedelta(minutes=timeout_minutes),
+        warranty_days=parse_warranty_to_days(product.warranty),
     )
     db.add(order)
     db.commit()

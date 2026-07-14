@@ -15,6 +15,7 @@ from bot.keyboards import (
     wallet_menu_keyboard, wallet_deposit_currency_keyboard, wallet_deposit_method_keyboard,
     wallet_insufficient_balance_keyboard, wallet_deposit_qr_keyboard,
     api_menu_keyboard, api_back_keyboard, api_confirm_keyboard, account_info_keyboard,
+    order_search_list_keyboard, order_detail_keyboard, admin_issue_keyboard,
 )
 from bot.i18n import t, get_user_lang
 from services.product_service import (
@@ -34,8 +35,12 @@ from services import api_key_service
 from models import (
     Order, TelegramBotConfig, OrderStatus, PaymentStatus, User, Product,
     WalletCurrency, WalletTxType, WalletDeposit, WalletDepositStatus,
-    ApiClient, ApiClientStatus, ApiRequestLog,
+    ApiClient, ApiClientStatus, ApiRequestLog, OrderIssue, IssueStatus,
 )
+from services.order_search import find_orders
+from services import refund_service
+from services.warranty import get_order_warranty_days
+from services.wallet_service import AlreadyProcessedError
 from database import SessionLocal
 
 logger = logging.getLogger(__name__)
@@ -377,44 +382,115 @@ async def products_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def orders_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    "🔍 Tìm đơn hàng" — prompts the shopper for an email or delivered
+    account rather than dumping a raw order list (see message_handler's
+    "waiting_order_search" state for the actual lookup).
+    """
     db = SessionLocal()
     try:
         if not await _require_language_selected(update, db):
             return
         lang = _get_lang(db, update.effective_user.id)
-        tg_user = update.effective_user
-        orders = (
-            db.query(Order)
-            .filter(Order.telegram_user_id == str(tg_user.id))
-            .order_by(Order.created_at.desc())
-            .limit(10)
-            .all()
-        )
-        if not orders:
-            await update.message.reply_text(t(lang, "orders_empty"))
-            return
-        lines = [t(lang, "orders_title")]
-        for o in orders:
-            sv = o.status.value if hasattr(o.status, "value") else o.status
-            st = _status_label(sv, lang)
-            if lang == "vi":
-                price_str = f"{format_vnd(o.total_price)}đ"
-            else:
-                from services.normalize import format_usdt
-                usdt_total = (o.product.price_usdt * o.quantity) if o.product else None
-                if usdt_total is None:
-                    from services.exchange_rate_service import get_exchange_config
-                    from services.normalize import compute_price_usdt
-                    rate = float(get_exchange_config(db).get("fixed_rate") or 26500.0)
-                    usdt_total = compute_price_usdt(o.total_price, rate)
-                price_str = f"{format_usdt(usdt_total)} USDT"
-            lines.append(
-                f"• <code>{o.order_code}</code> — {st}\n"
-                f"  💰 {price_str} | {o.created_at.strftime('%d/%m/%Y')}"
-            )
-        await update.message.reply_text("\n".join(lines), parse_mode="HTML")
+        context.user_data.clear()
+        context.user_data["state"] = "waiting_order_search"
+        await update.message.reply_text(t(lang, "order_search_prompt"))
     finally:
         db.close()
+
+
+def _order_account_text(order) -> str:
+    """Best-effort plain text of the account(s) delivered for this order,
+    reusing whatever was already stored — never re-fetches from the API."""
+    try:
+        items = get_delivery_items(order)
+    except Exception:
+        items = []
+    lines = []
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        v = it.get("value")
+        if not v and it.get("username"):
+            v = f"{it['username']}|{it.get('password', '')}" if it.get("password") else it["username"]
+        if v:
+            lines.append(str(v))
+    if lines:
+        return "\n".join(lines)
+    if order.delivery_data:
+        return str(order.delivery_data)
+    return ""
+
+
+async def _render_order_detail_text(db, order, lang: str) -> str:
+    """Builds the "🔍 Tìm đơn hàng" detail message per spec: code, product,
+    buyer, seller, delivered account (in a <pre> block), price, purchase
+    time, warranty, days used/remaining, max refund, status."""
+    product = order.product
+    product_name = _product_display_name(product, lang)
+
+    buyer = order.telegram_user_id
+    user = order.user
+    if user and (user.first_name or user.username):
+        buyer_display = " ".join(filter(None, [user.first_name, user.last_name])) or (user.username or buyer)
+        buyer = f"{buyer_display} ({order.telegram_user_id})"
+
+    seller = "—"
+    if product:
+        src = next(
+            (s for s in getattr(product, "sources", []) or []
+             if s.api_product and s.api_product.external_seller), None,
+        )
+        if src:
+            seller = src.api_product.external_seller
+
+    account_text = _order_account_text(order)
+    account_block = (
+        f"<pre>{html.escape(account_text)}</pre>" if account_text else t(lang, "order_detail_no_account")
+    )
+
+    if lang == "vi":
+        price_str = f"{format_vnd(order.total_price)}đ"
+    else:
+        from services.normalize import format_usdt
+        usdt_total = (product.price_usdt * order.quantity) if product else None
+        if usdt_total is None:
+            from services.exchange_rate_service import get_exchange_config
+            from services.normalize import compute_price_usdt
+            rate = float(get_exchange_config(db).get("fixed_rate") or 26500.0)
+            usdt_total = compute_price_usdt(order.total_price, rate)
+        price_str = f"{format_usdt(usdt_total)} USDT"
+
+    result = refund_service.compute_refund(order)
+    warranty_label = (product.warranty if product and product.warranty else "—")
+    refund_amount_str = (
+        f"{format_vnd(result['amount'])}đ" if result["currency"] == WalletCurrency.VND
+        else f"{result['amount']:.4f} USDT"
+    )
+    if result["already_refunded"]:
+        refund_amount_str = t(lang, "refund_already_done")
+
+    sv = order.status.value if hasattr(order.status, "value") else order.status
+    purchase_time = order.paid_at or order.created_at
+
+    lines = [
+        t(lang, "order_detail_title"),
+        "",
+        t(lang, "order_detail_code", code=order.order_code),
+        t(lang, "order_detail_product", product=html.escape(product_name)),
+        t(lang, "order_detail_buyer", buyer=html.escape(str(buyer))),
+        t(lang, "order_detail_seller", seller=html.escape(str(seller))),
+        t(lang, "order_detail_account"),
+        account_block,
+        t(lang, "order_detail_price", price=price_str),
+        t(lang, "order_detail_purchase_time", time=purchase_time.strftime("%d/%m/%Y %H:%M")),
+        t(lang, "order_detail_warranty", warranty=html.escape(str(warranty_label))),
+        t(lang, "order_detail_days_used", days=result["used_days"]),
+        t(lang, "order_detail_days_remaining", days=result["remaining_days"]),
+        t(lang, "order_detail_max_refund", amount=refund_amount_str),
+        t(lang, "order_detail_status", status=_status_label(sv, lang)),
+    ]
+    return "\n".join(lines)
 
 
 async def _send_wallet_menu(bot_or_query, chat_id_or_none, db, tg_user, lang: str, edit=False):
@@ -1112,6 +1188,7 @@ async def _do_create_order(context, db, tg_user, product_id: int, quantity: int,
     total = product.sale_price * quantity
 
     from models import Order, OrderStatus, PaymentStatus
+    from services.warranty import parse_warranty_to_days
     order = Order(
         order_code=order_code,
         telegram_user_id=str(tg_user.id),
@@ -1128,6 +1205,7 @@ async def _do_create_order(context, db, tg_user, product_id: int, quantity: int,
         payment_chat_id=tg_user.id,
         product_message_id=context.user_data.get("product_message_id"),
         quantity_prompt_message_id=context.user_data.get("quantity_prompt_message_id"),
+        warranty_days=parse_warranty_to_days(product.warranty),
     )
     db.add(order)
     db.commit()
@@ -1587,29 +1665,159 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             tg_user = update.effective_user
             lang = _get_lang(db, tg_user.id)
-            orders = (
-                db.query(Order)
-                .filter(Order.telegram_user_id == str(tg_user.id))
-                .order_by(Order.created_at.desc())
-                .limit(10)
-                .all()
-            )
-            if not orders:
-                text = t(lang, "orders_empty")
-            else:
-                lines = [t(lang, "orders_title")]
-                for o in orders:
-                    sv = o.status.value if hasattr(o.status, "value") else o.status
-                    st = _status_label(sv, lang)
-                    lines.append(
-                        f"• <code>{o.order_code}</code> — {st}\n"
-                        f"  💰 {format_vnd(o.total_price)}đ | {o.created_at.strftime('%d/%m/%Y')}"
-                    )
-                text = "\n".join(lines)
+            context.user_data.clear()
+            context.user_data["state"] = "waiting_order_search"
             try:
-                await query.message.reply_text(text, parse_mode="HTML")
+                await query.message.reply_text(t(lang, "order_search_prompt"))
             except Exception:
+                await context.bot.send_message(chat_id=tg_user.id, text=t(lang, "order_search_prompt"))
+        finally:
+            db.close()
+        return
+
+    # ── order_pick: single order chosen from a multi-match search list ──
+    if data.startswith("order_pick:"):
+        order_id = int(data.split(":")[1])
+        db = SessionLocal()
+        try:
+            tg_user = update.effective_user
+            lang = _get_lang(db, tg_user.id)
+            admin_id = _get_admin_id(db)
+            is_admin = str(tg_user.id) == str(admin_id)
+            order = db.query(Order).filter(Order.id == order_id).first()
+            if not order or (not is_admin and str(order.telegram_user_id) != str(tg_user.id)):
+                await query.answer(t(lang, "order_not_found"), show_alert=True)
+                return
+            text = await _render_order_detail_text(db, order, lang)
+            try:
+                await query.message.edit_text(text, parse_mode="HTML",
+                                               reply_markup=order_detail_keyboard(order.id, lang=lang))
+            except Exception:
+                await context.bot.send_message(chat_id=tg_user.id, text=text, parse_mode="HTML",
+                                                reply_markup=order_detail_keyboard(order.id, lang=lang))
+        finally:
+            db.close()
+        return
+
+    # ── report_issue: "⚠️ Báo lỗi" tapped on an order detail screen ──
+    if data.startswith("report_issue:"):
+        order_id = int(data.split(":")[1])
+        db = SessionLocal()
+        try:
+            tg_user = update.effective_user
+            lang = _get_lang(db, tg_user.id)
+            order = db.query(Order).filter(Order.id == order_id).first()
+            admin_id = _get_admin_id(db)
+            is_admin = str(tg_user.id) == str(admin_id)
+            if not order or (not is_admin and str(order.telegram_user_id) != str(tg_user.id)):
+                await query.answer(t(lang, "order_not_found"), show_alert=True)
+                return
+            context.user_data.clear()
+            context.user_data["state"] = "waiting_issue_text"
+            context.user_data["issue_order_id"] = order_id
+            try:
+                await context.bot.send_message(chat_id=tg_user.id, text=t(lang, "issue_report_prompt"))
+            except Exception:
+                pass
+        finally:
+            db.close()
+        return
+
+    # ── admin_issue_*: admin actions on a reported issue ──
+    if data.startswith("admin_issue_"):
+        db = SessionLocal()
+        try:
+            tg_user = update.effective_user
+            lang = _get_lang(db, tg_user.id)
+            admin_id = _get_admin_id(db)
+            if str(tg_user.id) != str(admin_id):
+                await query.answer(t(lang, "refund_not_authorized"), show_alert=True)
+                return
+
+            action, issue_id_str = data.rsplit(":", 1)
+            issue_id = int(issue_id_str)
+            issue = db.query(OrderIssue).filter(OrderIssue.id == issue_id).first()
+            if not issue:
+                await query.answer(t(lang, "issue_not_found"), show_alert=True)
+                return
+            order = db.query(Order).filter(Order.id == issue.order_id).first()
+
+            if action == "admin_issue_view":
+                text = await _render_order_detail_text(db, order, "vi")
                 await context.bot.send_message(chat_id=tg_user.id, text=text, parse_mode="HTML")
+                await query.answer()
+                return
+
+            if action == "admin_issue_reply":
+                if issue.status != IssueStatus.open and issue.status != IssueStatus.reviewing:
+                    await query.answer(t(lang, "issue_already_handled"), show_alert=True)
+                    return
+                context.user_data.clear()
+                context.user_data["state"] = "waiting_admin_reply"
+                context.user_data["admin_issue_id"] = issue_id
+                await context.bot.send_message(chat_id=tg_user.id, text=t(lang, "issue_reply_prompt"))
+                await query.answer()
+                return
+
+            if action == "admin_issue_reject":
+                if issue.status != IssueStatus.open and issue.status != IssueStatus.reviewing:
+                    await query.answer(t(lang, "issue_already_handled"), show_alert=True)
+                    return
+                context.user_data.clear()
+                context.user_data["state"] = "waiting_admin_reject_reason"
+                context.user_data["admin_issue_id"] = issue_id
+                await context.bot.send_message(chat_id=tg_user.id, text=t(lang, "issue_reject_prompt"))
+                await query.answer()
+                return
+
+            if action == "admin_issue_resolve":
+                if issue.status not in (IssueStatus.open, IssueStatus.reviewing):
+                    await query.answer(t(lang, "issue_already_handled"), show_alert=True)
+                    return
+                issue.status = IssueStatus.resolved
+                issue.handled_by = str(tg_user.id)
+                issue.handled_at = datetime.utcnow()
+                db.commit()
+                await query.answer(t(lang, "issue_resolved_admin", id=issue.id), show_alert=True)
+                return
+
+            if action == "admin_issue_refund":
+                if issue.status == IssueStatus.refunded:
+                    await query.answer(t(lang, "refund_already_done"), show_alert=True)
+                    return
+                if issue.status not in (IssueStatus.open, IssueStatus.reviewing):
+                    await query.answer(t(lang, "issue_already_handled"), show_alert=True)
+                    return
+                try:
+                    result = refund_service.perform_refund(db, issue, order, str(tg_user.id))
+                except AlreadyProcessedError:
+                    await query.answer(t(lang, "refund_already_done"), show_alert=True)
+                    return
+                except Exception as e:
+                    logger.error(f"[admin_issue_refund] issue={issue_id} error: {e}")
+                    await query.answer(t(lang, "issue_report_error"), show_alert=True)
+                    return
+
+                if result["amount"] <= 0:
+                    await query.answer(t(lang, "refund_warranty_expired"), show_alert=True)
+                    return
+
+                amount_str = (
+                    f"{format_vnd(result['amount'])}đ" if result["currency"] == WalletCurrency.VND
+                    else f"{result['amount']:.4f} USDT"
+                )
+                await query.answer(t(lang, "refund_success_admin", amount=amount_str, code=order.order_code),
+                                    show_alert=True)
+                try:
+                    buyer_lang = _get_lang(db, order.telegram_user_id)
+                    await context.bot.send_message(
+                        chat_id=int(order.payment_chat_id or order.telegram_user_id),
+                        text=t(buyer_lang, "refund_success_user", code=order.order_code, amount=amount_str),
+                        parse_mode="HTML",
+                    )
+                except Exception as e:
+                    logger.error(f"[admin_issue_refund] notify user failed: {e}")
+                return
         finally:
             db.close()
         return
@@ -2350,6 +2558,87 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ── Message handler ────────────────────────────────────────────────────────────
 
+async def _create_and_notify_issue(context, db, order, tg_user, issue_text: str = None,
+                                    media_type: str = None, telegram_file_id: str = None) -> "OrderIssue":
+    """Shared by the text-only and media issue-report flows: saves the
+    order_issues row, precomputes the max refund for the admin's reference,
+    and DMs the admin immediately with the full detail + action keyboard."""
+    result = refund_service.compute_refund(order)
+    issue = OrderIssue(
+        order_id=order.id,
+        telegram_user_id=str(tg_user.id),
+        telegram_chat_id=str(tg_user.id),
+        issue_text=issue_text or None,
+        media_type=media_type,
+        telegram_file_id=telegram_file_id,
+        status=IssueStatus.open,
+        calculated_refund_amount=result["amount"],
+        calculated_refund_currency=result["currency"],
+    )
+    db.add(issue)
+    db.commit()
+    db.refresh(issue)
+
+    admin_id = _get_admin_id(db)
+    if admin_id:
+        from bot.notifier import notify_admin_new_issue
+        try:
+            await notify_admin_new_issue(
+                context.bot, order, issue, admin_id,
+                admin_keyboard=admin_issue_keyboard(issue.id, lang="vi"),
+            )
+        except Exception as e:
+            logger.error(f"[_create_and_notify_issue] admin notify failed: {e}")
+    return issue
+
+
+async def media_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Photo/video/document capture for the "⚠️ Báo lỗi" flow. Only acts when
+    the user is mid-report (state == waiting_issue_text); otherwise ignores
+    the media silently so it never interferes with unrelated flows.
+    """
+    state = context.user_data.get("state")
+    if state != "waiting_issue_text":
+        return
+
+    order_id = context.user_data.get("issue_order_id")
+    msg = update.message
+    media_type, file_id = None, None
+    if msg.photo:
+        media_type, file_id = "photo", msg.photo[-1].file_id
+    elif msg.video:
+        media_type, file_id = "video", msg.video.file_id
+    elif msg.document:
+        media_type, file_id = "document", msg.document.file_id
+    else:
+        return
+
+    context.user_data.clear()
+    db = SessionLocal()
+    try:
+        lang = _get_lang(db, update.effective_user.id)
+        tg_user = update.effective_user
+        order = db.query(Order).filter(Order.id == order_id).first()
+        if not order:
+            await msg.reply_text(t(lang, "order_not_found"))
+            return
+        caption = (msg.caption or "").strip() or None
+        await _create_and_notify_issue(
+            context, db, order, tg_user, issue_text=caption,
+            media_type=media_type, telegram_file_id=file_id,
+        )
+        await msg.reply_text(t(lang, "issue_report_saved"))
+    except Exception as e:
+        logger.error(f"[media_message_handler] error: {e}")
+        try:
+            await msg.reply_text(t(_get_lang(db, update.effective_user.id), "issue_report_error"))
+        except Exception:
+            pass
+    finally:
+        db.close()
+
+
 async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     state = context.user_data.get("state")
     db = SessionLocal()
@@ -2554,6 +2843,127 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if reason not in ("already_paid", "order_not_pending", "unsupported_network"):
                 context.user_data["state"] = "waiting_txid"
                 context.user_data["txid_order_id"] = order_id
+        finally:
+            db.close()
+        return
+
+    if state == "waiting_order_search":
+        raw = (update.message.text or "").strip()
+        context.user_data.pop("state", None)
+        if not raw:
+            await update.message.reply_text(t(lang, "order_search_invalid"))
+            return
+        db = SessionLocal()
+        try:
+            tg_user = update.effective_user
+            admin_id = _get_admin_id(db)
+            is_admin = str(tg_user.id) == str(admin_id)
+            orders = find_orders(db, raw, telegram_user_id=str(tg_user.id), is_admin=is_admin)
+            if not orders:
+                await update.message.reply_text(t(lang, "order_search_not_found"))
+                return
+            if len(orders) == 1:
+                order = orders[0]
+                text = await _render_order_detail_text(db, order, lang)
+                await update.message.reply_text(
+                    text, parse_mode="HTML",
+                    reply_markup=order_detail_keyboard(order.id, lang=lang),
+                )
+            else:
+                await update.message.reply_text(
+                    t(lang, "order_search_pick_title", count=len(orders)), parse_mode="HTML",
+                    reply_markup=order_search_list_keyboard(orders, lang=lang),
+                )
+        finally:
+            db.close()
+        return
+
+    if state == "waiting_issue_text":
+        order_id = context.user_data.get("issue_order_id")
+        issue_text = (update.message.text or "").strip()
+        context.user_data.clear()
+        db = SessionLocal()
+        try:
+            tg_user = update.effective_user
+            order = db.query(Order).filter(Order.id == order_id).first()
+            if not order:
+                await update.message.reply_text(t(lang, "order_not_found"))
+                return
+            await _create_and_notify_issue(
+                context, db, order, tg_user, issue_text=issue_text, media_type=None, telegram_file_id=None,
+            )
+            await update.message.reply_text(t(lang, "issue_report_saved"))
+        except Exception as e:
+            logger.error(f"[waiting_issue_text] error: {e}")
+            await update.message.reply_text(t(lang, "issue_report_error"))
+        finally:
+            db.close()
+        return
+
+    if state == "waiting_admin_reply":
+        issue_id = context.user_data.get("admin_issue_id")
+        reply_text = (update.message.text or "").strip()
+        context.user_data.clear()
+        db = SessionLocal()
+        try:
+            tg_user = update.effective_user
+            admin_id = _get_admin_id(db)
+            if str(tg_user.id) != str(admin_id):
+                return
+            issue = db.query(OrderIssue).filter(OrderIssue.id == issue_id).first()
+            if not issue:
+                await update.message.reply_text(t("vi", "issue_not_found"))
+                return
+            order = db.query(Order).filter(Order.id == issue.order_id).first()
+            if issue.status == IssueStatus.open:
+                issue.status = IssueStatus.reviewing
+                db.commit()
+            try:
+                buyer_lang = _get_lang(db, issue.telegram_user_id)
+                await context.bot.send_message(
+                    chat_id=int(issue.telegram_chat_id or issue.telegram_user_id),
+                    text=t(buyer_lang, "issue_reply_received", code=order.order_code if order else "—",
+                           text=html.escape(reply_text)),
+                    parse_mode="HTML",
+                )
+                await update.message.reply_text(t("vi", "issue_reply_sent"))
+            except Exception as e:
+                logger.error(f"[waiting_admin_reply] send failed: {e}")
+        finally:
+            db.close()
+        return
+
+    if state == "waiting_admin_reject_reason":
+        issue_id = context.user_data.get("admin_issue_id")
+        reason = (update.message.text or "").strip()
+        context.user_data.clear()
+        db = SessionLocal()
+        try:
+            tg_user = update.effective_user
+            admin_id = _get_admin_id(db)
+            if str(tg_user.id) != str(admin_id):
+                return
+            issue = db.query(OrderIssue).filter(OrderIssue.id == issue_id).first()
+            if not issue or issue.status not in (IssueStatus.open, IssueStatus.reviewing):
+                await update.message.reply_text(t("vi", "issue_already_handled"))
+                return
+            order = db.query(Order).filter(Order.id == issue.order_id).first()
+            issue.status = IssueStatus.rejected
+            issue.handled_by = str(tg_user.id)
+            issue.handled_at = datetime.utcnow()
+            issue.resolution_note = reason
+            db.commit()
+            await update.message.reply_text(t("vi", "issue_rejected_admin", id=issue.id))
+            try:
+                buyer_lang = _get_lang(db, issue.telegram_user_id)
+                await context.bot.send_message(
+                    chat_id=int(issue.telegram_chat_id or issue.telegram_user_id),
+                    text=t(buyer_lang, "issue_rejected_user", code=order.order_code if order else "—",
+                           reason=html.escape(reason)),
+                    parse_mode="HTML",
+                )
+            except Exception as e:
+                logger.error(f"[waiting_admin_reject_reason] notify failed: {e}")
         finally:
             db.close()
         return

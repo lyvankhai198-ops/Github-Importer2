@@ -80,6 +80,7 @@ async def create_order(
     order_code = _generate_order_code()
     total = product.sale_price * quantity
 
+    from services.warranty import parse_warranty_to_days
     order = Order(
         order_code=order_code,
         telegram_user_id=telegram_user_id,
@@ -88,6 +89,7 @@ async def create_order(
         unit_price=product.sale_price,
         total_price=total,
         status=OrderStatus.pending_manual,
+        warranty_days=parse_warranty_to_days(product.warranty),
     )
     db.add(order)
     db.commit()

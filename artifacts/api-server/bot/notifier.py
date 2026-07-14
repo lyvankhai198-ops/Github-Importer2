@@ -407,6 +407,47 @@ async def notify_user_wallet_refund(bot, chat_id: str, order: Order, lang: str =
         logger.error(f"notify_user_wallet_refund error: {e}")
 
 
+# ── Order issue reports ─────────────────────────────────────────────────────
+
+async def notify_admin_new_issue(bot, order: Order, issue, admin_telegram_id: str, admin_keyboard=None):
+    """Admin: a shopper reported a problem with a delivered order — full
+    detail + any attached media + the action keyboard (view/reply/refund/
+    reject/resolve), sent immediately."""
+    if not admin_telegram_id:
+        return
+    try:
+        product_name = order.product.name if order.product else str(order.product_id)
+        refund_str = (
+            f"{format_vnd(issue.calculated_refund_amount)}đ"
+            if issue.calculated_refund_currency and issue.calculated_refund_currency.value == "VND"
+            else f"{issue.calculated_refund_amount:.4f} USDT" if issue.calculated_refund_amount is not None
+            else "—"
+        )
+        text = (
+            f"⚠️ <b>BÁO LỖI ĐƠN HÀNG MỚI!</b>\n\n"
+            f"🆔 Issue: <code>#{issue.id}</code>\n"
+            f"📋 Mã đơn: <code>{order.order_code}</code>\n"
+            f"👤 User: <code>{order.telegram_user_id}</code>\n"
+            f"📦 Sản phẩm: {html.escape(product_name)}\n"
+            f"💰 Hoàn tiền tối đa (ước tính): {refund_str}\n\n"
+            f"📝 Nội dung:\n{html.escape(issue.issue_text) if issue.issue_text else '(không có văn bản, xem media)'}"
+        )
+        if issue.media_type == "photo" and issue.telegram_file_id:
+            await bot.send_photo(chat_id=int(admin_telegram_id), photo=issue.telegram_file_id,
+                                  caption=text, parse_mode="HTML", reply_markup=admin_keyboard)
+        elif issue.media_type == "video" and issue.telegram_file_id:
+            await bot.send_video(chat_id=int(admin_telegram_id), video=issue.telegram_file_id,
+                                  caption=text, parse_mode="HTML", reply_markup=admin_keyboard)
+        elif issue.media_type == "document" and issue.telegram_file_id:
+            await bot.send_document(chat_id=int(admin_telegram_id), document=issue.telegram_file_id,
+                                     caption=text, parse_mode="HTML", reply_markup=admin_keyboard)
+        else:
+            await bot.send_message(chat_id=int(admin_telegram_id), text=text, parse_mode="HTML",
+                                    reply_markup=admin_keyboard)
+    except Exception as e:
+        logger.error(f"notify_admin_new_issue error: {e}")
+
+
 async def notify_admin_wallet_deposit_request(bot, deposit, admin_telegram_id: str):
     """Admin: shopper submitted a new wallet deposit request awaiting confirmation."""
     if not admin_telegram_id:

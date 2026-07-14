@@ -223,6 +223,7 @@ async def create_api_order(client: ApiClient, product_id: int, quantity: int,
         total = round(unit_price * quantity, 2 if currency == "USDT" else 0)
 
         from services.order_service import _generate_order_code
+        from services.warranty import parse_warranty_to_days
         order = Order(
             order_code=_generate_order_code(),
             telegram_user_id=client.telegram_user_id,
@@ -238,6 +239,7 @@ async def create_api_order(client: ApiClient, product_id: int, quantity: int,
             payment_currency=currency,
             api_client_id=client.id,
             client_order_id=client_order_id,
+            warranty_days=parse_warranty_to_days(product.warranty),
         )
         db.add(order)
         try:

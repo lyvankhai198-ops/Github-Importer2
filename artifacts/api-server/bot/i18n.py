@@ -8,7 +8,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "vi": {
         # ── Menu ──────────────────────────────────────────────────────────────
         "menu_products": "🛍 Sản phẩm",
-        "menu_orders": "📦 Đơn hàng",
+        "menu_orders": "🔍 Tìm đơn hàng",
         "menu_language": "🌐 Ngôn ngữ",
         "menu_support": "💬 Hỗ trợ",
         "menu_btn_account": "👤 Thông tin",
@@ -154,6 +154,47 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         # ── Delivery / orders ─────────────────────────────────────────────────
         "orders_title": "📦 <b>Đơn hàng gần đây:</b>\n",
         "orders_empty": "Bạn chưa có đơn hàng nào.",
+        # ── Order search ──────────────────────────────────────────────────────
+        "order_search_prompt": "📧 Nhập email hoặc tài khoản đã mua để tìm đơn hàng:",
+        "order_search_not_found": "❌ Không tìm thấy đơn hàng nào khớp với thông tin bạn nhập.",
+        "order_search_pick_title": "🔍 <b>Tìm thấy {count} đơn hàng khớp:</b>",
+        "order_search_invalid": "⚠️ Vui lòng nhập email hoặc tài khoản hợp lệ.",
+        "order_detail_title": "📋 <b>CHI TIẾT ĐƠN HÀNG</b>",
+        "order_detail_code": "🆔 Mã đơn: <code>{code}</code>",
+        "order_detail_product": "📦 Sản phẩm: {product}",
+        "order_detail_buyer": "👤 Người mua: <code>{buyer}</code>",
+        "order_detail_seller": "🏪 Người bán: {seller}",
+        "order_detail_account": "🔑 Tài khoản đã giao:",
+        "order_detail_price": "💰 Giá: {price}",
+        "order_detail_purchase_time": "📅 Thời gian mua: {time}",
+        "order_detail_warranty": "🛡 Bảo hành: {warranty}",
+        "order_detail_days_used": "📆 Đã dùng: {days} ngày",
+        "order_detail_days_remaining": "⏳ Còn lại: {days} ngày",
+        "order_detail_max_refund": "💵 Hoàn tiền tối đa: {amount}",
+        "order_detail_status": "📊 Trạng thái: {status}",
+        "order_detail_no_account": "(chưa có tài khoản được giao)",
+        "btn_report_issue": "⚠️ Báo lỗi",
+        # ── Issue reporting ───────────────────────────────────────────────────
+        "issue_report_prompt": "📝 Vui lòng mô tả lỗi bạn gặp phải (có thể gửi kèm ảnh/video/tệp):",
+        "issue_report_saved": "✅ Đã gửi báo lỗi tới admin. Vui lòng chờ phản hồi.",
+        "issue_report_error": "⚠️ Không thể gửi báo lỗi, vui lòng thử lại.",
+        "issue_reply_prompt": "💬 Nhập nội dung trả lời cho khách hàng:",
+        "issue_reply_sent": "✅ Đã gửi trả lời tới khách hàng.",
+        "issue_reply_received": "💬 <b>Phản hồi từ admin về đơn <code>{code}</code>:</b>\n\n{text}",
+        "issue_reject_prompt": "❌ Nhập lý do từ chối:",
+        "issue_rejected_admin": "❌ Đã từ chối báo lỗi #{id}.",
+        "issue_rejected_user": "❌ <b>Báo lỗi đơn <code>{code}</code> đã bị từ chối.</b>\n\nLý do: {reason}",
+        "issue_resolved_admin": "✅ Đã đánh dấu báo lỗi #{id} là đã xử lý.",
+        "issue_already_handled": "⚠️ Báo lỗi này đã được xử lý trước đó.",
+        "issue_not_found": "⚠️ Không tìm thấy báo lỗi.",
+        "refund_success_admin": "✅ Đã hoàn {amount} vào ví của khách cho đơn <code>{code}</code>.",
+        "refund_success_user": (
+            "💰 <b>Đơn hàng <code>{code}</code> đã được hoàn tiền!</b>\n\n"
+            "Số tiền: <b>{amount}</b> đã được cộng vào ví của bạn."
+        ),
+        "refund_already_done": "⚠️ Đơn hàng này đã được hoàn tiền trước đó.",
+        "refund_warranty_expired": "⚠️ Đơn hàng đã hết thời gian bảo hành, không thể hoàn tiền.",
+        "refund_not_authorized": "🚫 Bạn không có quyền thực hiện thao tác này.",
         "support_contact": "💬 Liên hệ hỗ trợ: @{username}",
         "support_contact_admin": "💬 Vui lòng liên hệ quản trị viên để được hỗ trợ.",
         # ── Paid waiting stock ────────────────────────────────────────────────
@@ -361,7 +402,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "en": {
         # ── Menu ──────────────────────────────────────────────────────────────
         "menu_products": "🛍 Products",
-        "menu_orders": "📦 Orders",
+        "menu_orders": "🔍 Find order",
         "menu_language": "🌐 Language",
         "menu_support": "💬 Support",
         "menu_btn_account": "👤 Account",
@@ -507,6 +548,47 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         # ── Delivery / orders ─────────────────────────────────────────────────
         "orders_title": "📦 <b>Recent orders:</b>\n",
         "orders_empty": "You have no orders yet.",
+        # ── Order search ──────────────────────────────────────────────────────
+        "order_search_prompt": "📧 Enter the email or purchased account to find your order:",
+        "order_search_not_found": "❌ No order found matching what you entered.",
+        "order_search_pick_title": "🔍 <b>Found {count} matching orders:</b>",
+        "order_search_invalid": "⚠️ Please enter a valid email or account.",
+        "order_detail_title": "📋 <b>ORDER DETAIL</b>",
+        "order_detail_code": "🆔 Order: <code>{code}</code>",
+        "order_detail_product": "📦 Product: {product}",
+        "order_detail_buyer": "👤 Buyer: <code>{buyer}</code>",
+        "order_detail_seller": "🏪 Seller: {seller}",
+        "order_detail_account": "🔑 Delivered account:",
+        "order_detail_price": "💰 Price: {price}",
+        "order_detail_purchase_time": "📅 Purchase time: {time}",
+        "order_detail_warranty": "🛡 Warranty: {warranty}",
+        "order_detail_days_used": "📆 Used: {days} days",
+        "order_detail_days_remaining": "⏳ Remaining: {days} days",
+        "order_detail_max_refund": "💵 Max refund: {amount}",
+        "order_detail_status": "📊 Status: {status}",
+        "order_detail_no_account": "(no account delivered yet)",
+        "btn_report_issue": "⚠️ Report issue",
+        # ── Issue reporting ───────────────────────────────────────────────────
+        "issue_report_prompt": "📝 Please describe the issue (you can attach a photo/video/file):",
+        "issue_report_saved": "✅ Your report was sent to the admin. Please wait for a reply.",
+        "issue_report_error": "⚠️ Could not send the report, please try again.",
+        "issue_reply_prompt": "💬 Enter the reply to send to the customer:",
+        "issue_reply_sent": "✅ Reply sent to the customer.",
+        "issue_reply_received": "💬 <b>Admin reply about order <code>{code}</code>:</b>\n\n{text}",
+        "issue_reject_prompt": "❌ Enter the rejection reason:",
+        "issue_rejected_admin": "❌ Issue #{id} rejected.",
+        "issue_rejected_user": "❌ <b>Your report for order <code>{code}</code> was rejected.</b>\n\nReason: {reason}",
+        "issue_resolved_admin": "✅ Issue #{id} marked as resolved.",
+        "issue_already_handled": "⚠️ This issue was already handled.",
+        "issue_not_found": "⚠️ Issue not found.",
+        "refund_success_admin": "✅ Refunded {amount} to the customer's wallet for order <code>{code}</code>.",
+        "refund_success_user": (
+            "💰 <b>Order <code>{code}</code> was refunded!</b>\n\n"
+            "Amount: <b>{amount}</b> was credited to your wallet."
+        ),
+        "refund_already_done": "⚠️ This order was already refunded.",
+        "refund_warranty_expired": "⚠️ The order's warranty has expired — no refund available.",
+        "refund_not_authorized": "🚫 You are not authorized to perform this action.",
         "support_contact": "💬 Contact support: @{username}",
         "support_contact_admin": "💬 Please contact the administrator for support.",
         # ── Paid waiting stock ────────────────────────────────────────────────

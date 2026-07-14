@@ -102,6 +102,14 @@ class ApiClientStatus(str, enum.Enum):
     revoked = "revoked"  # permanently disabled (regenerate needed to use again)
 
 
+class IssueStatus(str, enum.Enum):
+    open = "open"            # just reported, not yet looked at
+    reviewing = "reviewing"  # admin is actively looking into it
+    refunded = "refunded"    # admin refunded the order to the buyer's wallet — terminal
+    rejected = "rejected"    # admin rejected the report with a reason — terminal
+    resolved = "resolved"    # admin marked it handled without a refund — terminal
+
+
 def now():
     return datetime.utcnow()
 
@@ -443,6 +451,18 @@ class Order(Base):
     # since SQLite can't add one via ALTER TABLE on an existing table.
     api_client_id = Column(Integer, ForeignKey("api_clients.id"), nullable=True)
     client_order_id = Column(String(200), nullable=True)
+    # ── Warranty / issue-refund fields ──────────────────────────────────────────
+    # Snapshot of the product's warranty length (in days) taken at the moment
+    # this order was created. Refund calculations must always use this value
+    # (never the product's *current* warranty), since an admin may edit the
+    # product's warranty text after this order shipped.
+    warranty_days = Column(Integer, nullable=True)
+    # Set once an admin approves a "💰 Hoàn tiền về ví" refund for an
+    # order_issues report on this order. refunded_amount > 0 is the guard
+    # that prevents a second refund of the same order.
+    refunded_amount = Column(Float, nullable=True, default=0.0)
+    refunded_at = Column(DateTime, nullable=True)
+    refunded_by = Column(String(100), nullable=True)   # admin username/telegram id
     # ─────────────────────────────────────────────────────────────────────────
     created_at = Column(DateTime, default=now)
     updated_at = Column(DateTime, default=now, onupdate=now)
@@ -646,6 +666,37 @@ class OrderSourceAttempt(Base):
 
     order = relationship("Order", back_populates="source_attempts")
     product_source = relationship("ProductSource", back_populates="order_attempts")
+
+
+class OrderIssue(Base):
+    """
+    A shopper's "⚠️ Báo lỗi" report against a delivered order, sent straight
+    to the admin for review (view order / reply / refund to wallet / reject
+    / mark resolved). `telegram_user_id` mirrors Order.telegram_user_id (the
+    reporter — normally the order's buyer) rather than users.id, to match
+    the rest of the schema's telegram-id-keyed convention.
+    """
+    __tablename__ = "order_issues"
+    id = Column(Integer, primary_key=True, index=True)
+    order_id = Column(Integer, ForeignKey("orders.id"), nullable=False, index=True)
+    telegram_user_id = Column(String(50), ForeignKey("users.telegram_id"), nullable=False, index=True)
+    telegram_chat_id = Column(String(50), nullable=True)
+    issue_text = Column(Text, nullable=True)
+    media_type = Column(String(20), nullable=True)         # photo | video | document | None
+    telegram_file_id = Column(String(300), nullable=True)
+    status = Column(SAEnum(IssueStatus), default=IssueStatus.open, nullable=False)
+    # Refund pre-computed at report time for the admin's reference; the
+    # actual refund action always RE-computes the amount at click time
+    # (warranty keeps ticking down between report and admin action).
+    calculated_refund_amount = Column(Float, nullable=True)
+    calculated_refund_currency = Column(SAEnum(WalletCurrency), nullable=True)
+    created_at = Column(DateTime, default=now)
+    handled_by = Column(String(100), nullable=True)
+    handled_at = Column(DateTime, nullable=True)
+    resolution_note = Column(Text, nullable=True)
+
+    order = relationship("Order")
+    user = relationship("User", foreign_keys=[telegram_user_id])
 
 
 class ActivityLog(Base):
