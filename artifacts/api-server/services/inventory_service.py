@@ -41,15 +41,19 @@ def parse_bulk_accounts(raw_text: str) -> dict:
     if not raw_text:
         return {"valid": [], "duplicates": 0, "errors": 0, "total_lines": 0}
 
-    lines = [l.strip() for l in raw_text.replace("\r\n", "\n").replace("\r", "\n").split("\n")]
-    lines = [l for l in lines if l]
+    raw_lines = raw_text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    # Keep 1-based line numbers relative to the original pasted text (including
+    # blank lines) so error reporting matches what the admin sees in the textarea.
+    numbered = [(i + 1, l.strip()) for i, l in enumerate(raw_lines)]
+    numbered = [(n, l) for n, l in numbered if l]
 
     seen = set()
     valid = []
     duplicates = 0
     errors = 0
+    error_lines = []
 
-    for line in lines:
+    for line_no, line in numbered:
         if line in seen:
             duplicates += 1
             continue
@@ -58,6 +62,11 @@ def parse_bulk_accounts(raw_text: str) -> dict:
         parsed = _parse_account_line(line)
         if parsed is None:
             errors += 1
+            error_lines.append({
+                "line_no": line_no,
+                "content": line[:80],
+                "reason": "Không nhận dạng được định dạng (dòng trống hoặc thiếu dữ liệu)",
+            })
             continue
         valid.append(parsed)
 
@@ -65,7 +74,8 @@ def parse_bulk_accounts(raw_text: str) -> dict:
         "valid": valid,
         "duplicates": duplicates,
         "errors": errors,
-        "total_lines": len(lines),
+        "error_lines": error_lines,
+        "total_lines": len(numbered),
     }
 
 

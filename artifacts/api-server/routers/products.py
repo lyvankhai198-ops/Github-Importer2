@@ -45,9 +45,16 @@ def flash(request: Request, msg: str, type: str = "success"):
 
 
 @router.get("/products", response_class=HTMLResponse)
-async def products_list(request: Request, db: Session = Depends(get_db), search: str = "", source_type: str = "", is_active: str = "", page: int = 1):
+async def products_list(
+    request: Request, db: Session = Depends(get_db),
+    search: str = "", source_type: str = "", is_active: str = "",
+    brand: str = "", stock: str = "", page: int = 1,
+):
     if not check_auth(request):
         return RedirectResponse(url="/login", status_code=302)
+    from services.inventory_service import get_available_count
+    from services.normalize import compute_brand_key
+
     q = db.query(Product)
     if search:
         q = q.filter(Product.name.ilike(f"%{search}%") | Product.product_code.ilike(f"%{search}%"))
@@ -55,13 +62,32 @@ async def products_list(request: Request, db: Session = Depends(get_db), search:
         q = q.filter(Product.source_type == source_type)
     if is_active:
         q = q.filter(Product.is_active == (is_active == "true"))
-    total = q.count()
-    per_page = 20
-    products = q.order_by(Product.created_at.desc()).offset((page - 1) * per_page).limit(per_page).all()
 
-    from services.inventory_service import get_available_count
-    for p in products:
-        p.stock_available = get_available_count(db, p.id) if p.delivery_mode == DeliveryMode.manual_stock else None
+    # brand/stock filters depend on values computed in Python (brand grouping
+    # key, live inventory count) rather than plain columns, so when either is
+    # active we page in Python after applying them instead of at the SQL level.
+    per_page = 20
+    if brand or stock:
+        all_matching = q.order_by(Product.created_at.desc()).all()
+        for p in all_matching:
+            p.stock_available = get_available_count(db, p.id) if p.delivery_mode == DeliveryMode.manual_stock else None
+        if brand:
+            all_matching = [p for p in all_matching if compute_brand_key(p.name) == brand]
+        if stock == "in":
+            all_matching = [p for p in all_matching if p.delivery_mode != DeliveryMode.manual_stock or (p.stock_available or 0) > 0]
+        elif stock == "out":
+            all_matching = [p for p in all_matching if p.delivery_mode == DeliveryMode.manual_stock and (p.stock_available or 0) <= 0]
+        total = len(all_matching)
+        products = all_matching[(page - 1) * per_page: page * per_page]
+    else:
+        total = q.count()
+        products = q.order_by(Product.created_at.desc()).offset((page - 1) * per_page).limit(per_page).all()
+        for p in products:
+            p.stock_available = get_available_count(db, p.id) if p.delivery_mode == DeliveryMode.manual_stock else None
+
+    # Distinct brand keys across all products (unfiltered) so the brand
+    # dropdown always lists every brand, not just the ones on the current page.
+    brand_keys = sorted({compute_brand_key(p.name) for p in db.query(Product.name).all() if compute_brand_key(p.name)})
 
     api_connections = db.query(ApiConnection).filter(ApiConnection.is_active == True).all()
     flash_msg = request.session.pop("flash", None)
@@ -72,6 +98,9 @@ async def products_list(request: Request, db: Session = Depends(get_db), search:
         "search": search,
         "source_type_filter": source_type,
         "is_active_filter": is_active,
+        "brand_filter": brand,
+        "stock_filter": stock,
+        "brand_keys": brand_keys,
         "page": page,
         "total": total,
         "per_page": per_page,
@@ -536,6 +565,7 @@ async def inventory_preview(product_id: int, request: Request, raw_text: str = F
         "valid_count": len(result["valid"]),
         "duplicates": result["duplicates"],
         "errors": result["errors"],
+        "error_lines": result.get("error_lines", []),
         "total_lines": result["total_lines"],
         "preview": result["valid"][:10],
     })

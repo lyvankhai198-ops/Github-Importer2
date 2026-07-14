@@ -171,7 +171,7 @@
         {% if order.payment_transactions %}
         <hr>
         <h6 class="small text-muted mb-2">Giao dịch SePay liên quan</h6>
-        <div class="table-responsive">
+        <div class="table-responsive d-none d-md-block">
           <table class="table table-sm mb-0 small">
             <thead>
               <tr><th>TX ID</th><th>Số tiền</th><th>Nội dung</th><th>Trạng thái</th><th>Thời gian</th></tr>
@@ -192,6 +192,23 @@
               {% endfor %}
             </tbody>
           </table>
+        </div>
+        <div class="d-md-none">
+          {% for tx in order.payment_transactions %}
+          <div class="mini-card">
+            <div class="d-flex justify-content-between">
+              <code class="small">{{ tx.external_transaction_id[:16] }}{% if tx.external_transaction_id|length > 16 %}…{% endif %}</code>
+              <span class="text-success fw-semibold">+{{ "{:,.0f}".format(tx.amount_in).replace(",", ".") }}đ</span>
+            </div>
+            <div class="small text-muted">{{ (tx.transfer_content or '')[:60] }}</div>
+            <div class="d-flex justify-content-between align-items-center mt-1">
+              <span class="badge {% if tx.match_status == 'matched' %}bg-success{% elif tx.match_status == 'partial' %}bg-warning text-dark{% elif tx.match_status == 'late_payment' %}bg-danger{% else %}bg-secondary{% endif %}">
+                {{ tx.match_status or '—' }}
+              </span>
+              <small class="text-muted">{{ tx.created_at.strftime('%d/%m/%Y %H:%M') if tx.created_at else '—' }}</small>
+            </div>
+          </div>
+          {% endfor %}
         </div>
 
         {# Raw webhook accordion #}
@@ -271,7 +288,7 @@
     {% if order.source_attempts %}
     <div class="card mb-3">
       <div class="card-header"><h6 class="mb-0">🔄 Lịch sử thử nguồn</h6></div>
-      <div class="card-body p-0">
+      <div class="card-body p-0 d-none d-md-block">
         <table class="table table-sm mb-0">
           <thead><tr><th>#</th><th>Nguồn</th><th>Trạng thái</th><th>Mã đơn nguồn</th><th>Lỗi</th></tr></thead>
           <tbody>
@@ -286,6 +303,18 @@
             {% endfor %}
           </tbody>
         </table>
+      </div>
+      <div class="card-body d-md-none">
+        {% for a in order.source_attempts %}
+        <div class="mini-card">
+          <div class="d-flex justify-content-between">
+            <span>#{{ a.attempt_number }} — {{ a.product_source.api_product.connection.name if a.product_source and a.product_source.api_product and a.product_source.api_product.connection else a.product_source_id }}</span>
+            <span class="badge {% if a.status=='success' %}bg-success{% else %}bg-danger{% endif %}">{{ a.status }}</span>
+          </div>
+          <div class="small text-muted">Mã đơn nguồn: <code>{{ a.external_order_id or '—' }}</code></div>
+          {% if a.error_message %}<div class="small text-danger">{{ a.error_message }}</div>{% endif %}
+        </div>
+        {% endfor %}
       </div>
     </div>
     {% endif %}
@@ -312,7 +341,7 @@
     </div>
     {% endif %}
 
-    <div class="card mb-3">
+    <div class="card mb-3" id="statusUpdateCard">
       <div class="card-header"><h6 class="mb-0">🔁 Đổi trạng thái</h6></div>
       <form action="/orders/{{ order.id }}/status" method="post">
         <div class="card-body">
@@ -328,7 +357,7 @@
       </form>
     </div>
 
-    <div class="card mb-3">
+    <div class="card mb-3" id="actionsMoreCard">
       <div class="card-header"><h6 class="mb-0">💬 Gửi tin nhắn cho user</h6></div>
       <form action="/orders/{{ order.id }}/notify" method="post">
         <div class="card-body">
@@ -354,6 +383,15 @@
     </a>
   </div>
 </div>
+
+<!-- Mobile sticky action bar: quick access to the actions above without
+     hunting through the whole page on a small screen. -->
+<div class="mobile-sticky-actionbar d-md-none">
+  <a href="/orders" class="btn btn-outline-secondary"><i class="bi bi-x-lg"></i> Đóng</a>
+  <a href="#statusUpdateCard" class="btn btn-warning"><i class="bi bi-arrow-repeat"></i> Cập nhật</a>
+  <a href="#actionsMoreCard" class="btn btn-primary"><i class="bi bi-three-dots"></i> Thao tác khác</a>
+</div>
+<div style="height:76px" class="d-md-none"></div>
 
 <script>
 function copyAll() {

@@ -13,7 +13,7 @@
         <div class="d-flex gap-3">
           <img src="{{ product.image_path or '/static/img/no-image.png' }}" width="80" height="80" style="object-fit:cover;border-radius:8px" onerror="this.src='/static/img/no-image.png'">
           <div>
-            <h5 class="mb-1">{{ product.name }}</h5>
+            <h5 class="mb-1 product-name-wrap">{{ product.name }}</h5>
             <div class="text-muted small mb-1">{{ product.product_code }}</div>
             <div class="fw-semibold">{{ "{:,.0f}".format(product.sale_price).replace(",", ".") }}đ <span class="text-muted small">(≈ {{ "%.2f"|format(product.price_usdt or 0) }} USDT)</span></div>
           </div>
@@ -39,7 +39,7 @@
       <div class="card-body d-flex flex-column gap-2">
         <button class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#editModalDetail"><i class="bi bi-pencil"></i> Sửa sản phẩm</button>
         {% if product.delivery_mode.value == 'manual_stock' %}
-        <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addStockModal"><i class="bi bi-box-arrow-in-down"></i> Thêm hàng vào kho</button>
+        <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addStockModal" id="addStockBtn"><i class="bi bi-box-arrow-in-down"></i> Thêm hàng vào kho</button>
         <a class="btn btn-outline-secondary btn-sm" href="/products/{{ product.id }}/inventory/export?status=available"><i class="bi bi-download"></i> Xuất kho (available) .txt</a>
         {% endif %}
         <form action="/products/{{ product.id }}/delete" method="post" onsubmit="return confirm('{% if has_orders %}Sản phẩm đã có đơn hàng, sẽ chỉ bị ẩn/ngừng bán chứ không xóa. Tiếp tục?{% else %}Xóa sản phẩm này?{% endif %}')">
@@ -63,7 +63,7 @@
 </div>
 <div class="mb-3"><small class="text-muted">Giá vốn trung bình: <strong>{{ "{:,.0f}".format(counts.avg_cost_price).replace(",", ".") }}đ</strong></small></div>
 
-<div class="card">
+<div class="card d-none d-md-block">
   <div class="card-header">Danh sách trong kho (100 gần nhất)</div>
   <div class="card-body p-0">
     <div class="table-responsive">
@@ -98,32 +98,73 @@
   </div>
 </div>
 
+<!-- Mobile inventory cards -->
+<div class="d-md-none">
+  <div class="mb-2 fw-semibold text-muted small">Danh sách trong kho (100 gần nhất)</div>
+  {% for item in inventory_items %}
+  <div class="inventory-card">
+    <div class="inventory-card-value"><code>{{ item.username or item.raw_value }}</code></div>
+    <div class="inventory-card-meta">
+      {% if item.status.value == 'available' %}<span class="badge bg-success">available</span>
+      {% elif item.status.value == 'reserved' %}<span class="badge bg-warning text-dark">reserved</span>
+      {% elif item.status.value == 'sold' %}<span class="badge bg-primary">sold</span>
+      {% else %}<span class="badge bg-danger">{{ item.status.value }}</span>{% endif %}
+      <small class="text-muted ms-2">{{ item.created_at.strftime('%d/%m/%Y %H:%M') if item.created_at else '' }}</small>
+      {% if item.status.value == 'available' %}
+      <form action="/products/{{ product.id }}/inventory/{{ item.id }}/delete" method="post" class="d-inline ms-auto" onsubmit="return confirm('Xóa tài khoản này khỏi kho?')">
+        <button type="submit" class="btn btn-xs btn-outline-danger"><i class="bi bi-trash"></i></button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+  {% else %}
+  <div class="text-center text-muted py-3">Kho trống</div>
+  {% endfor %}
+</div>
+
 <!-- Add Stock Modal -->
 <div class="modal fade" id="addStockModal" tabindex="-1">
   <div class="modal-dialog modal-lg">
     <div class="modal-content">
       <div class="modal-header"><h5 class="modal-title">📥 Thêm hàng vào kho — {{ product.name }}</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
-      <form action="/products/{{ product.id }}/inventory/import" method="post">
+      <form action="/products/{{ product.id }}/inventory/import" method="post" id="addStockForm">
         <div class="modal-body">
-          <p class="text-muted small">Dán mỗi tài khoản một dòng. Hỗ trợ các định dạng: <code>user|pass</code>, <code>user:pass</code>, <code>user,pass</code>, hoặc một giá trị đơn (license key). Hệ thống tự động loại bỏ dòng trùng lặp.</p>
-          <textarea name="raw_text" id="bulkText" class="form-control" rows="10" placeholder="user1|pass1&#10;user2:pass2&#10;email3@x.com|pass3|note"></textarea>
-          <div class="mt-2">
-            <button type="button" id="previewBtn" class="btn btn-sm btn-outline-secondary">Xem trước</button>
-            <span id="previewResult" class="ms-2 small"></span>
+          <div class="form-section">
+            <div class="form-section-title">Sản phẩm</div>
+            <div class="stock-form-product">{{ product.telegram_icon or '📦' }} <strong>{{ product.name }}</strong></div>
           </div>
-          <div class="mt-3">
-            <label class="form-label">Giá vốn mỗi tài khoản (đ, tuỳ chọn)</label>
-            <input type="number" name="cost_price" class="form-control" value="0" step="1" min="0" style="max-width:200px">
+
+          <div class="form-section">
+            <div class="form-section-title">Dữ liệu tài khoản</div>
+            <p class="text-muted small mb-2">Dán mỗi tài khoản một dòng. Hỗ trợ các định dạng: <code>email|password</code>, <code>email|password|note</code>, <code>email[TAB]password</code>, <code>email:password</code>, hoặc một chuỗi tự do (license key). Hệ thống tự động loại bỏ dòng trùng lặp.</p>
+            <textarea name="raw_text" id="bulkText" class="form-control" rows="10" placeholder="user1|pass1&#10;user2:pass2&#10;email3@x.com|pass3|note"></textarea>
+
+            <div class="mt-3">
+              <label class="form-label">Giá vốn mỗi tài khoản (đ, tuỳ chọn)</label>
+              <input type="number" name="cost_price" class="form-control" value="0" step="1" min="0" style="max-width:220px">
+            </div>
+            <div class="mt-3 form-check">
+              <input class="form-check-input" type="checkbox" name="keep_lines" value="1" id="keepLinesCheck" checked disabled>
+              <label class="form-check-label" for="keepLinesCheck">Giữ nguyên dòng đã dán (không tự sắp xếp lại)</label>
+              <div class="form-text">Hệ thống luôn giữ đúng thứ tự các dòng bạn dán — chỉ loại bỏ dòng trùng lặp hoàn toàn.</div>
+            </div>
+            <div class="mt-2 form-check">
+              <input class="form-check-input" type="checkbox" name="notify_users" value="1" id="notifyUsersCheck" checked>
+              <label class="form-check-label" for="notifyUsersCheck">
+                📦 Thông báo cho khách hàng khi có hàng trở lại
+              </label>
+              <div class="form-text">Chỉ gửi khi sản phẩm chuyển từ hết hàng sang có hàng trở lại (không gửi khi chỉ nhập thêm hàng vào sản phẩm đang còn tồn kho). Nếu có khách đăng ký "Báo khi có hàng" cho sản phẩm này, chỉ họ sẽ nhận thông báo. Nếu chưa ai đăng ký, tất cả khách hàng bot sẽ được thông báo.</div>
+            </div>
           </div>
-          <div class="mt-3 form-check">
-            <input class="form-check-input" type="checkbox" name="notify_users" value="1" id="notifyUsersCheck" checked>
-            <label class="form-check-label" for="notifyUsersCheck">
-              📦 Thông báo cho khách hàng khi có hàng trở lại
-            </label>
-            <div class="form-text">Chỉ gửi khi sản phẩm chuyển từ hết hàng sang có hàng trở lại (không gửi khi chỉ nhập thêm hàng vào sản phẩm đang còn tồn kho). Nếu có khách đăng ký "Báo khi có hàng" cho sản phẩm này, chỉ họ sẽ nhận thông báo. Nếu chưa ai đăng ký, tất cả khách hàng bot sẽ được thông báo.</div>
+
+          <div class="form-section">
+            <div class="form-section-title">Preview</div>
+            <button type="button" id="previewBtn" class="btn btn-sm btn-outline-secondary">👁 Xem trước</button>
+            <div id="previewResult" class="stock-preview-box mt-2" style="display:none"></div>
+            <div id="previewErrorDetail" class="stock-preview-errors mt-2" style="display:none"></div>
           </div>
         </div>
-        <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button><button type="submit" class="btn btn-primary">Nhập vào kho</button></div>
+        <div class="modal-footer modal-footer-sticky"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button><button type="submit" class="btn btn-primary">Thêm tài khoản</button></div>
       </form>
     </div>
   </div>
@@ -137,56 +178,77 @@
       <div class="modal-header"><h5 class="modal-title">Sửa: {{ product.name }}</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
       <form action="/products/{{ product.id }}/edit" method="post" enctype="multipart/form-data">
         <div class="modal-body">
-          <div class="row g-3">
-            <div class="col-md-6"><label class="form-label">Tên sản phẩm *</label><input type="text" name="name" class="form-control en-src-name" value="{{ product.name }}" required></div>
-            <div class="col-md-6"><label class="form-label">Tên sản phẩm (English) {% if product.name_en_locked %}<span class="badge bg-secondary">🔒 đã sửa tay</span>{% endif %}</label><input type="text" name="name_en" class="form-control en-out-name" value="{{ product.name_en or '' }}" placeholder="Shown to English-language shoppers"></div>
-            <div class="col-md-6"><label class="form-label">Mã sản phẩm *</label><input type="text" name="product_code" class="form-control" value="{{ product.product_code }}" required></div>
-            <div class="col-md-6"><label class="form-label">Giá bán (đ)</label><input type="number" name="sale_price" class="form-control" value="{{ product.sale_price|int }}" step="1" min="0">
-              <div class="form-text">≈ {{ "%.2f"|format(product.price_usdt or 0) }} USDT — tự động tính theo tỉ giá hiện tại</div>
-            </div>
-            <div class="col-md-6"><label class="form-label">Số lượng tối thiểu</label><input type="number" name="min_quantity" class="form-control" value="{{ product.min_quantity or 1 }}" step="1" min="1"></div>
-            <div class="col-md-6"><label class="form-label">Chế độ giao hàng</label>
-              <select name="delivery_mode" class="form-select">
-                <option value="manual_admin" {% if product.delivery_mode.value in ['manual', 'manual_admin'] %}selected{% endif %}>Thủ công (Admin giao tay)</option>
-                <option value="manual_stock" {% if product.delivery_mode.value=='manual_stock' %}selected{% endif %}>Kho tài khoản (tự động)</option>
-                <option value="api_auto" {% if product.delivery_mode.value=='api_auto' %}selected{% endif %}>Tự động API</option>
-              </select>
-            </div>
-            <div class="col-md-6"><label class="form-label">Icon Telegram (emoji)</label><input type="text" name="telegram_icon" class="form-control" value="{{ product.telegram_icon or '' }}" placeholder="📦"></div>
-            <div class="col-12"><label class="form-label">Mô tả</label><textarea name="description" class="form-control en-src-desc" rows="3">{{ product.description or '' }}</textarea></div>
-            <div class="col-12">
-              <label class="form-label">Mô tả (English) {% if product.description_en_locked %}<span class="badge bg-secondary">🔒 đã sửa tay</span>{% endif %}</label>
-              <textarea name="description_en" class="form-control en-out-desc" rows="2">{{ product.description_en or '' }}</textarea>
-              <button type="button" class="btn btn-sm btn-outline-info mt-1 gen-en-btn">🌐 Dịch lại mô tả tiếng Anh</button>
-              <div class="form-text">Tự dịch từ tên/mô tả tiếng Việt bằng AI — bạn có thể chỉnh lại trước khi lưu.</div>
-            </div>
-            <div class="col-md-6"><label class="form-label">Bảo hành</label><input type="text" name="warranty" class="form-control" value="{{ product.warranty or '' }}" placeholder="VD: 30 ngày"></div>
-            <div class="col-md-6"><label class="form-label">Thời hạn</label><input type="text" name="duration" class="form-control" value="{{ product.duration or '' }}" placeholder="VD: 1 năm"></div>
-            {% if product.source_type.value == 'api' %}
-            <div class="col-12">
-              <div class="form-text">
-                🔒 Trường đã sửa tay sẽ không bị ghi đè bởi lần đồng bộ API tiếp theo:
-                {% set edited = (product.manually_edited_fields or '').split(',') %}
-                {% if edited and edited[0] %}{{ edited|join(', ') }}{% else %}chưa có{% endif %}
+          <div class="form-section">
+            <div class="form-section-title">1. Thông tin cơ bản</div>
+            <div class="row g-3">
+              <div class="col-md-6"><label class="form-label">Tên sản phẩm *</label><input type="text" name="name" class="form-control en-src-name" value="{{ product.name }}" required></div>
+              <div class="col-md-6"><label class="form-label">Tên sản phẩm (English) {% if product.name_en_locked %}<span class="badge bg-secondary">🔒 đã sửa tay</span>{% endif %}</label><input type="text" name="name_en" class="form-control en-out-name" value="{{ product.name_en or '' }}" placeholder="Shown to English-language shoppers"></div>
+              <div class="col-md-6"><label class="form-label">Mã sản phẩm *</label><input type="text" name="product_code" class="form-control" value="{{ product.product_code }}" required></div>
+              <div class="col-12"><label class="form-label">Mô tả</label><textarea name="description" class="form-control en-src-desc" rows="3">{{ product.description or '' }}</textarea></div>
+              <div class="col-12">
+                <label class="form-label">Mô tả (English) {% if product.description_en_locked %}<span class="badge bg-secondary">🔒 đã sửa tay</span>{% endif %}</label>
+                <textarea name="description_en" class="form-control en-out-desc" rows="2">{{ product.description_en or '' }}</textarea>
+                <button type="button" class="btn btn-sm btn-outline-info mt-1 gen-en-btn">🌐 Dịch lại mô tả tiếng Anh</button>
+                <div class="form-text">Tự dịch từ tên/mô tả tiếng Việt bằng AI — bạn có thể chỉnh lại trước khi lưu.</div>
               </div>
-            </div>
-            {% endif %}
-            <div class="col-md-6"><label class="form-label">Ảnh sản phẩm</label><input type="file" name="image" class="form-control" accept="image/*"></div>
-            <div class="col-md-3"><label class="form-label">Trạng thái</label>
-              <select name="is_active" class="form-select">
-                <option value="true" {% if product.is_active %}selected{% endif %}>Đang bán</option>
-                <option value="false" {% if not product.is_active %}selected{% endif %}>Tạm ngưng</option>
-              </select>
-            </div>
-            <div class="col-md-3 d-flex align-items-end">
-              <div class="form-check">
-                <input class="form-check-input" type="checkbox" name="allow_manual_order" value="1" id="allowManualDetail" {% if product.allow_manual_order %}checked{% endif %}>
-                <label class="form-check-label" for="allowManualDetail">Nhận đơn khi hết hàng</label>
+              <div class="col-md-6"><label class="form-label">Trạng thái</label>
+                <select name="is_active" class="form-select">
+                  <option value="true" {% if product.is_active %}selected{% endif %}>Đang bán</option>
+                  <option value="false" {% if not product.is_active %}selected{% endif %}>Tạm ngưng</option>
+                </select>
               </div>
             </div>
           </div>
+
+          <div class="form-section">
+            <div class="form-section-title">2. Giá</div>
+            <div class="row g-3">
+              <div class="col-md-6"><label class="form-label">Giá bán (đ)</label><input type="number" name="sale_price" class="form-control" value="{{ product.sale_price|int }}" step="1" min="0">
+                <div class="form-text">≈ {{ "%.2f"|format(product.price_usdt or 0) }} USDT — tự động tính theo tỉ giá hiện tại</div>
+              </div>
+              <div class="col-md-6"><label class="form-label">Bảo hành</label><input type="text" name="warranty" class="form-control" value="{{ product.warranty or '' }}" placeholder="VD: 30 ngày"></div>
+              <div class="col-md-6"><label class="form-label">Thời hạn</label><input type="text" name="duration" class="form-control" value="{{ product.duration or '' }}" placeholder="VD: 1 năm"></div>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <div class="form-section-title">3. Kho và giao hàng</div>
+            <div class="row g-3">
+              <div class="col-md-6"><label class="form-label">Chế độ giao hàng</label>
+                <select name="delivery_mode" class="form-select">
+                  <option value="manual_admin" {% if product.delivery_mode.value in ['manual', 'manual_admin'] %}selected{% endif %}>Thủ công (Admin giao tay)</option>
+                  <option value="manual_stock" {% if product.delivery_mode.value=='manual_stock' %}selected{% endif %}>Kho tài khoản (tự động)</option>
+                  <option value="api_auto" {% if product.delivery_mode.value=='api_auto' %}selected{% endif %}>Tự động API</option>
+                </select>
+              </div>
+              <div class="col-md-6"><label class="form-label">Số lượng tối thiểu</label><input type="number" name="min_quantity" class="form-control" value="{{ product.min_quantity or 1 }}" step="1" min="1"></div>
+              <div class="col-12">
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" name="allow_manual_order" value="1" id="allowManualDetail" {% if product.allow_manual_order %}checked{% endif %}>
+                  <label class="form-check-label" for="allowManualDetail">Nhận đơn khi hết hàng</label>
+                </div>
+              </div>
+              {% if product.source_type.value == 'api' %}
+              <div class="col-12">
+                <div class="form-text">
+                  🔒 Trường đã sửa tay sẽ không bị ghi đè bởi lần đồng bộ API tiếp theo:
+                  {% set edited = (product.manually_edited_fields or '').split(',') %}
+                  {% if edited and edited[0] %}{{ edited|join(', ') }}{% else %}chưa có{% endif %}
+                </div>
+              </div>
+              {% endif %}
+            </div>
+          </div>
+
+          <div class="form-section">
+            <div class="form-section-title">4. Hiển thị bot</div>
+            <div class="row g-3">
+              <div class="col-md-6"><label class="form-label">Icon Telegram (emoji)</label><input type="text" name="telegram_icon" class="form-control" value="{{ product.telegram_icon or '' }}" placeholder="📦"></div>
+              <div class="col-md-6"><label class="form-label">Ảnh sản phẩm</label><input type="file" name="image" class="form-control" accept="image/*"></div>
+            </div>
+          </div>
         </div>
-        <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button><button type="submit" class="btn btn-primary">Lưu thay đổi</button></div>
+        <div class="modal-footer modal-footer-sticky"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button><button type="submit" class="btn btn-primary">Lưu sản phẩm</button></div>
       </form>
     </div>
   </div>
@@ -198,15 +260,37 @@ document.getElementById('previewBtn')?.addEventListener('click', function() {
   const text = document.getElementById('bulkText').value;
   const fd = new FormData();
   fd.append('raw_text', text);
-  fetch(window.location.pathname + '/inventory/preview', {method: 'POST', body: fd})
+  fetch('/products/{{ product.id }}/inventory/preview', {method: 'POST', body: fd})
     .then(r => r.json())
     .then(d => {
-      document.getElementById('previewResult').innerHTML =
-        `<span class="text-success">${d.valid_count} hợp lệ</span> · ` +
-        `<span class="text-warning">${d.duplicates} trùng</span> · ` +
-        `<span class="text-danger">${d.errors} lỗi</span> / ${d.total_lines} dòng`;
+      const box = document.getElementById('previewResult');
+      box.style.display = 'block';
+      box.innerHTML =
+        `<div>📄 Tổng dòng: <strong>${d.total_lines}</strong></div>` +
+        `<div class="text-success">✅ Hợp lệ: <strong>${d.valid_count}</strong></div>` +
+        `<div class="text-warning">♻️ Trùng: <strong>${d.duplicates}</strong></div>` +
+        `<div class="text-danger">❌ Lỗi: <strong>${d.errors}</strong></div>`;
+      const errBox = document.getElementById('previewErrorDetail');
+      if (d.errors > 0 && d.error_lines && d.error_lines.length) {
+        errBox.style.display = 'block';
+        errBox.innerHTML = '<div class="fw-semibold small mb-1">Chi tiết dòng lỗi:</div>' +
+          d.error_lines.map(l => `<div class="small text-danger">Dòng ${l.line_no}: ${l.reason}</div>`).join('');
+      } else {
+        errBox.style.display = 'none';
+        errBox.innerHTML = '';
+      }
     });
 });
+
+// Auto-open the Add Stock modal when arriving here from a product-list card's
+// "➕ Thêm tài khoản" quick action (see products.html open-add-stock).
+if (sessionStorage.getItem('openAddStockModal') === '1') {
+  sessionStorage.removeItem('openAddStockModal');
+  const modalEl = document.getElementById('addStockModal');
+  if (modalEl && window.bootstrap) {
+    new bootstrap.Modal(modalEl).show();
+  }
+}
 
 // "🌐 Tạo bản tiếng Anh" — auto-translate name/description within the same
 // modal, filling the EN fields for the admin to review/edit before saving.
