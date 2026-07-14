@@ -1,0 +1,408 @@
+CHỈ CẬP NHẬT 3 CHỨC NĂNG SAU TRÊN PROJECT HIỆN TẠI:
+
+1. Tìm đơn bằng email/tài khoản đã giao.
+2. Khách báo lỗi và gửi thẳng đến admin.
+3. Admin bấm hoàn tiền về ví theo công thức.
+
+Không tạo project mới.
+Không xóa database.
+Không reset đơn hàng, ví, người dùng hoặc sản phẩm.
+Không sửa hệ thống API, SePay, giao hàng hoặc giao diện web ngoài phần liên quan.
+Phải dùng lại model, service, router và bot handler hiện có nếu đã có.
+
+==================================================
+1. TÌM ĐƠN BẰNG EMAIL/TÀI KHOẢN
+==================================================
+
+Đổi nút:
+
+📦 Đơn hàng
+
+thành:
+
+🔍 Tìm đơn hàng
+
+Khi user bấm:
+
+🔍 Tìm đơn hàng
+
+Bot hỏi:
+
+📧 Nhập email hoặc tài khoản đã mua:
+
+Người dùng có thể nhập:
+
+- email
+- username tài khoản
+- toàn bộ chuỗi account đã giao
+- một phần trước dấu |
+
+Ví dụ:
+
+abc@gmail.com
+
+hoặc:
+
+abc@gmail.com|password
+
+Hệ thống phải tìm trong:
+
+- delivery_items
+- inventory_items đã bán
+- tài khoản giao từ API nguồn
+- delivery_data của order
+- nội dung account đã lưu trong đơn
+
+Chuẩn hóa dữ liệu trước khi tìm:
+
+- trim khoảng trắng
+- chuyển lowercase khi so sánh email
+- nếu input có dấu | thì lấy phần trước dấu |
+- hỗ trợ tìm chính xác trước
+- nếu không có thì mới tìm gần đúng
+
+Bảo mật:
+
+- user thường chỉ được xem đơn thuộc đúng telegram_user_id/chat_id của họ
+- admin có thể tìm mọi đơn
+- tuyệt đối không trả đơn của người khác cho user thường
+
+Nếu không thấy:
+
+❌ Không tìm thấy đơn hàng phù hợp.
+
+Nếu có một đơn:
+- mở thẳng chi tiết
+
+Nếu có nhiều đơn:
+- hiện danh sách nút theo:
+  - mã đơn
+  - sản phẩm
+  - thời gian mua
+
+Khi chọn một đơn, hiển thị đúng thứ tự:
+
+🧾 Mã đơn: {order_code}
+
+📦 Sản phẩm: {product_name}
+
+👤 Người mua: {buyer_name}
+
+🏪 Seller: {seller_name}
+
+📧 Email/Tài khoản đã giao:
+<pre>{escaped_delivered_account}</pre>
+
+💰 Giá bán: {sale_price}
+
+🕒 Thời gian mua: {purchase_time}
+
+🛡 Bảo hành: {warranty_label}
+
+📅 Đã dùng: {used_days}
+
+⏳ Còn lại: {remaining_days}
+
+💵 Refund tối đa: {refund_amount}
+
+✅ Trạng thái: {order_status}
+
+Nút:
+
+⚠️ Báo lỗi
+🏠 Trang chủ
+
+Nếu tài khoản đã giao nằm trong code block:
+- escape HTML
+- dùng parse_mode HTML
+- giữ khả năng copy nhanh
+
+==================================================
+2. BÁO LỖI GỬI ADMIN
+==================================================
+
+Khi user bấm:
+
+⚠️ Báo lỗi
+
+Bot hỏi:
+
+Vui lòng mô tả lỗi hoặc gửi ảnh/video minh họa.
+
+Cho phép:
+
+- text
+- photo
+- video
+- document nếu cần
+
+Tạo hoặc sử dụng bảng order_issues:
+
+- id
+- order_id
+- user_id
+- telegram_chat_id
+- issue_text
+- media_type
+- telegram_file_id
+- status
+- calculated_refund_amount
+- created_at
+- handled_by
+- handled_at
+- resolution_note
+
+Trạng thái:
+
+open
+reviewing
+refunded
+rejected
+resolved
+
+Khi nhận báo lỗi:
+
+- lưu issue vào database
+- tính sẵn refund tối đa
+- gửi ngay tới tất cả admin_id đang active
+
+Admin nhận:
+
+🚨 BÁO LỖI MỚI
+
+👤 Khách: {username_or_full_name}
+🆔 Telegram ID: {chat_id}
+🧾 Mã đơn: {order_code}
+📦 Sản phẩm: {product_name}
+📧 Tài khoản: {delivered_account}
+💬 Nội dung: {issue_text}
+💵 Refund tối đa: {refund_amount}
+
+Nếu user gửi ảnh/video:
+- forward hoặc gửi lại đúng media bằng file_id
+- caption chứa thông tin đơn
+
+Nút cho admin:
+
+👁 Xem đơn
+💬 Trả lời khách
+💰 Hoàn tiền về ví
+❌ Từ chối
+✅ Đánh dấu đã xử lý
+
+Khi admin bấm Trả lời khách:
+- bot yêu cầu nhập nội dung trả lời
+- gửi đúng user đã báo lỗi
+- lưu lịch sử trao đổi nếu project có bảng log
+
+==================================================
+3. CÔNG THỨC HOÀN TIỀN
+==================================================
+
+Công thức:
+
+refund_amount =
+sale_price × remaining_warranty_days / total_warranty_days
+
+Trong đó:
+
+used_days =
+số ngày từ thời gian mua đến thời điểm hiện tại
+
+remaining_warranty_days =
+max(0, total_warranty_days - used_days)
+
+Nếu hết bảo hành:
+
+refund_amount = 0
+
+Quy tắc:
+
+- dùng Decimal
+- không dùng float
+- VND làm tròn xuống số nguyên
+- USDT giữ số thập phân theo cấu hình hệ thống
+- refund không vượt sale_price
+- refund không nhỏ hơn 0
+- nếu order đã refund thì trả 0 và không cho hoàn lần nữa
+
+Xác định warranty_days từ:
+
+- order.warranty_days
+- hoặc snapshot bảo hành lúc mua
+- không dùng warranty hiện tại của product nếu product đã bị sửa sau khi khách mua
+
+Nếu order chưa có warranty snapshot:
+- dùng dữ liệu bảo hành đã lưu tại thời điểm mua nếu có
+- fallback cuối cùng mới dùng product hiện tại
+- ghi log warning
+
+==================================================
+4. ADMIN BẤM HOÀN TIỀN VỀ VÍ
+==================================================
+
+Khi admin bấm:
+
+💰 Hoàn tiền về ví
+
+Hệ thống phải:
+
+1. Kiểm tra admin có quyền.
+2. Đọc lại issue và order từ database.
+3. Kiểm tra issue chưa refunded.
+4. Kiểm tra order chưa refunded.
+5. Tính lại refund tại đúng thời điểm bấm.
+6. Nếu refund = 0:
+   - báo đơn đã hết bảo hành
+   - không cộng ví
+7. Khóa:
+   - order
+   - issue
+   - wallet user
+8. Xác định loại tiền của đơn:
+   - VND → balance_vnd
+   - USDT → balance_usdt
+9. Lưu:
+   - balance_before
+   - balance_after
+10. Cộng refund vào ví.
+11. Tạo wallet_transaction:
+   - type = refund
+   - reference_type = order_issue
+   - reference_id = issue_id
+   - order_id
+   - amount
+   - currency
+   - note
+   - created_by
+12. Cập nhật:
+   - order.refunded_amount
+   - order.refunded_at
+   - order.refunded_by
+   - issue.status = refunded
+   - issue.handled_by
+   - issue.handled_at
+13. Commit một lần trong database transaction.
+14. Gửi thông báo user.
+
+Thông báo user:
+
+✅ HOÀN TIỀN THÀNH CÔNG
+
+🧾 Mã đơn: {order_code}
+💰 Số tiền hoàn: {refund_amount}
+👛 Số dư mới: {new_balance}
+
+Sau khi refund:
+
+- nút Hoàn tiền phải biến mất hoặc không còn hoạt động
+- bấm lại phải báo:
+  Giao dịch này đã được hoàn tiền trước đó.
+- không cộng lần hai
+
+==================================================
+5. TỪ CHỐI VÀ ĐÁNH DẤU ĐÃ XỬ LÝ
+==================================================
+
+Khi admin bấm Từ chối:
+
+- yêu cầu nhập lý do
+- issue.status = rejected
+- lưu admin và thời gian
+- gửi lý do cho user
+
+Khi admin bấm Đánh dấu đã xử lý:
+
+- issue.status = resolved
+- lưu admin và thời gian
+- không cộng ví
+
+==================================================
+6. AUDIT LOG
+==================================================
+
+Lưu đầy đủ:
+
+- admin_id
+- user_id
+- order_id
+- issue_id
+- action
+- refund_amount
+- currency
+- balance_before
+- balance_after
+- reason
+- created_at
+
+Không cho user thường xem audit log.
+
+==================================================
+7. TEST BẮT BUỘC
+==================================================
+
+Test 1:
+- user nhập email đúng
+- trả đúng đơn của họ
+
+Test 2:
+- user nhập email thuộc đơn người khác
+- không được xem
+
+Test 3:
+- cùng email có nhiều đơn
+- hiển thị danh sách chọn
+
+Test 4:
+- user gửi text báo lỗi
+- admin nhận đủ thông tin
+
+Test 5:
+- user gửi ảnh/video
+- admin nhận đúng media
+
+Test 6:
+- đơn 90 ngày, đã dùng 30 ngày
+- refund = sale_price × 60 / 90
+
+Test 7:
+- đơn hết bảo hành
+- refund = 0
+
+Test 8:
+- admin bấm hoàn tiền
+- ví user tăng đúng
+- wallet_transaction được tạo
+
+Test 9:
+- admin bấm lần hai
+- không cộng lại
+
+Test 10:
+- hai admin bấm gần như đồng thời
+- chỉ một transaction được thực hiện
+
+==================================================
+8. HOÀN THÀNH
+==================================================
+
+Sau khi sửa:
+
+- chạy migration an toàn nếu cần
+- chạy test
+- restart bot
+- kiểm tra Telegram thật
+- commit
+- push GitHub
+
+Commit message:
+
+feat: add order search, issue reporting and wallet refunds
+
+Báo lại:
+
+- file đã sửa/tạo
+- migration đã chạy
+- test đã pass
+- commit hash
+- push successful
