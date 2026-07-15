@@ -41,6 +41,7 @@ A web dashboard + Telegram bot for running a digital-goods shop: manage products
 ## User preferences
 
 - Imported from the user's existing GitHub project (`01022341869m-cmyk/Aicenter`) rather than built fresh — treat the Python `api-server` app as the source of truth going forward.
+- After every code fix/update, automatically push to GitHub (`gitPush`) without waiting to be asked — the user runs the app from a VPS that pulls from GitHub, not from this workspace.
 
 ## Gotchas
 
