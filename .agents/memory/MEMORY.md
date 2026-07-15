@@ -15,7 +15,7 @@
 - [Two distinct restock-notify audiences](restock-notify-audiences.md) — don't conflate paid_waiting_stock buyers with a browsing "notify me" opt-in list; they're different users needing different triggers
 - [Wallet ledger & atomicity design](wallet-ledger-design.md) — wallet balance mutations always go through wallet_service credit/debit (BEGIN IMMEDIATE lock + Decimal quantize); never write wallet_vnd/usdt directly
 - [Customer programmatic API design](customer-programmatic-api.md) — HMAC key hashing, SQLite partial-unique-index idempotency, log-table rate limiting, ASGI middleware logging, atomic API-order debit
-- [CanBoSo Market integration](canboso-market-integration.md) — account-vs-slot item type is a source-column, not a Product column; slot purchases need their own OrderStatus + synthetic buyer email
+- [Slot-vs-account supplier infra](canboso-market-integration.md) — item_type is a source-column not a Product column, slot purchases get own OrderStatus + synthetic email; CanBoSo Market itself deleted 2026-07-15 for redesign, infra kept (AI Center Buyer uses it)
 - [Generic API connection engine](generic-api-connection-engine.md) — one config-driven engine (integrations/generic/) serves every supplier; CanBoSo/Zampto/Custom are presets, not hardcoded adapters
 - [Restock/new-product notify audiences](restock-notify-audiences.md) — 3 distinct paths: paid_waiting_stock buyers, opt-in waiting list, and all-active-users broadcast; never conflate
 - [telegram_icon lock semantics](telegram-icon-lock.md) — auto-assign from name keywords unless admin-locked; clearing the field unlocks it (unlike other tracked synced fields, which freeze permanently)

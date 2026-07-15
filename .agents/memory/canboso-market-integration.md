@@ -1,7 +1,9 @@
 ---
-name: CanBoSo Market supplier integration
-description: How the account-vs-slot API item distinction and per-order buyer email were added to the generic supplier adapter pattern.
+name: Slot-vs-account supplier item infra (formerly CanBoSo Market)
+description: Shared item_type/pending_seller_fulfillment/synthetic-email infra that any supplier adapter can opt into; CanBoSo Market itself was removed 2026-07-15 for a redesign, but this infra stayed because AI Center Buyer also depends on it.
 ---
+
+**2026-07-15: the CanBoSo Market adapter, its `ApiType.canboso_market` enum member, `integrations/canboso.py`, and its admin routes/tests were deleted at the user's request ahead of a redesign.** Nothing about a future CanBoSo replacement should assume the old adapter file exists — it needs a fresh `BaseAdapter` subclass per the new-supplier-adapter-pattern memory. The generic fields below were NOT removed — AI Center Buyer still sets them — so a new CanBoSo design can and should reuse this infra rather than re-inventing it.
 
 - New suppliers with a "type" concept different from the existing account model get a new nullable column on `ApiProduct` (e.g. `external_item_type`), not a change to `Product` — the type belongs to the source item, not the local catalog entry. Other adapters leave it `None` and existing behavior is unchanged.
 - When a purchase can't complete instantly (e.g. a "slot" item needs manual seller fulfillment), give it its own terminal-ish `OrderStatus` rather than reusing `pending_manual`/`paid_waiting_stock` — those mean something different and reusing them breaks admin filtering/notifications.

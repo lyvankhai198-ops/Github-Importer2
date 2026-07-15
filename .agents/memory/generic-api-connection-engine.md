@@ -30,3 +30,10 @@ working untouched. Lesson: the CanBoSo Market end-user feature is wired through 
 `ApiConnection`/adapter dispatch as the admin "Kết nối API" screen, not a separate system —
 before removing or hiding any ApiType from the admin UI, check whether an end-user feature
 depends on being able to create/use that adapter type.
+
+**Superseded (2026-07-15):** this "generic config-driven engine" does not exist in the
+codebase at all anymore (no `integrations/generic/` directory) — treat the paragraphs above
+as historical only. The live architecture is, and remains, fixed per-supplier
+`BaseAdapter` subclasses dispatched by `ApiType` in `integrations/manager.py` (see
+new-supplier-adapter-pattern.md). CanBoSo Market itself was fully deleted this same day for
+a redesign — see slot-vs-account item infra memory for what shared infra survived it.
