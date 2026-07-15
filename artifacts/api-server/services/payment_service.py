@@ -808,6 +808,23 @@ async def process_paid_order(order_id: int):
             db.commit()
 
             if not buy_result.get("success"):
+                # "Cannot buy your own product" (CanBoSo's OWN_PRODUCT code)
+                # means the connection's API key is the same seller account
+                # that listed this exact item on the marketplace — a
+                # permanent, supplier-side condition that can never succeed,
+                # not a transient stockout. Left active, this source would
+                # keep getting picked for every future order of this
+                # product, charging the customer and forcing the admin to
+                # manually fulfill every single time. Disable it so
+                # get_best_source() skips straight to another source (or
+                # correctly reports "no source" instead of silently
+                # re-trying a source that is broken forever).
+                buy_error_msg = buy_result.get("message") or ""
+                if "own_product" in buy_error_msg.lower() or "cannot buy your own product" in buy_error_msg.lower():
+                    source.is_active = False
+                    logger.warning(
+                        f"[payment] disabling product_source_id={source.id} — supplier rejected as own-seller product: {buy_error_msg[:200]}"
+                    )
                 # Check stock again — might have run out between check and buy
                 source_check = get_best_source(db, order.product_id)
                 if not source_check:
