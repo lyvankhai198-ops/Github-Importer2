@@ -130,10 +130,11 @@ def debit_market_wallet(db, admin_user_id: int, currency, amount: float, tx_type
 def debit_for_sale(db, admin_user_id: int, order_id: int, cost_amount: float, fee_amount: float,
                     currency=WalletCurrency.VND) -> MarketWalletTransaction:
     """
-    Single atomic debit covering both the cost-of-goods and the 2% platform
-    fee for one successfully-fulfilled chợ-sourced order — spec explicitly
-    says the fee is deducted "on top of" the cost, not tracked as separate
-    debt, so one combined ledger row (note breaks down the split) is enough.
+    Single atomic debit covering both the cost-of-goods and the platform fee
+    (% configurable via services/market_pricing.py, default 3%) for one
+    successfully-fulfilled chợ-sourced order — spec explicitly says the fee
+    is deducted "on top of" the cost, not tracked as separate debt, so one
+    combined ledger row (note breaks down the split) is enough.
     Guarded by orders.market_wallet_debited so a retry can never double-debit.
     Raises InsufficientBalanceError (never lets the balance go negative) or
     AlreadyProcessedError (already debited by a previous call).
@@ -141,10 +142,12 @@ def debit_for_sale(db, admin_user_id: int, order_id: int, cost_amount: float, fe
     total = quantize_amount(currency, (cost_amount or 0.0) + (fee_amount or 0.0))
     if total <= 0:
         raise ValueError("debit_for_sale total must be positive")
+    from services.market_pricing import get_platform_fee_percent
+    fee_pct = get_platform_fee_percent(db)
     return debit_market_wallet(
         db, admin_user_id, currency, total, WalletTxType.purchase,
         order_id=order_id,
-        note=f"Bán hàng nguồn chợ — vốn {cost_amount:,.0f} + phí nền tảng 2% {fee_amount:,.0f}".replace(",", "."),
+        note=f"Bán hàng nguồn chợ — vốn {cost_amount:,.0f} + phí nền tảng {fee_pct:g}% {fee_amount:,.0f}".replace(",", "."),
         actor="system",
         extra_updates=[(
             "UPDATE orders SET market_wallet_debited = 1 WHERE id = ? AND market_wallet_debited = 0",

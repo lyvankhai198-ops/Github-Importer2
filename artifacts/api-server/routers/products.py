@@ -698,9 +698,10 @@ async def create_product_from_source(
             flash(request, "Không tìm thấy sản phẩm nguồn!", "error")
             return RedirectResponse(url="/products/market", status_code=302)
         try:
+            from services.market_pricing import default_sale_price
             shared_catalog.attach_shared_product(
                 db, get_current_tenant(), api_product_id,
-                sale_price if sale_price > 0 else (shared_ap.external_price or 0.0),
+                sale_price if sale_price > 0 else default_sale_price(db, shared_ap.external_price or 0.0),
             )
             flash(request, "Sản phẩm đã được treo lên Chợ!")
         except ValueError as e:
@@ -732,8 +733,9 @@ async def create_product_from_source(
         flash(request, "Sản phẩm đã được treo lại!")
         return RedirectResponse(url="/products/api-sources", status_code=302)
 
-    # Use sale_price if admin set it; otherwise default to source price
-    final_price = sale_price if sale_price > 0 else (ap.external_price or 0.0)
+    # Use sale_price if admin set it; otherwise default to source price + markup
+    from services.market_pricing import default_sale_price
+    final_price = sale_price if sale_price > 0 else default_sale_price(db, ap.external_price or 0.0)
 
     from services.normalize import auto_assign_emoji
 

@@ -919,7 +919,8 @@ async def _notify_paid_waiting_stock(order: Order, db: Session):
 async def _debit_market_wallet_for_sale(order: Order, product, db: Session):
     """
     Ví chợ bookkeeping for a successfully completed chợ-sourced sale: debits
-    cost-of-goods + the 2% platform fee from the selling tenant's market
+    cost-of-goods + the platform fee (% configurable via
+    services/market_pricing.py, default 3%) from the selling tenant's market
     wallet, atomically and exactly once per order (guarded by
     orders.market_wallet_debited). No-op for the owner's own sales and for
     non-chợ (source_type != api) products — see services/market_stock_service.py
@@ -941,8 +942,9 @@ async def _debit_market_wallet_for_sale(order: Order, product, db: Session):
         if not admin or admin.is_owner:
             return
 
+        from services.market_pricing import get_platform_fee_percent
         cost = (order.source_unit_price or product.source_price or 0.0) * (order.quantity or 1)
-        fee = round((order.total_price or 0.0) * 0.02)
+        fee = round((order.total_price or 0.0) * (get_platform_fee_percent(db) / 100.0))
         if cost <= 0 and fee <= 0:
             return
 

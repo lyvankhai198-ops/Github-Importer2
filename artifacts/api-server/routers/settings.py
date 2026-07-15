@@ -59,6 +59,8 @@ async def settings_page(request: Request, db: Session = Depends(get_db)):
     base_url = str(request.base_url).rstrip("/")
     webhook_url = f"{base_url}/webhooks/sepay"
     active_tab = request.query_params.get("tab", "config")
+    from services.market_pricing import get_market_pricing_config
+    market_pricing = get_market_pricing_config(db)
     return templates.TemplateResponse(request, "settings.html", {
         "cfg": cfg,
         "sepay": sepay,
@@ -70,7 +72,28 @@ async def settings_page(request: Request, db: Session = Depends(get_db)):
         "flash": flash_msg,
         "mask_key": mask_key,
         "active_tab": active_tab,
+        "market_pricing": market_pricing,
     })
+
+
+# ── Market ("chợ") default markup & platform fee ──────────────────────────────
+
+@router.post("/settings/market-pricing")
+async def save_market_pricing(
+    request: Request,
+    db: Session = Depends(get_db),
+    default_markup_percent: float = Form(10.0),
+    platform_fee_percent: float = Form(3.0),
+):
+    if not check_auth(request):
+        return RedirectResponse(url="/login", status_code=302)
+    if not request.state.is_owner:
+        flash(request, "Chỉ owner mới có thể chỉnh cấu hình Chợ", "error")
+        return RedirectResponse(url="/settings?tab=config", status_code=302)
+    from services.market_pricing import save_market_pricing_config
+    save_market_pricing_config(db, default_markup_percent, platform_fee_percent)
+    flash(request, "Cài đặt markup & phí Chợ đã được lưu!")
+    return RedirectResponse(url="/settings?tab=config", status_code=302)
 
 
 # ── Bot settings ──────────────────────────────────────────────────────────────
