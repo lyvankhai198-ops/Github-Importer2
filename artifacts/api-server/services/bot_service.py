@@ -15,6 +15,13 @@ _BACKOFF_SEQUENCE = [5, 15, 30, 60]
 _FAST_RETRY_ATTEMPTS = len(_BACKOFF_SEQUENCE) * 10
 _SLOW_RETRY_SECONDS = 300
 
+# A getUpdates "Conflict" is very often just a transient restart race (the
+# old process hasn't fully released its polling connection yet when the new
+# one starts) rather than a genuinely separate instance. Retry a few times
+# with a short delay before concluding it's real and giving up.
+_CONFLICT_RETRY_ATTEMPTS = 5
+_CONFLICT_RETRY_DELAY = 5
+
 
 def _backoff_delay(attempt: int) -> int:
     if attempt <= _FAST_RETRY_ATTEMPTS:
@@ -37,6 +44,7 @@ class BotManager:
         self._bot_username = ""
         self._stop_requested = False
         self._retry_count = 0
+        self._conflict_retry_count = 0
         self._last_error = ""
 
     def is_running(self) -> bool:
@@ -81,6 +89,7 @@ class BotManager:
             return
         self._stop_requested = False
         self._retry_count = 0
+        self._conflict_retry_count = 0
         self._last_error = ""
         self._status = BotStatus.starting
         self._update_db_status(BotStatus.starting)
@@ -122,15 +131,35 @@ class BotManager:
                         self._update_db_status(BotStatus.error)
                         break
                     if self._is_conflict_error(e):
-                        # Another process (the old bot, or a second instance
-                        # of this one) is already polling getUpdates with the
-                        # same token. Telegram only allows one poller per
-                        # token — do NOT retry/spin up a second instance;
-                        # that would just fight the other process forever.
+                        # Another poller (the old process during a restart,
+                        # or a genuinely separate instance) is already using
+                        # getUpdates with this token. This is frequently just
+                        # a transient race — e.g. `systemctl restart` starts
+                        # the new process a moment before the old one has
+                        # fully released its polling connection — so give it
+                        # a few short retries before concluding it's a real,
+                        # persistent conflict. Without this, one restart-time
+                        # race would permanently kill the bot until someone
+                        # manually clicks "start" again.
+                        self._conflict_retry_count = getattr(self, "_conflict_retry_count", 0) + 1
+                        if self._conflict_retry_count <= _CONFLICT_RETRY_ATTEMPTS:
+                            delay = _CONFLICT_RETRY_DELAY
+                            logger.warning(
+                                f"TELEGRAM_BOT_CONFLICT: getUpdates conflict (attempt "
+                                f"{self._conflict_retry_count}/{_CONFLICT_RETRY_ATTEMPTS}), likely a "
+                                f"transient restart race — retrying in {delay}s"
+                            )
+                            self._status = BotStatus.reconnecting
+                            self._update_db_status(BotStatus.reconnecting)
+                            await asyncio.sleep(delay)
+                            if self._stop_requested:
+                                break
+                            continue
                         logger.error(
                             "TELEGRAM_BOT_CONFLICT: another instance of this bot (likely the old "
                             "bot, still running on a different server) is already polling with this "
-                            "token. Stop that instance first, then restart the bot here."
+                            "token after repeated retries. Stop that instance first, then restart the "
+                            "bot here."
                         )
                         gave_up = True
                         self._last_error = (
@@ -194,6 +223,7 @@ class BotManager:
             self._bot_name = me.full_name
             self._bot_username = me.username
             self._retry_count = 0  # reset backoff after a successful (re)connect
+            self._conflict_retry_count = 0  # reset conflict-retry counter too
             self._status = BotStatus.running
             self._update_db_status(BotStatus.running, bot_name=me.full_name, bot_username=me.username)
             logger.info(f"TELEGRAM_BOT_RUNNING: @{me.username}")
