@@ -30,3 +30,4 @@
 - [Multi-tenant architecture](multi-tenant-architecture.md) — AdminUser IS the tenant; session-level SQLAlchemy auto-filter scopes all queries; fail-safe-to-owner default; SQLite legacy-unique rebuild recipe
 - [Ví chợ (market wallet) design](market-wallet-vi-cho.md) — VND-denominated wallet funds virtual stock (balance÷cost) for chợ-sourced products; combined cost+fee debit at order completion; crypto deposits mirror customer wallet matching
 - [Shared-catalog cross-tenant resolution](shared-catalog-cross-tenant.md) — tenants list from owner's API connections without their own key; bypass tenant filter by known FK id, not via relationship, when a row can legitimately point cross-tenant
+- [Verify which server the user is actually hitting](verify-user-server-target.md) — before deep-debugging a "data disappeared"/"feature broken" report, confirm the browser URL; user may be testing a separate external deployment, not this workspace
