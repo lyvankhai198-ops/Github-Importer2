@@ -104,7 +104,7 @@
         <thead>
           <tr>
             <th>Sản phẩm</th>
-            <th>{% if state_filter=='listed' %}Giá tối thiểu treo{% else %}Giá nguồn{% endif %}</th>
+            <th>{% if state_filter=='listed' %}Giá tối thiểu treo{% else %}Giá bán (đã +markup){% endif %}</th>
             <th>Chưa bán</th>
             <th>Cập nhật lần cuối</th>
             <th>Hành động</th>
@@ -127,7 +127,12 @@
                 </div>
               </div>
             </td>
-            <td>{{ "{:,.0f}".format(ap.display_price).replace(",", ".") }}đ</td>
+            <td>
+              {{ "{:,.0f}".format(ap.display_price).replace(",", ".") }}đ
+              {% if state_filter != 'listed' and ap.display_source_price %}
+              <div><small class="text-muted">nguồn {{ "{:,.0f}".format(ap.display_source_price).replace(",", ".") }}đ</small></div>
+              {% endif %}
+            </td>
             <td>
               {% if ap.display_unlimited %}
                 <span class="badge bg-secondary">∞</span>
@@ -178,7 +183,11 @@
       {% endif %}
     </div>
     <div class="product-card-body">
-      <div class="product-card-row">💰 {% if state_filter=='listed' %}Giá tối thiểu treo{% else %}Giá nguồn{% endif %}: <strong>{{ "{:,.0f}".format(ap.display_price).replace(",", ".") }}đ</strong></div>
+      <div class="product-card-row">💰 {% if state_filter=='listed' %}Giá tối thiểu treo{% else %}Giá bán (đã +markup){% endif %}: <strong>{{ "{:,.0f}".format(ap.display_price).replace(",", ".") }}đ</strong>
+        {% if state_filter != 'listed' and ap.display_source_price %}
+        <small class="text-muted">(nguồn {{ "{:,.0f}".format(ap.display_source_price).replace(",", ".") }}đ)</small>
+        {% endif %}
+      </div>
       <div class="product-card-row">🕒 Cập nhật lần cuối: <strong>{{ ap.last_update.strftime('%H:%M:%S %d/%m/%Y') if ap.last_update else '—' }}</strong></div>
     </div>
     <div class="product-card-actions">
@@ -218,7 +227,10 @@
       <form action="/products/api-sources/{{ ap.id }}/create-product" method="post">
         <div class="modal-body">
           <p class="mb-1">{{ ap.display_icon }} <strong>{{ ap.display_name }}</strong></p>
-          <p class="mb-3 text-muted small">Giá nguồn: {{ "{:,.0f}".format(ap.display_price or 0).replace(",", ".") }}đ</p>
+          <p class="mb-3 text-muted small">
+            Giá nguồn: {{ "{:,.0f}".format(ap.display_source_price or 0).replace(",", ".") }}đ
+            — đã tự cộng markup, giá bán đề xuất bên dưới.
+          </p>
           <div class="mb-2">
             <label class="form-label fw-semibold">Giá treo (giá bán cho khách)</label>
             <input type="number"
@@ -229,6 +241,7 @@
                    min="0"
                    inputmode="decimal"
                    required>
+            <div class="form-text">Tự sửa nếu muốn giá khác — mặc định đã +markup từ giá nguồn.</div>
           </div>
         </div>
         <div class="modal-footer">

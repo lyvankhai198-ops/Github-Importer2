@@ -147,6 +147,8 @@ async def products_market(
     except Exception:
         logger.exception("[products_market] on-demand sync failed")
 
+    from services.market_pricing import default_sale_price
+
     # Own connections (this tenant's, or — if this IS the owner — all of the
     # owner's connections). Tenant-scoped automatically via the do_orm_execute
     # filter, so no explicit tenant_id filter needed here.
@@ -215,7 +217,12 @@ async def products_market(
             ap.display_name = ap.external_name or ap.external_product_id
             ap.display_icon = "📦"
             ap.display_image = ap.external_image_url
-            ap.display_price = ap.external_price or 0
+            # Show the price already marked up by the configured default —
+            # the "Nguồn hàng" list and the "Treo" form must always agree on
+            # what the tenant will actually charge, not the raw supplier
+            # cost, or tenants routinely forget to add margin themselves.
+            ap.display_source_price = ap.external_price or 0
+            ap.display_price = default_sale_price(db, ap.external_price or 0)
             ap.display_stock = ap.external_stock or 0
             ap.display_unlimited = False
             ap.last_update = ap.last_sync_at
