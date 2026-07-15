@@ -129,7 +129,7 @@ async def save_bot_settings(
     cfg.updated_at = datetime.utcnow()
     db.commit()
     flash(request, "Cài đặt bot đã được lưu!")
-    return RedirectResponse(url="/settings?tab=bot", status_code=302)
+    return RedirectResponse(url="/settings?tab=config", status_code=302)
 
 
 @router.post("/settings/bot/verify")
@@ -306,7 +306,7 @@ async def save_sepay_settings(
             "nhập Webhook Secret trước khi bật.",
             "error",
         )
-        return RedirectResponse(url="/settings?tab=sepay", status_code=302)
+        return RedirectResponse(url="/settings?tab=config", status_code=302)
 
     sepay.is_enabled = want_enabled
     if bank_name.strip():
@@ -330,7 +330,7 @@ async def save_sepay_settings(
     sepay.updated_at = datetime.utcnow()
     db.commit()
     flash(request, "Cài đặt SePay đã được lưu!")
-    return RedirectResponse(url="/settings?tab=sepay", status_code=302)
+    return RedirectResponse(url="/settings?tab=config", status_code=302)
 
 
 @router.get("/settings/sepay/logs")
@@ -498,7 +498,7 @@ async def save_binance_settings(
     pm.updated_at = datetime.utcnow()
     db.commit()
     flash(request, "Cài đặt Binance Pay đã được lưu!")
-    return RedirectResponse(url="/settings?tab=binance", status_code=302)
+    return RedirectResponse(url="/settings?tab=config", status_code=302)
 
 
 @router.post("/settings/payment-method/binance/test-connection")
@@ -573,7 +573,7 @@ async def save_bep20_settings(
     pm.updated_at = datetime.utcnow()
     db.commit()
     flash(request, "Cài đặt USDT BEP20 đã được lưu!")
-    return RedirectResponse(url="/settings?tab=bep20", status_code=302)
+    return RedirectResponse(url="/settings?tab=config", status_code=302)
 
 
 @router.post("/settings/payment-method/trc20")
@@ -617,7 +617,7 @@ async def save_trc20_settings(
     pm.updated_at = datetime.utcnow()
     db.commit()
     flash(request, "Cài đặt USDT TRC20 đã được lưu!")
-    return RedirectResponse(url="/settings?tab=trc20", status_code=302)
+    return RedirectResponse(url="/settings?tab=config", status_code=302)
 
 
 @router.post("/settings/payment-method/erc20")
@@ -661,7 +661,7 @@ async def save_erc20_settings(
     pm.updated_at = datetime.utcnow()
     db.commit()
     flash(request, "Cài đặt USDT ERC20 đã được lưu!")
-    return RedirectResponse(url="/settings?tab=erc20", status_code=302)
+    return RedirectResponse(url="/settings?tab=config", status_code=302)
 
 
 # ── Exchange rate config ──────────────────────────────────────────────────────
