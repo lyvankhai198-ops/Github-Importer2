@@ -974,7 +974,6 @@ from routers import emoji_icons
 from routers import github_webhook
 from routers import tenants  # owner-only tenant account management
 from routers import market_wallet  # ví chợ (nạp/rút) for tenants & owner review
-from routers import shared_catalog  # kho hàng chung — tenants browse/attach owner's shared API catalog
 
 app.include_router(auth.router)
 app.include_router(dashboard.router)
@@ -992,7 +991,6 @@ app.include_router(emoji_icons.router)
 app.include_router(github_webhook.router)  # POST /github-webhook — VPS auto-deploy (public, HMAC-signed)
 app.include_router(tenants.router)  # owner-only tenant account management
 app.include_router(market_wallet.router)  # ví chợ (nạp/rút) for tenants & owner review
-app.include_router(shared_catalog.router)  # kho hàng chung — tenants browse/attach owner's shared API catalog
 
 
 if __name__ == "__main__":

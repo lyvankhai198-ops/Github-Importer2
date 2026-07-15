@@ -175,9 +175,8 @@ def attach_shared_product(
     if not ap:
         raise ValueError("Sản phẩm này không có trong kho hàng chung của admin")
 
-    existing = (
+    existing_source = (
         db.query(ProductSource)
-        .join(Product, Product.id == ProductSource.product_id)
         .filter(
             ProductSource.tenant_id == tenant_id,
             ProductSource.api_product_id == api_product_id,
@@ -185,8 +184,20 @@ def attach_shared_product(
         )
         .first()
     )
-    if existing:
-        raise ValueError("Bạn đã treo sản phẩm này lên Chợ rồi")
+    if existing_source:
+        existing_product = db.query(Product).filter(Product.id == existing_source.product_id).first()
+        if existing_product and existing_product.is_active:
+            raise ValueError("Bạn đã treo sản phẩm này lên Chợ rồi")
+        # Previously treo'd then gỡ (unlisted) — re-treo by reactivating
+        # instead of blocking, so it can be listed/unlisted repeatedly
+        # without losing order history.
+        if existing_product:
+            existing_product.is_active = True
+            existing_product.sale_price = float(sale_price or existing_product.sale_price or 0.0)
+            existing_source.is_active = True
+            db.commit()
+            db.refresh(existing_product)
+            return existing_product
 
     now = datetime.utcnow()
     code = (product_code or ap.external_product_id or "").strip() or f"shared-{ap.id}"

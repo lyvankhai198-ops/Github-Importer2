@@ -135,6 +135,8 @@ async def products_market(
         return RedirectResponse(url="/login", status_code=302)
     from services.product_service import get_product_stock_status
     from services.api_service import sync_active_supplier_products
+    from services import shared_catalog
+    from tenancy import get_current_tenant, get_owner_tenant_id
 
     # Pull the freshest supplier data before rendering — the periodic
     # scheduler already keeps ApiProduct up to date in the background, but a
@@ -145,15 +147,38 @@ async def products_market(
     except Exception:
         logger.exception("[products_market] on-demand sync failed")
 
+    # Own connections (this tenant's, or — if this IS the owner — all of the
+    # owner's connections). Tenant-scoped automatically via the do_orm_execute
+    # filter, so no explicit tenant_id filter needed here.
     api_products = (
         db.query(ApiProduct)
         .join(ApiConnection, ApiProduct.api_connection_id == ApiConnection.id)
         .filter(ApiConnection.is_active == True)
         .all()
     )
+    conn_name_by_ap_id: dict[int, str] = {ap.id: (ap.connection.name if ap.connection else "") for ap in api_products}
+
+    # Non-owner tenants additionally see products from any connection the
+    # owner has explicitly shared ("Chia sẻ catalog này cho khách thuê" in
+    # Kết nối API) — straight in the Chợ, no separate page. "Treo" on one of
+    # these creates a Product owned by THIS tenant, fulfilled later through
+    # the owner's connection (see services/shared_catalog.py).
+    current_tenant_id = get_current_tenant()
+    is_owner = current_tenant_id == get_owner_tenant_id()
+    shared_ap_ids: set[int] = set()
+    if not is_owner:
+        for conn in shared_catalog.get_shared_connections(db):
+            shared_aps = shared_catalog.get_shared_products(db, conn.id)
+            for ap in shared_aps:
+                shared_ap_ids.add(ap.id)
+                conn_name_by_ap_id[ap.id] = conn.name
+            api_products.extend(shared_aps)
 
     # One query for every ProductSource linking these source items to a bot
     # product, so "is this currently treo'd?" never costs an extra query per row.
+    # Auto tenant-filtered: for a shared ApiProduct this only ever returns
+    # THIS tenant's own attachment, never another tenant's, which is exactly
+    # "did *I* treo this" — see tenancy.py.
     ap_ids = [ap.id for ap in api_products]
     linked_by_ap: dict[int, Product] = {}
     if ap_ids:
@@ -172,6 +197,8 @@ async def products_market(
                 linked_by_ap[src.api_product_id] = src.product
 
     for ap in api_products:
+        ap.is_shared_from_admin = ap.id in shared_ap_ids
+        ap.display_connection_name = conn_name_by_ap_id.get(ap.id, "")
         product = linked_by_ap.get(ap.id)
         ap.linked_product = product
         ap.is_listed = bool(product and product.is_active)
@@ -656,8 +683,24 @@ async def create_product_from_source(
         return RedirectResponse(url="/login", status_code=302)
     ap = db.query(ApiProduct).filter(ApiProduct.id == api_product_id).first()
     if not ap:
-        flash(request, "Không tìm thấy sản phẩm nguồn!", "error")
-        return RedirectResponse(url="/products/api-sources", status_code=302)
+        # Not one of this tenant's own source items — check whether it's a
+        # product from an owner-shared connection instead (Chợ "Treo" on a
+        # shared-catalog item never creates a tenant's own ApiConnection).
+        from services import shared_catalog
+        from tenancy import get_current_tenant
+        shared_ap = shared_catalog.get_shared_api_product(db, api_product_id)
+        if not shared_ap:
+            flash(request, "Không tìm thấy sản phẩm nguồn!", "error")
+            return RedirectResponse(url="/products/market", status_code=302)
+        try:
+            shared_catalog.attach_shared_product(
+                db, get_current_tenant(), api_product_id,
+                sale_price if sale_price > 0 else (shared_ap.external_price or 0.0),
+            )
+            flash(request, "Sản phẩm đã được treo lên Chợ!")
+        except ValueError as e:
+            flash(request, str(e), "error")
+        return RedirectResponse(url="/products/market", status_code=302)
     code = f"API-{ap.api_connection_id}-{ap.external_product_id}"
     existing = db.query(Product).filter(Product.product_code == code).first()
     if existing:

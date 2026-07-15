@@ -30,9 +30,6 @@
       <li><a href="/users" class="sidebar-link {% if '/users' in request.url.path %}active{% endif %}"><i class="bi bi-people"></i> Người dùng</a></li>
       <li><a href="/wallet" class="sidebar-link {% if '/wallet' in request.url.path %}active{% endif %}"><i class="bi bi-wallet2"></i> Ví khách hàng</a></li>
       <li><a href="/market-wallet" class="sidebar-link {% if request.url.path == '/market-wallet' %}active{% endif %}"><i class="bi bi-bank"></i> Ví chợ</a></li>
-      {% if not request.state.is_owner %}
-      <li><a href="/shared-catalog" class="sidebar-link {% if '/shared-catalog' in request.url.path %}active{% endif %}"><i class="bi bi-inboxes"></i> Kho hàng chung</a></li>
-      {% endif %}
       <li><a href="/ranks" class="sidebar-link {% if '/ranks' in request.url.path %}active{% endif %}"><i class="bi bi-award"></i> Cấp bậc</a></li>
       <li><a href="/emoji-icons" class="sidebar-link {% if '/emoji-icons' in request.url.path %}active{% endif %}"><i class="bi bi-emoji-smile"></i> Kho icon</a></li>
       <li><a href="/api-clients" class="sidebar-link {% if '/api-clients' in request.url.path %}active{% endif %}"><i class="bi bi-key"></i> API Clients</a></li>

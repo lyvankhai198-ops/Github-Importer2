@@ -108,7 +108,8 @@
                   {% else %}
                   <span class="market-row-name">{{ ap.display_icon }} {{ ap.display_name }}</span>
                   {% endif %}
-                  <div><small class="text-muted">{{ ap.connection.name if ap.connection else '' }}</small></div>
+                  {% if ap.is_shared_from_admin %}<span class="badge bg-warning text-dark ms-1">Từ Admin</span>{% endif %}
+                  <div><small class="text-muted">{{ ap.display_connection_name }}</small></div>
                 </div>
               </div>
             </td>
@@ -151,7 +152,8 @@
         {% else %}
         <span class="product-card-name">{{ ap.display_icon }} {{ ap.display_name }}</span>
         {% endif %}
-        <div class="text-muted small">{{ ap.connection.name if ap.connection else '' }}</div>
+        {% if ap.is_shared_from_admin %}<span class="badge bg-warning text-dark">Từ Admin</span>{% endif %}
+        <div class="text-muted small">{{ ap.display_connection_name }}</div>
       </div>
       {% if ap.display_unlimited %}
         <span class="badge-pill badge-pill-gray">∞</span>

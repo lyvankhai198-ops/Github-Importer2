@@ -41,3 +41,13 @@ changes for a shared product — flagged as a known gap, not silently "handled".
 **Ví chợ wallet gating already covers this for free:** `services/market_stock_service.is_gated_by_market_wallet`
 gates on "any `source_type=api` product owned by a non-owner tenant" — not specifically on
 `shared_from_admin` — so shared-catalog attachments are correctly wallet-gated with zero extra code.
+
+**UX correction (2026-07-15):** initially shipped as a separate "Kho hàng chung" page — the user
+rejected it and asked for shared items to appear directly in the existing "Chợ" page
+(`/products/market`, `routers/products.py::products_market`) instead of a second browse+attach flow.
+Merged: `products_market` now unions the tenant's own `ApiProduct`s with the owner's shared ones
+(via `shared_catalog.get_shared_connections`/`get_shared_products`), tags shared rows with a
+"Từ Admin" badge, and the existing "Treo" button/route (`create_product_from_source`) falls back to
+`shared_catalog.attach_shared_product` when the id isn't one of the tenant's own `ApiProduct`s. No
+separate router/template/nav entry — one catalog page, not two. Lesson: when a feature has an
+obvious existing "browse supplier catalog" surface, extend it rather than building a parallel one.
