@@ -100,7 +100,7 @@ async def _broadcast_message_with_buy_button(db: Session, texts: dict, product_i
 
     bot = bot_manager._application.bot
     kbds = {
-        lang: InlineKeyboardMarkup([[InlineKeyboardButton(t(lang, "btn_buy_now"), callback_data=f"product:{product_id}")]])
+        lang: InlineKeyboardMarkup([[InlineKeyboardButton(t(lang, "btn_buy_now"), callback_data=f"buy:{product_id}")]])
         for lang in texts
     }
 
@@ -146,6 +146,10 @@ def _icon_html(product) -> str:
 
 
 def _new_product_lines(product, stock_info: dict | None, lang: str) -> list[str]:
+    # Kept compact on purpose — name/stock/price only, no description or
+    # warning text. The full description is already shown on the product
+    # detail/quantity screen once the shopper taps "Mua ngay", so repeating
+    # it here just makes every broadcast a wall of text.
     from services.normalize import format_vnd, format_usdt
     from bot.i18n import t
     icon = _icon_html(product)
@@ -154,18 +158,10 @@ def _new_product_lines(product, stock_info: dict | None, lang: str) -> list[str]
         t(lang, "notify_new_product_title"),
         "",
         f"{icon} <b>{html.escape(_display_name(product, lang))}</b>",
-        t(lang, "notify_price_line", price=price),
     ]
     if stock_info and stock_info["status"] != "unavailable":
         lines.append(t(lang, "notify_current_stock_line", stock=stock_info["stock"]))
-    desc = product.description_en if (lang == "en" and product.description_en) else product.description
-    if desc:
-        short_desc = desc.strip()
-        if len(short_desc) > 200:
-            short_desc = short_desc[:197] + "..."
-        if short_desc:
-            lines.append("")
-            lines.append(f"📝 {html.escape(short_desc)}")
+    lines.append(t(lang, "notify_price_line", price=price))
     return lines
 
 
