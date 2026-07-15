@@ -241,6 +241,10 @@ async def products_market(
         for cat in MARKET_CATEGORIES
     ]
     total_listed = len(state_products)
+    # Whether the *other* tab has anything — the empty-state message must not
+    # say "no products at all" when e.g. "Đang treo" is empty simply because
+    # nothing has been treo'd yet while "Chưa treo" has plenty to pick from.
+    other_tab_has_products = any(ap.is_listed != is_listed_state for ap in api_products)
 
     products = state_products
     if brand:
@@ -259,6 +263,7 @@ async def products_market(
         "emoji_icons": emoji_icons,
         "brands": brands,
         "total_listed": total_listed,
+        "other_tab_has_products": other_tab_has_products,
         "brand_filter": brand,
         "state_filter": "unlisted" if not is_listed_state else "listed",
         "flash": flash_msg,

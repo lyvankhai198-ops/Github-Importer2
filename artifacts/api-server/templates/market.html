@@ -77,7 +77,15 @@
 </ul>
 
 {% if not products and not brands|selectattr("count", "gt", 0)|list %}
-  {% if request.state.is_owner %}
+  {% if other_tab_has_products %}
+  <div class="alert alert-info">
+    {% if state_filter == 'listed' %}
+    Chưa treo sản phẩm nào cả. Chuyển sang tab <a href="/products/market?state=unlisted">Chưa treo</a> để chọn sản phẩm và treo lên Chợ.
+    {% else %}
+    Không còn sản phẩm nào chưa treo — tất cả đã ở tab <a href="/products/market?state=listed">Đang treo</a>.
+    {% endif %}
+  </div>
+  {% elif request.state.is_owner %}
   <div class="alert alert-warning">
     Chưa có kết nối API nào đang hoạt động. Vào <a href="/api-connections">Kết nối API</a> để thêm nguồn hàng trước khi treo sản phẩm lên Chợ.
   </div>
