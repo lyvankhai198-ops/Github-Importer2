@@ -1,7 +1,10 @@
+import logging
 import time
 import httpx
 from integrations.base import BaseAdapter
 from services.normalize import normalize_canboso_product
+
+logger = logging.getLogger(__name__)
 
 
 class CanBosoAdapter(BaseAdapter):
@@ -92,12 +95,30 @@ class CanBosoAdapter(BaseAdapter):
                             params[key] = filters[key]
                     r = await client.get(f"{self.base_url}/products", headers=self._headers(), params=params)
                     if r.status_code != 200:
+                        logger.warning(
+                            f"[canboso] get_products HTTP {r.status_code} on page {page}: {r.text[:500]}"
+                        )
                         break
                     data = r.json()
                     items = data.get("data") if isinstance(data, dict) else data
+                    if items is None and isinstance(data, dict):
+                        # Some deployments nest the list one level deeper
+                        # (e.g. {"data": {"products": [...], "total": N}}).
+                        # Fall back to any list-valued field so a shape
+                        # mismatch doesn't silently return zero products.
+                        for v in data.values():
+                            if isinstance(v, list):
+                                items = v
+                                break
                     items = items or []
                     if not isinstance(items, list):
+                        logger.warning(
+                            f"[canboso] get_products unexpected response shape on page {page}: "
+                            f"{str(data)[:500]}"
+                        )
                         break
+                    if page == 1:
+                        logger.info(f"[canboso] get_products page 1: {len(items)} item(s), keys={list(data.keys()) if isinstance(data, dict) else type(data)}")
                     for item in items:
                         normalized = normalize_canboso_product(item)
                         normalized["raw"] = item
@@ -106,7 +127,8 @@ class CanBosoAdapter(BaseAdapter):
                         break
                     page += 1
             return result
-        except Exception:
+        except Exception as e:
+            logger.warning(f"[canboso] get_products exception: {e}")
             return result
 
     async def buy_product(
