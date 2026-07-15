@@ -38,17 +38,17 @@
             <div class="row g-3">
               {% if p.hide_source_price %}
               <input type="hidden" name="source_price" value="{{ p.source_price|int if p.source_price is not none else 0 }}">
-              <div class="col-md-6"><label class="form-label">Giá bán (đ)</label><input type="number" name="sale_price" class="form-control price-sale-input" value="{{ p.sale_price|int }}" step="1" min="{{ p.min_allowed_sale_price|int if p.min_allowed_sale_price else 0 }}">
+              <div class="col-md-6"><label class="form-label">Giá bán (đ)</label><input type="text" name="sale_price" class="form-control price-sale-input vnd-price-input" value="{{ p.sale_price|int }}" inputmode="numeric" autocomplete="off">
                 <div class="form-text">
                   ≈ {{ "%.2f"|format(p.price_usdt or 0) }} USDT
                   {% if p.min_allowed_sale_price %} — tối thiểu <strong>{{ "{:,.0f}".format(p.min_allowed_sale_price).replace(",", ".") }}đ</strong>{% endif %}
                 </div>
               </div>
               {% else %}
-              <div class="col-md-6"><label class="form-label">Giá nguồn (đ)</label><input type="number" name="source_price" class="form-control price-source-input" value="{{ p.source_price|int if p.source_price is not none else 0 }}" step="1" min="0">
+              <div class="col-md-6"><label class="form-label">Giá nguồn (đ)</label><input type="text" name="source_price" class="form-control price-source-input vnd-price-input" value="{{ p.source_price|int if p.source_price is not none else 0 }}" inputmode="numeric" autocomplete="off">
                 <div class="form-text">Giá nhập từ nhà cung cấp — tự cập nhật khi đồng bộ API.</div>
               </div>
-              <div class="col-md-6"><label class="form-label">Giá bán (đ)</label><input type="number" name="sale_price" class="form-control price-sale-input" value="{{ p.sale_price|int }}" step="1" min="0">
+              <div class="col-md-6"><label class="form-label">Giá bán (đ)</label><input type="text" name="sale_price" class="form-control price-sale-input vnd-price-input" value="{{ p.sale_price|int }}" inputmode="numeric" autocomplete="off">
                 <div class="form-text">≈ {{ "%.2f"|format(p.price_usdt or 0) }} USDT — tự động tính theo tỉ giá hiện tại</div>
               </div>
               <div class="col-md-6">

@@ -268,8 +268,8 @@
           <div class="form-section">
             <div class="form-section-title">2. Giá</div>
             <div class="row g-3">
-              <div class="col-md-6"><label class="form-label">Giá nguồn (đ)</label><input type="number" name="source_price" class="form-control price-source-input" value="0" step="1" min="0"></div>
-              <div class="col-md-6"><label class="form-label">Giá bán (đ)</label><input type="number" name="sale_price" class="form-control price-sale-input" value="0" step="1" min="0"></div>
+              <div class="col-md-6"><label class="form-label">Giá nguồn (đ)</label><input type="text" name="source_price" class="form-control price-source-input vnd-price-input" value="0" inputmode="numeric" autocomplete="off"></div>
+              <div class="col-md-6"><label class="form-label">Giá bán (đ)</label><input type="text" name="sale_price" class="form-control price-sale-input vnd-price-input" value="0" inputmode="numeric" autocomplete="off"></div>
               <div class="col-md-6">
                 <label class="form-label">Phần chênh lệch (dự kiến)</label>
                 <input type="text" class="form-control price-margin-preview" value="0đ" disabled>
@@ -465,8 +465,8 @@ document.querySelectorAll('.modal').forEach(modal => {
   const marginPreview = modal.querySelector('.price-margin-preview');
   if (!sourceInput || !saleInput || !marginPreview) return;
   function recompute() {
-    const source = parseFloat(sourceInput.value) || 0;
-    const sale = parseFloat(saleInput.value) || 0;
+    const source = vndValue(sourceInput);
+    const sale = vndValue(saleInput);
     const margin = Math.round(sale - source);
     marginPreview.value = margin.toLocaleString('vi-VN') + 'đ';
   }

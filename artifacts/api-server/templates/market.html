@@ -235,13 +235,12 @@
           {% endif %}
           <div class="mb-2">
             <label class="form-label fw-semibold">Giá treo (giá bán cho khách)</label>
-            <input type="number"
+            <input type="text"
                    name="sale_price"
-                   class="form-control form-control-lg"
+                   class="form-control form-control-lg vnd-price-input"
                    value="{{ ap.display_price or 0 }}"
-                   step="1000"
-                   min="{% if request.state.is_owner %}0{% else %}{{ ap.display_price or 0 }}{% endif %}"
-                   inputmode="decimal"
+                   inputmode="numeric"
+                   autocomplete="off"
                    required>
             <div class="form-text">
               {% if request.state.is_owner %}
