@@ -343,6 +343,29 @@ async def _trigger_background_sync():
         sess.close()
 
 
+# Kept comfortably under the 10-minute cutoff in get_product_stock_status
+# (past that, api_auto products are shown as unavailable/"Out of stock").
+# If a connection hasn't synced within this window — e.g. the shopper opens
+# the bot after being away long enough that the periodic scheduler's last
+# tick predates it, or the process just restarted — every api_auto product
+# would flash a false "Out of stock" for one render before the background
+# sync catches up. In that case we wait for one sync instead, so the very
+# first list shown is already accurate.
+_STALE_SYNC_THRESHOLD_MINUTES = 8
+
+
+def _has_stale_sync(db) -> bool:
+    from models import ApiConnection
+    connections = db.query(ApiConnection).filter(ApiConnection.is_active == True).all()
+    if not connections:
+        return False
+    now = datetime.utcnow()
+    for c in connections:
+        if c.last_sync_at is None or (now - c.last_sync_at) > timedelta(minutes=_STALE_SYNC_THRESHOLD_MINUTES):
+            return True
+    return False
+
+
 async def _send_product_list(message_target, db, context, lang: str, edit_target=None):
     """
     Shared "render latest page-0 product list" flow, used by /products, the
@@ -366,7 +389,19 @@ async def _send_product_list(message_target, db, context, lang: str, edit_target
 
     has_sources = db.query(ApiConnection).filter(ApiConnection.is_active == True).first() is not None
     if has_sources:
-        asyncio.create_task(_trigger_background_sync())
+        if _has_stale_sync(db):
+            # Data is old enough that api_auto products would render as a
+            # false "Out of stock" — sync once before showing anything, so
+            # this render is already correct (bounded to ~8s per source,
+            # run in parallel by sync_active_supplier_products).
+            from services.api_service import sync_active_supplier_products
+            try:
+                await sync_active_supplier_products(db)
+            except Exception as e:
+                logger.error(f"[_send_product_list] blocking stale sync failed: {e}")
+            db.expire_all()
+        else:
+            asyncio.create_task(_trigger_background_sync())
 
     show_oos = _get_show_out_of_stock(db)
     per_page = _get_products_per_page(db)
