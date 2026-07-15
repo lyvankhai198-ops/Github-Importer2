@@ -661,19 +661,6 @@
 <div class="tab-pane fade {% if active_tab == 'guide' %}show active{% endif %}" id="tabGuide">
 
   <div class="card mb-3">
-    <div class="card-header"><h6 class="mb-0">🚀 Cập nhật hệ thống</h6></div>
-    <div class="card-body">
-      <p class="text-muted small mb-2">Chạy các lệnh sau trên server để lấy code mới nhất và khởi động lại bot:</p>
-      <div class="input-group">
-        <textarea id="deployCmd" class="form-control font-monospace small" rows="3" readonly>cd /root/Github-Importer2
-git pull
-systemctl restart aicenter.service</textarea>
-        <button class="btn btn-outline-secondary" type="button" onclick="copyGuideText('deployCmd', this)"><i class="bi bi-clipboard"></i> Sao chép</button>
-      </div>
-    </div>
-  </div>
-
-  <div class="card mb-3">
     <div class="card-header"><h6 class="mb-0">🤖 Tạo bot với BotFather</h6></div>
     <div class="card-body">
       <p class="small">Tạo bot Telegram, lấy token do BotFather cấp và dán đúng vào ô <strong>Bot Token</strong> ở tab Cấu hình bot.</p>
@@ -757,15 +744,6 @@ document.getElementById('toggleBotToken')?.addEventListener('click', function() 
   inp.type = inp.type === 'password' ? 'text' : 'password';
   icon.className = inp.type === 'password' ? 'bi bi-eye' : 'bi bi-eye-slash';
 });
-
-function copyGuideText(elId, btn) {
-  const el = document.getElementById(elId);
-  navigator.clipboard.writeText(el.value).then(() => {
-    const original = btn.innerHTML;
-    btn.innerHTML = '<i class="bi bi-check2"></i> Đã chép';
-    setTimeout(() => { btn.innerHTML = original; }, 1500);
-  });
-}
 
 function togglePass(inputId, btn) {
   const inp = document.getElementById(inputId);
