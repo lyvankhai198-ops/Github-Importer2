@@ -41,6 +41,7 @@ class AuthType(str, enum.Enum):
 class ApiType(str, enum.Enum):
     zampto_standard = "zampto_standard"
     custom = "custom"
+    canboso_market = "canboso_market"
     aicenter_buyer = "aicenter_buyer"
 
 

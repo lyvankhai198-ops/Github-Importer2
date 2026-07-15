@@ -104,6 +104,7 @@
         <div class="mb-3"><label class="form-label">Loại API</label>
           <select name="api_type" class="form-select" onchange="applyApiTypeDefaults(this)">
             <option value="zampto_standard">Zampto Standard</option>
+            <option value="canboso_market">CanBoSo Market (Chợ)</option>
             <option value="aicenter_buyer">AI Center Buyer</option>
             <option value="custom">Custom</option>
           </select>
@@ -128,6 +129,7 @@ function showToast(title, body, success) {
   bootstrap.Toast.getOrCreateInstance(t).show();
 }
 const API_TYPE_DEFAULTS = {
+  canboso_market: { base_url: 'https://canboso.com/api/public/market', auth_type: 'x_api_key' },
   aicenter_buyer: { base_url: 'https://canboso.com', auth_type: 'x_api_key' },
 };
 function applyApiTypeDefaults(select) {

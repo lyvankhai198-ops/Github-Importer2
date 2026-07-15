@@ -11,6 +11,7 @@ from services.api_service import (
     start_sync_scheduler, stop_sync_scheduler,
 )
 from integrations.manager import api_manager
+from integrations.canboso import CanBosoAdapter
 from integrations.aicenter_buyer import AICenterBuyerAdapter
 
 router = APIRouter()
@@ -21,6 +22,8 @@ def _resolve_base_url(base_url: str, api_type: str) -> str:
     picked that API type but left the field blank (safety net behind the
     client-side auto-fill in the add/edit connection form)."""
     base_url = (base_url or "").strip()
+    if not base_url and api_type == ApiType.canboso_market.value:
+        return CanBosoAdapter.DEFAULT_BASE_URL
     if not base_url and api_type == ApiType.aicenter_buyer.value:
         return AICenterBuyerAdapter.DEFAULT_BASE_URL
     return base_url

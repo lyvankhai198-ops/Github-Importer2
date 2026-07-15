@@ -339,6 +339,59 @@ def normalize_product_data(raw_item: dict) -> dict:
     }
 
 
+def normalize_canboso_product(raw_item: dict) -> dict:
+    """
+    Map a CanBoSo Public Market API ("https://canboso.com/api/public/market")
+    MarketProduct item onto the internal normalized shape, using the exact
+    field names from CanBoSo's own Swagger schema (not guessed aliases):
+
+      _id                   -> id
+      productName           -> name
+      description           -> description
+      marketSalePrice       -> price (what a buyer pays)
+      emoji                 -> category (used as the sync category/emoji tag)
+      sellerDisplayName     -> seller
+      slotProductType / isSlotProduct -> item_type ("slot" | "account")
+      stats.available       -> stock
+    """
+    product_id = str(raw_item.get("_id") or raw_item.get("id") or "")
+    name = str(raw_item.get("productName") or raw_item.get("name") or "")
+    description = str(raw_item.get("description") or "")
+
+    price = raw_item.get("marketSalePrice")
+    try:
+        price = float(price) if price is not None else 0.0
+    except (TypeError, ValueError):
+        price = 0.0
+
+    stats = raw_item.get("stats") or {}
+    stock = _safe_int(stats.get("available") if isinstance(stats, dict) else 0)
+
+    slot_type_raw = str(raw_item.get("slotProductType") or "").strip().lower()
+    is_slot = slot_type_raw == "slot" or bool(raw_item.get("isSlotProduct"))
+    item_type = "slot" if is_slot else "account"
+
+    seller = str(raw_item.get("sellerDisplayName") or raw_item.get("seller") or "")
+    category = str(raw_item.get("emoji") or raw_item.get("category") or "")
+
+    return {
+        "id": product_id,
+        "name": name,
+        "description": description,
+        "price": price,
+        "stock": stock,
+        "min_quantity": 1,
+        "max_quantity": None,
+        "status": "active" if stock > 0 else "out_of_stock",
+        "image_url": "",
+        "warranty": "",
+        "duration": "",
+        "item_type": item_type,
+        "seller": seller,
+        "category": category,
+    }
+
+
 def normalize_aicenter_buyer_product(raw_item: dict, wallet_currency: str = None) -> dict:
     """
     Map an "AI Center Buyer" (canboso.com /api/telegram-buyer/products) item
