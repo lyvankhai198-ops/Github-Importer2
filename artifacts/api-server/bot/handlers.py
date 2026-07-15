@@ -1324,6 +1324,12 @@ async def _render_product_detail(query, context, db, lang: str, product_id: int)
         return
     p = detail["product"]
     sources = detail["sources"]
+    # Tracked so the "buy:" handler can tell whether the shopper is already
+    # looking at this product's detail card (normal browsing) or tapped
+    # "Mua ngay" straight from a notification/list — in the latter case it
+    # needs to render this detail first instead of jumping straight to the
+    # quantity prompt. See callback_handler's "buy:" branch.
+    context.user_data["detail_shown_product_id"] = product_id
 
     # Freshness check — re-sync if stale (>60s)
     from models import DeliveryMode
@@ -2212,6 +2218,19 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if stock_info["status"] == "out_of_stock":
                     await query.answer(t(lang, "product_out_of_stock_recheck"), show_alert=True)
                     return
+
+            # "Mua ngay" reached from a "new product" notification (or any
+            # other list/card that isn't already this product's detail
+            # view) must show the full detail — image, price, stock,
+            # description — before prompting for quantity. If the shopper
+            # is already on this product's detail card (normal browsing:
+            # detail -> "Mua ngay"), skip the redundant re-render.
+            already_showing_detail = (
+                context.user_data.get("detail_shown_product_id") == product_id
+                and context.user_data.get("product_message_id") == query.message.message_id
+            )
+            if not already_showing_detail:
+                await _render_product_detail(query, context, db, lang, product_id)
         finally:
             db.close()
 
