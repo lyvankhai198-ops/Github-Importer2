@@ -3,11 +3,19 @@ Ví chợ ("market wallet") virtual stock — caps how many units of a
 chợ-sourced (source_type=api) product a non-owner tenant's bot may still
 sell, based on their prepaid market_wallet_balance.
 
-Formula (spec section "Số lượng hàng theo ví chợ"):
-    budget_per_product = tenant.market_wallet_balance / (số sản phẩm nguồn
-                          chợ đang gắn — active source_type=api products for
-                          this tenant)
-    virtual_units = floor(budget_per_product / product.source_price)
+Formula — pooled wallet, NOT split evenly across attached products:
+    virtual_units = floor(tenant.market_wallet_balance / product.source_price)
+
+The wallet is one shared pool: every attached product is checked against
+the FULL current balance, not a pre-divided slice of it. This matches how
+the balance is actually spent — a real debit only happens once per
+fulfilled order (see debit_for_sale), so pre-partitioning the balance across
+every listed SKU produced false "Hết hàng" whenever a tenant listed more
+than one product, even though the pooled balance could cover a sale of any
+one of them. Two products both showing "in stock" from the same pool is
+expected — the real balance is only debited (and can only go to 0) at the
+moment a specific order is fulfilled, at which point every other product's
+virtual stock recomputes live off the now-lower balance.
 
 Always computed live — never a stored counter — so it stays correct the
 instant the wallet balance changes (sale, top-up, withdrawal) or a product
@@ -30,28 +38,14 @@ def is_gated_by_market_wallet(db: Session, product: Product) -> bool:
     return bool(admin and not admin.is_owner)
 
 
-def get_attached_market_product_count(db: Session, tenant_id: int) -> int:
-    """Number of active chợ-sourced (source_type=api) products this tenant
-    currently has attached/listed — the wallet balance is split evenly
-    across all of them."""
-    return (
-        db.query(Product)
-        .filter(
-            Product.tenant_id == tenant_id,
-            Product.source_type == SourceType.api,
-            Product.is_active == True,
-        )
-        .count()
-    )
-
-
 def get_virtual_stock(db: Session, product: Product) -> int:
     """
     Wallet-funded unit budget for one chợ-sourced product, floored to a
-    whole unit. Returns 0 (never negative, never unlimited) when the wallet
-    is empty, nothing is attached yet, or the product has no known cost
-    price yet (source_price not backfilled) — a missing cost price must
-    never be silently treated as "free"/unlimited stock.
+    whole unit, checked against the FULL pooled wallet balance (not a
+    per-product slice — see module docstring). Returns 0 (never negative,
+    never unlimited) when the wallet is empty or the product has no known
+    cost price yet (source_price not backfilled) — a missing cost price
+    must never be silently treated as "free"/unlimited stock.
     """
     admin = db.query(AdminUser).filter(AdminUser.id == product.tenant_id).first()
     if not admin:
@@ -59,8 +53,5 @@ def get_virtual_stock(db: Session, product: Product) -> int:
     cost_price = product.source_price or 0.0
     if cost_price <= 0:
         return 0
-    n_attached = get_attached_market_product_count(db, product.tenant_id)
-    if n_attached <= 0:
-        return 0
-    budget_per_product = (admin.market_wallet_balance or 0.0) / n_attached
-    return max(0, int(budget_per_product // cost_price))
+    balance = admin.market_wallet_balance or 0.0
+    return max(0, int(balance // cost_price))
