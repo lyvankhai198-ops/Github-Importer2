@@ -701,7 +701,7 @@ async def save_exchange_rate(
 
     db.commit()
     flash(request, f"Cài đặt tỉ giá đã được lưu! Đã cập nhật giá USDT cho {updated} sản phẩm.")
-    return RedirectResponse(url="/settings?tab=exchange_rate", status_code=302)
+    return RedirectResponse(url="/settings?tab=config", status_code=302)
 
 
 @router.get("/api/exchange-rate")
