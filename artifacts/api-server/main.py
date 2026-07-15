@@ -563,9 +563,11 @@ def _run_migrations():
 
 def _fix_legacy_unique_constraints():
     """
-    Pre-multi-tenant, three columns had a table-wide UNIQUE constraint that's
-    now wrong: two tenants must be able to reuse the same Setting.key,
-    PaymentMethod.method_code, or Product.product_code. SQLite bakes an
+    Pre-multi-tenant, several columns had a table-wide UNIQUE constraint
+    that's now wrong: two tenants must be able to reuse the same Setting.key,
+    PaymentMethod.method_code, Product.product_code, or have their own
+    customers reuse the same real Telegram account (User.telegram_id) across
+    tenants. SQLite bakes an
     inline UNIQUE into the table's own CREATE TABLE statement as a
     constraint-backed index that plain DROP INDEX refuses to touch — the
     only way to remove it is the standard SQLite table-rebuild dance:
@@ -578,6 +580,7 @@ def _fix_legacy_unique_constraints():
         ("settings", "key", "ux_settings_tenant_key"),
         ("payment_methods", "method_code", "ux_payment_methods_tenant_code"),
         ("products", "product_code", "ux_products_tenant_code"),
+        ("users", "telegram_id", "ux_users_tenant_telegram_id"),
     ]
     with engine.connect() as conn:
         for table, col, new_index_name in targets:

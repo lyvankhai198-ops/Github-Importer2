@@ -323,7 +323,12 @@ class PaymentMethod(Base, TenantScopedMixin):
 class User(Base, TenantScopedMixin):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
-    telegram_id = Column(String(50), unique=True, nullable=False)
+    # NOT globally unique — the same real Telegram account can be a customer
+    # of multiple tenants' shops. Uniqueness is enforced per-tenant via the
+    # composite index (tenant_id, telegram_id) — see _fix_legacy_unique_constraints
+    # in main.py for the SQLite rebuild that migrates this off the old
+    # single-column UNIQUE constraint.
+    telegram_id = Column(String(50), nullable=False)
     username = Column(String(100), nullable=True)
     first_name = Column(String(100), nullable=True)
     last_name = Column(String(100), nullable=True)
