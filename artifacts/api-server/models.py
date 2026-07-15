@@ -665,6 +665,12 @@ class Order(Base, TenantScopedMixin):
     payment_message_type = Column(String(20), nullable=True)      # "photo" | "text"
     product_message_id = Column(Integer, nullable=True)
     quantity_prompt_message_id = Column(Integer, nullable=True)
+    # Delivery-result message(s) sent to the buyer once the order completes —
+    # tracked the same way as the other *_message_id fields above so "🛍 Mua
+    # tiếp" can clean up the whole purchase thread (card → quantity prompt →
+    # payment → delivery) before showing a fresh product list.
+    delivery_message_id = Column(Integer, nullable=True)
+    delivery_file_message_id = Column(Integer, nullable=True)
     origin_products_page = Column(Integer, nullable=True, default=0)  # product-list page shopper was browsing before buying
     # ── Crypto payment fields ─────────────────────────────────────────────────
     payment_currency = Column(String(20), nullable=True)          # VND | USDT

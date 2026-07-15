@@ -46,17 +46,24 @@ async def notify_admin_new_order(bot, order: Order, admin_telegram_id: str):
         logger.error(f"notify_admin_new_order error: {e}")
 
 
-async def notify_user_delivery(bot, chat_id: str, order: Order, support_username: str = ""):
-    """Gửi thông báo giao hàng đẹp cho user — không gửi raw JSON."""
+async def notify_user_delivery(bot, chat_id: str, order: Order, support_username: str = "", db=None):
+    """Gửi thông báo giao hàng đẹp cho user — không gửi raw JSON.
+
+    When `db` is provided, the sent message id(s) are saved onto the order
+    (delivery_message_id / delivery_file_message_id) so "🛍 Mua tiếp" can
+    delete this purchase's whole thread before showing a fresh product list.
+    """
     try:
         from database import SessionLocal
         from bot.keyboards import post_delivery_keyboard
         from bot.i18n import get_user_lang
-        db = SessionLocal()
+        own_db = db is None
+        lang_db = SessionLocal() if own_db else db
         try:
-            lang = get_user_lang(db, str(chat_id))
+            lang = get_user_lang(lang_db, str(chat_id))
         finally:
-            db.close()
+            if own_db:
+                lang_db.close()
 
         if order.product and lang == "en" and getattr(order.product, "name_en", None):
             product_name = order.product.name_en
@@ -83,7 +90,7 @@ async def notify_user_delivery(bot, chat_id: str, order: Order, support_username
         keyboard = post_delivery_keyboard(order.id, support_username, lang=lang)
 
         if file_bytes:
-            await bot.send_document(
+            file_msg = await bot.send_document(
                 chat_id=int(chat_id),
                 document=io.BytesIO(file_bytes),
                 filename=f"{order.order_code}.txt",
@@ -91,13 +98,20 @@ async def notify_user_delivery(bot, chat_id: str, order: Order, support_username
                         else f"✅ Order <code>{order.order_code}</code> completed!",
                 parse_mode="HTML",
             )
-            await bot.send_message(
+            msg = await bot.send_message(
                 chat_id=int(chat_id), text=text, parse_mode="HTML", reply_markup=keyboard,
             )
+            if db is not None:
+                order.delivery_file_message_id = file_msg.message_id
+                order.delivery_message_id = msg.message_id
+                db.commit()
         else:
-            await bot.send_message(
+            msg = await bot.send_message(
                 chat_id=int(chat_id), text=text, parse_mode="HTML", reply_markup=keyboard,
             )
+            if db is not None:
+                order.delivery_message_id = msg.message_id
+                db.commit()
     except Exception as e:
         logger.error(f"notify_user_delivery error: {e}")
 

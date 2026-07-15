@@ -2171,9 +2171,31 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db = SessionLocal()
         try:
             lang = _get_lang(db, update.effective_user.id)
+
+            # Clean up the whole just-completed purchase thread (product
+            # card, quantity prompt, payment QR, delivery text + file) so
+            # repeated purchases don't pile up as clutter — "Mua tiếp" is a
+            # fresh start, not a continuation. Best-effort: any message
+            # already gone/too old to delete is silently skipped.
+            from services.payment_service import delete_order_thread_messages
+            from services.order_service import get_latest_order_for_user
+            from services.bot_service import bot_manager
+            latest_order = get_latest_order_for_user(db, str(update.effective_user.id))
+            if latest_order and bot_manager.is_running():
+                try:
+                    await delete_order_thread_messages(bot_manager._application.bot, latest_order, db)
+                except Exception as e:
+                    logger.warning(f"[buy_more] cleanup error: {e}")
+            # The "🛍 Mua tiếp" message itself (this callback's own message)
+            # is also part of the thread being cleared.
+            try:
+                await query.message.delete()
+            except Exception:
+                pass
+
             # Refresh product data from all active API connections first,
-            # same as the product-list "Làm mới" button, so the newest
-            # product opened below reflects current stock/price.
+            # same as the product-list "Làm mới" button, so the list shown
+            # below reflects current stock/price.
             from services.api_service import sync_api_products
             from models import ApiConnection
             connections = db.query(ApiConnection).filter(ApiConnection.is_active == True).all()
@@ -2184,24 +2206,16 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     pass
             db.expire_all()
 
-            newest = (
-                db.query(Product)
-                .filter(Product.is_active == True)
-                .order_by(Product.created_at.desc(), Product.id.desc())
-                .first()
+            show_oos = _get_show_out_of_stock(db)
+            per_page = _get_products_per_page(db)
+            products = get_active_products_for_bot(db, show_out_of_stock=show_oos)
+            context.user_data["last_products_page"] = 0
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=t(lang, "product_list_title"),
+                parse_mode="HTML",
+                reply_markup=product_list_keyboard(products, lang=lang, page=0, per_page=per_page),
             )
-            if not newest:
-                show_oos = _get_show_out_of_stock(db)
-                per_page = _get_products_per_page(db)
-                products = get_active_products_for_bot(db, show_out_of_stock=show_oos)
-                await query.message.reply_text(
-                    t(lang, "product_list_title"),
-                    parse_mode="HTML",
-                    reply_markup=product_list_keyboard(products, lang=lang, page=0, per_page=per_page),
-                )
-                return
-
-            await _render_product_detail(query, context, db, lang, newest.id)
         except Exception as e:
             logger.warning(f"[buy_more] error: {e}")
         finally:

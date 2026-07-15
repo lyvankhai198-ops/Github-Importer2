@@ -434,6 +434,10 @@ def _run_migrations():
         "ALTER TABLE product_sources ADD COLUMN shared_from_admin BOOLEAN DEFAULT 0",
         # Ví chợ bank-transfer (SePay) deposits — reference code in transfer content
         "ALTER TABLE market_wallet_deposits ADD COLUMN payment_content VARCHAR(100)",
+        # Delivery message tracking so "🛍 Mua tiếp" can clean up the whole
+        # purchase thread before showing a fresh product list.
+        "ALTER TABLE orders ADD COLUMN delivery_message_id INTEGER",
+        "ALTER TABLE orders ADD COLUMN delivery_file_message_id INTEGER",
     ]
     with engine.connect() as conn:
         ran_language_selected_migration = False

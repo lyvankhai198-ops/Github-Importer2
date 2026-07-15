@@ -228,6 +228,18 @@ def get_order_by_id(db: Session, order_id: int) -> Order:
     return db.query(Order).filter(Order.id == order_id).first()
 
 
+def get_latest_order_for_user(db: Session, telegram_user_id: str) -> Order:
+    """Most recent order for this shopper — used by "🛍 Mua tiếp" to find
+    which purchase thread's messages to clean up before showing a fresh
+    product list."""
+    return (
+        db.query(Order)
+        .filter(Order.telegram_user_id == str(telegram_user_id))
+        .order_by(Order.id.desc())
+        .first()
+    )
+
+
 def get_order_status(db: Session, order_id: int) -> Order:
     return db.query(Order).filter(Order.id == order_id).first()
 

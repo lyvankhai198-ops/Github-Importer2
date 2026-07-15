@@ -948,7 +948,7 @@ async def _deliver_to_user(order: Order, db: Session):
 
         if sv == "completed":
             from bot.notifier import notify_user_delivery, notify_admin_payment_success
-            await notify_user_delivery(bot, order.telegram_user_id, order, support_username=support)
+            await notify_user_delivery(bot, order.telegram_user_id, order, support_username=support, db=db)
             if admin_id:
                 await notify_admin_payment_success(bot, order, admin_id)
         elif sv == "partial_delivery":
@@ -1151,6 +1151,25 @@ async def _delete_all_payment_messages(bot, order: Order, db: Session):
     await safe_delete_message(bot, chat_id, order.quantity_prompt_message_id)
     order.product_message_id = None
     order.quantity_prompt_message_id = None
+    db.commit()
+
+
+async def delete_order_thread_messages(bot, order: Order, db: Session):
+    """
+    Delete every message tracked for this order — product card, quantity
+    prompt, payment QR/instructions, and delivery result (text + file) —
+    so "🛍 Mua tiếp" can clear the whole completed-purchase thread before
+    showing a fresh product list, instead of leaving it to pile up in the
+    chat. Best-effort: safe_delete_message() silently ignores messages that
+    are already gone or too old to delete.
+    """
+    chat_id = order.payment_chat_id or order.telegram_user_id
+    for attr in (
+        "product_message_id", "quantity_prompt_message_id", "payment_message_id",
+        "delivery_message_id", "delivery_file_message_id",
+    ):
+        await safe_delete_message(bot, chat_id, getattr(order, attr))
+        setattr(order, attr, None)
     db.commit()
 
 
