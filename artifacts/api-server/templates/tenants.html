@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}Khách thuê - AI Center{% endblock %}
+{% block page_title %}🏢 Quản lý khách thuê{% endblock %}
+{% block content %}
+<div class="card mb-3">
+  <div class="card-body">
+    <p class="text-muted mb-0">
+      Mỗi tài khoản khách thuê là một shop hoàn toàn riêng biệt: sản phẩm, đơn hàng, khách hàng, cài đặt và phương thức
+      thanh toán của họ tách biệt tuyệt đối với shop của bạn và của khách thuê khác. Tài khoản tự động bị khoá khi hết hạn.
+    </p>
+  </div>
+</div>
+
+<div class="card mb-3">
+  <div class="card-header"><h6 class="mb-0">➕ Tạo tài khoản khách thuê mới</h6></div>
+  <div class="card-body">
+    <form action="/tenants/add" method="post" class="row g-2 align-items-end">
+      <div class="col-12 col-md-3">
+        <label class="form-label small">Tên đăng nhập</label>
+        <input type="text" name="username" class="form-control" required>
+      </div>
+      <div class="col-12 col-md-3">
+        <label class="form-label small">Mật khẩu</label>
+        <input type="text" name="password" class="form-control" required>
+      </div>
+      <div class="col-12 col-md-3">
+        <label class="form-label small">Tên hiển thị (tuỳ chọn)</label>
+        <input type="text" name="display_name" class="form-control" placeholder="Ví dụ: Shop Anh Minh">
+      </div>
+      <div class="col-8 col-md-2">
+        <label class="form-label small">Thời hạn (ngày)</label>
+        <input type="number" name="expires_in_days" class="form-control" value="30" min="0">
+      </div>
+      <div class="col-4 col-md-1">
+        <button type="submit" class="btn btn-primary w-100">Tạo</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header"><h6 class="mb-0">Danh sách khách thuê ({{ tenants|length }})</h6></div>
+  <div class="table-responsive">
+    <table class="table align-middle mb-0">
+      <thead>
+        <tr>
+          <th>Tài khoản</th>
+          <th>Trạng thái</th>
+          <th>Hết hạn</th>
+          <th>Ghi chú</th>
+          <th style="width: 320px">Hành động</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for tenant in tenants %}
+        <tr>
+          <td>
+            <b>{{ tenant.username }}</b>
+            {% if tenant.display_name %}<br><span class="text-muted small">{{ tenant.display_name }}</span>{% endif %}
+          </td>
+          <td>
+            {% if tenant.is_active %}
+              <span class="badge bg-success">Đang hoạt động</span>
+            {% else %}
+              <span class="badge bg-secondary">Đã khoá</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if tenant.expires_at %}
+              {% if tenant.expires_at < now %}
+                <span class="text-danger">{{ tenant.expires_at.strftime("%d/%m/%Y") }} (đã hết hạn)</span>
+              {% else %}
+                {{ tenant.expires_at.strftime("%d/%m/%Y") }}
+              {% endif %}
+            {% else %}
+              <span class="text-muted">Không hết hạn</span>
+            {% endif %}
+          </td>
+          <td class="text-muted small">{{ tenant.notes or "—" }}</td>
+          <td>
+            <div class="d-flex gap-1 flex-wrap">
+              <form action="/tenants/{{ tenant.id }}/extend" method="post" class="d-flex gap-1">
+                <input type="number" name="extra_days" value="30" min="1" class="form-control form-control-sm" style="width: 70px">
+                <button type="submit" class="btn btn-sm btn-outline-success">Gia hạn</button>
+              </form>
+              <form action="/tenants/{{ tenant.id }}/toggle" method="post">
+                <button type="submit" class="btn btn-sm btn-outline-warning">{{ "Khoá" if tenant.is_active else "Mở khoá" }}</button>
+              </form>
+              <form action="/tenants/{{ tenant.id }}/reset-password" method="post" class="d-flex gap-1"
+                    onsubmit="return confirm('Đặt lại mật khẩu cho {{ tenant.username }}?')">
+                <input type="text" name="new_password" placeholder="Mật khẩu mới" class="form-control form-control-sm" style="width: 130px" required>
+                <button type="submit" class="btn btn-sm btn-outline-secondary">Đặt lại</button>
+              </form>
+              <form action="/tenants/{{ tenant.id }}/delete" method="post"
+                    onsubmit="return confirm('Xoá tài khoản {{ tenant.username }}? Dữ liệu shop của họ vẫn được giữ lại nhưng không ai đăng nhập được nữa.')">
+                <button type="submit" class="btn btn-sm btn-outline-danger">🗑</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="text-center text-muted py-4">Chưa có khách thuê nào.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

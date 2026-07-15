@@ -27,3 +27,4 @@
 - [New supplier API = new adapter class](new-supplier-adapter-pattern.md) — never branch inside an existing adapter (e.g. Zampto) for a new supplier; add a sibling BaseAdapter subclass + manager.py branch even if domain/base_url overlaps another integration
 - [Telegram custom emoji icons](telegram-custom-emoji-icons.md) — getStickerSet Bot API auto-imports a whole custom-emoji pack; product icon = fallback char + custom_emoji_id locked/rendered together
 - [ENCRYPTION_KEY must be stable across restarts](encryption-key-stability.md) — unset env var used to regenerate a random key every boot, silently breaking every saved secret; now persisted to a gitignored file as a fallback
+- [Multi-tenant architecture](multi-tenant-architecture.md) — AdminUser IS the tenant; session-level SQLAlchemy auto-filter scopes all queries; fail-safe-to-owner default; SQLite legacy-unique rebuild recipe

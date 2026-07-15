@@ -59,3 +59,16 @@ def get_current_admin(request: Request, db: Session = Depends(get_db)):
         AdminUser.id == admin_id,
         AdminUser.is_active == True
     ).first()
+
+
+def require_owner(request: Request, db: Session = Depends(get_db)):
+    """Like require_admin, but only the platform owner may proceed — used
+    to gate /tenants (tenant account management). Regular tenant admins get
+    redirected home rather than seeing a 403, since the nav link is already
+    hidden from them."""
+    admin = require_admin(request, db)
+    if isinstance(admin, RedirectResponse):
+        return admin
+    if not admin.is_owner:
+        return RedirectResponse(url="/", status_code=302)
+    return admin

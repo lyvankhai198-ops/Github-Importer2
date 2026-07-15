@@ -14,6 +14,7 @@ from config import SECRET_KEY, ADMIN_USERNAME, ADMIN_PASSWORD, PORT
 from database import engine, SessionLocal
 from models import Base, AdminUser
 from auth import hash_password
+import tenancy  # noqa: F401 — registers the tenant-scoping SQLAlchemy event listeners on import
 
 logging.basicConfig(
     level=logging.INFO,
@@ -323,6 +324,44 @@ def _run_migrations():
             FOREIGN KEY(source_connection_id) REFERENCES api_connections(id)
         )""",
         "CREATE INDEX IF NOT EXISTS ix_product_price_history_product ON product_price_history (product_id)",
+
+        # ── Multi-tenant rental support ──────────────────────────────────────
+        # Every AdminUser IS a tenant (see models.AdminUser / tenancy.py).
+        "ALTER TABLE admin_users ADD COLUMN is_owner BOOLEAN DEFAULT 0",
+        "ALTER TABLE admin_users ADD COLUMN expires_at DATETIME",
+        "ALTER TABLE admin_users ADD COLUMN display_name VARCHAR(255)",
+        "ALTER TABLE admin_users ADD COLUMN notes TEXT",
+        # tenant_id on every tenant-scoped table (see models.TenantScopedMixin
+        # subclasses). Nullable — backfilled to the owner's id right after
+        # this migration list runs (see _backfill_tenant_ids below).
+        "ALTER TABLE settings ADD COLUMN tenant_id INTEGER",
+        "ALTER TABLE telegram_bot_config ADD COLUMN tenant_id INTEGER",
+        "ALTER TABLE payment_methods ADD COLUMN tenant_id INTEGER",
+        "ALTER TABLE sepay_config ADD COLUMN tenant_id INTEGER",
+        "ALTER TABLE users ADD COLUMN tenant_id INTEGER",
+        "ALTER TABLE ranks ADD COLUMN tenant_id INTEGER",
+        "ALTER TABLE emoji_icons ADD COLUMN tenant_id INTEGER",
+        "ALTER TABLE products ADD COLUMN tenant_id INTEGER",
+        "ALTER TABLE restock_subscriptions ADD COLUMN tenant_id INTEGER",
+        "ALTER TABLE inventory_items ADD COLUMN tenant_id INTEGER",
+        "ALTER TABLE api_connections ADD COLUMN tenant_id INTEGER",
+        "ALTER TABLE api_products ADD COLUMN tenant_id INTEGER",
+        "ALTER TABLE product_sources ADD COLUMN tenant_id INTEGER",
+        "ALTER TABLE orders ADD COLUMN tenant_id INTEGER",
+        "ALTER TABLE payment_transactions ADD COLUMN tenant_id INTEGER",
+        "ALTER TABLE crypto_transactions ADD COLUMN tenant_id INTEGER",
+        "ALTER TABLE wallet_transactions ADD COLUMN tenant_id INTEGER",
+        "ALTER TABLE wallet_deposits ADD COLUMN tenant_id INTEGER",
+        "ALTER TABLE api_clients ADD COLUMN tenant_id INTEGER",
+        "ALTER TABLE api_request_logs ADD COLUMN tenant_id INTEGER",
+        "ALTER TABLE order_source_attempts ADD COLUMN tenant_id INTEGER",
+        "ALTER TABLE order_issues ADD COLUMN tenant_id INTEGER",
+        "ALTER TABLE activity_logs ADD COLUMN tenant_id INTEGER",
+        "ALTER TABLE notification_events ADD COLUMN tenant_id INTEGER",
+        "ALTER TABLE product_price_history ADD COLUMN tenant_id INTEGER",
+        "CREATE INDEX IF NOT EXISTS ix_products_tenant ON products (tenant_id)",
+        "CREATE INDEX IF NOT EXISTS ix_orders_tenant ON orders (tenant_id)",
+        "CREATE INDEX IF NOT EXISTS ix_users_tenant ON users (tenant_id)",
     ]
     with engine.connect() as conn:
         ran_language_selected_migration = False
@@ -452,6 +491,107 @@ def _run_migrations():
             logger.exception("translation bookkeeping backfill failed")
 
 
+def _fix_legacy_unique_constraints():
+    """
+    Pre-multi-tenant, three columns had a table-wide UNIQUE constraint that's
+    now wrong: two tenants must be able to reuse the same Setting.key,
+    PaymentMethod.method_code, or Product.product_code. SQLite bakes an
+    inline UNIQUE into the table's own CREATE TABLE statement as a
+    constraint-backed index that plain DROP INDEX refuses to touch — the
+    only way to remove it is the standard SQLite table-rebuild dance:
+    rename the old table aside, let SQLAlchemy create a fresh one from the
+    current model (no longer unique=True), copy every row across by the
+    columns the two versions share, drop the old table, then add the real
+    (tenant_id, column) composite unique index.
+    """
+    targets = [
+        ("settings", "key", "ux_settings_tenant_key"),
+        ("payment_methods", "method_code", "ux_payment_methods_tenant_code"),
+        ("products", "product_code", "ux_products_tenant_code"),
+    ]
+    with engine.connect() as conn:
+        for table, col, new_index_name in targets:
+            try:
+                # Already rebuilt (composite index exists) on a previous boot? skip.
+                existing_indexes = [r[1] for r in conn.execute(text(f"PRAGMA index_list({table})")).fetchall()]
+                if new_index_name in existing_indexes:
+                    continue
+
+                old_cols = [r[1] for r in conn.execute(text(f"PRAGMA table_info({table})")).fetchall()]
+                if not old_cols:
+                    continue  # table doesn't exist yet on a brand-new DB
+
+                old_table = f"{table}_pretenant_old"
+                conn.execute(text(f"DROP TABLE IF EXISTS {old_table}"))
+                conn.execute(text(f"ALTER TABLE {table} RENAME TO {old_table}"))
+                conn.commit()
+
+                # SQLite keeps plain (non-constraint) indexes attached to a
+                # table across a rename, under their original name — e.g.
+                # `ix_settings_id` now points at settings_pretenant_old. Drop
+                # those so the fresh table below can recreate them under the
+                # same names. The constraint-backed unique index can't be
+                # dropped this way (same error as before), but that's fine:
+                # it's going away for good once old_table is dropped below.
+                for row in conn.execute(text(f"PRAGMA index_list({old_table})")).fetchall():
+                    try:
+                        conn.execute(text(f"DROP INDEX IF EXISTS {row[1]}"))
+                        conn.commit()
+                    except Exception:
+                        conn.rollback()
+
+                # Recreate the table from the current SQLAlchemy model — this
+                # table no longer declares `unique=True` on the target column.
+                Base.metadata.tables[table].create(bind=engine, checkfirst=True)
+
+                new_cols = [r[1] for r in conn.execute(text(f"PRAGMA table_info({table})")).fetchall()]
+                shared_cols = [c for c in new_cols if c in old_cols]
+                cols_sql = ", ".join(shared_cols)
+                conn.execute(text(f"INSERT INTO {table} ({cols_sql}) SELECT {cols_sql} FROM {old_table}"))
+                conn.execute(text(f"DROP TABLE {old_table}"))
+                conn.execute(text(
+                    f"CREATE UNIQUE INDEX IF NOT EXISTS {new_index_name} ON {table} (tenant_id, {col})"
+                ))
+                conn.commit()
+                logger.info(f"TENANCY_REBUILT_TABLE_FOR_COMPOSITE_UNIQUE: {table}.{col}")
+            except Exception:
+                conn.rollback()
+                logger.exception(f"TENANCY_UNIQUE_INDEX_FIX_FAILED: {table}.{col}")
+
+
+def _backfill_tenant_ids():
+    """
+    Assign every pre-existing NULL tenant_id row to the platform owner (the
+    original single admin account, created before multi-tenant support
+    existed). Must run AFTER the owner AdminUser row is guaranteed to exist
+    and be marked is_owner=True (see lifespan startup order).
+    """
+    from models import AdminUser
+    tenant_tables = [
+        "settings", "telegram_bot_config", "payment_methods", "sepay_config",
+        "users", "ranks", "emoji_icons", "products", "restock_subscriptions",
+        "inventory_items", "api_connections", "api_products", "product_sources",
+        "orders", "payment_transactions", "crypto_transactions",
+        "wallet_transactions", "wallet_deposits", "api_clients",
+        "api_request_logs", "order_source_attempts", "order_issues",
+        "activity_logs", "notification_events", "product_price_history",
+    ]
+    db = SessionLocal()
+    try:
+        owner = db.query(AdminUser).filter(AdminUser.is_owner == True).order_by(AdminUser.id.asc()).first()
+        if not owner:
+            return
+        with engine.connect() as conn:
+            for table in tenant_tables:
+                try:
+                    conn.execute(text(f"UPDATE {table} SET tenant_id = :tid WHERE tenant_id IS NULL"), {"tid": owner.id})
+                    conn.commit()
+                except Exception:
+                    logger.exception(f"TENANCY_BACKFILL_FAILED: {table}")
+    finally:
+        db.close()
+
+
 def _seed_payment_methods():
     """Insert default PaymentMethod rows if not present."""
     from models import PaymentMethod
@@ -513,8 +653,6 @@ async def lifespan(app: FastAPI):
     logger.info("APP_STARTING")
     Base.metadata.create_all(bind=engine)
     _run_migrations()
-    _seed_payment_methods()
-    _seed_ranks()
     UPLOADS_DIR.mkdir(exist_ok=True)
     logger.info("DATABASE_READY")
 
@@ -532,7 +670,9 @@ async def lifespan(app: FastAPI):
     finally:
         db0.close()
 
-    # Create default admin user if none exists
+    # Create default admin user if none exists. This first-ever admin account
+    # is always the platform owner (see models.AdminUser / tenancy.py) —
+    # every additional tenant account is created afterwards from /tenants.
     db = SessionLocal()
     try:
         if db.query(AdminUser).count() == 0:
@@ -540,12 +680,43 @@ async def lifespan(app: FastAPI):
                 username=ADMIN_USERNAME,
                 password_hash=hash_password(ADMIN_PASSWORD),
                 is_active=True,
+                is_owner=True,
             )
             db.add(admin)
             db.commit()
             print(f"[INFO] Admin user created: {ADMIN_USERNAME}")
+        elif db.query(AdminUser).filter(AdminUser.is_owner == True).count() == 0:
+            # Pre-multi-tenant DB being upgraded: the earliest admin account
+            # becomes the owner.
+            first = db.query(AdminUser).order_by(AdminUser.id.asc()).first()
+            if first:
+                first.is_owner = True
+                db.commit()
     finally:
         db.close()
+
+    # Multi-tenant foundation: every pre-existing row belongs to the owner,
+    # and the three columns that used to be globally unique (Setting.key,
+    # PaymentMethod.method_code, Product.product_code) need their unique
+    # index rebuilt as (tenant_id, column) — see tenancy.py for why.
+    _backfill_tenant_ids()
+    _fix_legacy_unique_constraints()
+
+    owner_tenant_id = tenancy.get_owner_tenant_id()
+
+    # Everything below this point (seeding, schedulers, background workers,
+    # the bot) runs with no HTTP request to derive a tenant from, so it's
+    # explicitly scoped to the owner tenant. Today the owner is the only
+    # tenant with a running bot/worker set — per-tenant bot & worker
+    # multiplexing (one set per rented-out tenant) is deferred follow-up
+    # work; see replit.md. asyncio.create_task() captures the current
+    # contextvars context at creation time, so tasks created inside this
+    # `with` block stay scoped to owner_tenant_id for their entire lifetime.
+    tenant_scope_token = tenancy.tenant_scope(owner_tenant_id)
+    tenant_scope_token.__enter__()
+
+    _seed_payment_methods()
+    _seed_ranks()
 
     # Start API sync schedulers
     from models import ApiConnection
@@ -593,6 +764,8 @@ async def lifespan(app: FastAPI):
     finally:
         db3.close()
 
+    tenant_scope_token.__exit__(None, None, None)
+
     yield
 
     # ── Shutdown ──────────────────────────────────────────────────────────────
@@ -620,6 +793,51 @@ app = FastAPI(title="AI Center Web Bot Manager", lifespan=lifespan)
 @app.get("/health")
 async def health_check():
     return {"status": "ok"}
+
+
+@app.middleware("http")
+async def tenant_context_middleware(request: Request, call_next):
+    """
+    Sets the current-tenant contextvar (see tenancy.py) from the logged-in
+    admin's session on every request, so every ORM query for the rest of
+    this request is automatically scoped to that admin's own data. Also
+    enforces rental expiry: once an account's expires_at has passed, it's
+    auto-locked (is_active flips False) on its next request and the session
+    is cleared — no separate scheduled job needed. Must run AFTER
+    SessionMiddleware has parsed request.session (see the add_middleware
+    order below: SessionMiddleware is added *after* this function, which
+    makes it the outer layer that runs first).
+    """
+    from datetime import datetime as _dt
+    from tenancy import set_current_tenant, reset_current_tenant
+    from models import AdminUser as _AdminUser
+
+    tenant_id = None
+    request.state.is_owner = False
+    admin_id = request.session.get("admin_id")
+    if admin_id:
+        db = SessionLocal()
+        try:
+            admin = db.query(_AdminUser).filter(_AdminUser.id == admin_id).first()
+            if admin:
+                if admin.is_active and admin.expires_at and admin.expires_at < _dt.utcnow():
+                    admin.is_active = False
+                    db.commit()
+                if admin.is_active:
+                    tenant_id = admin.id
+                    request.state.is_owner = admin.is_owner
+                else:
+                    request.session.clear()
+        finally:
+            db.close()
+
+    token = set_current_tenant(tenant_id)
+    try:
+        response = await call_next(request)
+    finally:
+        reset_current_tenant(token)
+    return response
+
 
 @app.middleware("http")
 async def api_request_logger(request, call_next):
@@ -684,6 +902,7 @@ from routers import api_clients, customer_api
 from routers import ranks
 from routers import emoji_icons
 from routers import github_webhook
+from routers import tenants  # owner-only tenant account management
 
 app.include_router(auth.router)
 app.include_router(dashboard.router)
@@ -699,6 +918,7 @@ app.include_router(customer_api.router)  # public inbound customer REST API (X-A
 app.include_router(ranks.router)
 app.include_router(emoji_icons.router)
 app.include_router(github_webhook.router)  # POST /github-webhook — VPS auto-deploy (public, HMAC-signed)
+app.include_router(tenants.router)  # owner-only tenant account management
 
 
 if __name__ == "__main__":

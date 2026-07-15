@@ -1,8 +1,25 @@
 from datetime import datetime
 from sqlalchemy import Column, Integer, String, Float, Boolean, Text, DateTime, ForeignKey, Enum as SAEnum, UniqueConstraint
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, declared_attr
 from database import Base
 import enum
+
+
+class TenantScopedMixin:
+    """
+    Mixin for every model whose rows belong to exactly one tenant (shop
+    owner account — see AdminUser.is_owner / AdminUser doubling as tenant
+    identity). `tenant_id` is declared here via @declared_attr (not as a
+    plain Column) so `with_loader_criteria(TenantScopedMixin, ...)` in
+    tenancy.py can resolve `TenantScopedMixin.tenant_id` directly — its
+    lambda-caching/analysis step accesses the attribute on the base class
+    itself, which only works if the column is actually defined on the
+    mixin. See tenancy.py for the actual filtering + auto-assignment
+    machinery this enables.
+    """
+    @declared_attr
+    def tenant_id(cls):
+        return Column(Integer, ForeignKey("admin_users.id"), nullable=True, index=True)
 
 
 class BotStatus(str, enum.Enum):
@@ -116,25 +133,49 @@ def now():
 
 
 class AdminUser(Base):
+    """
+    An admin login. Also doubles as the "tenant" identity for multi-tenant
+    rental: every AdminUser IS a tenant, and every TenantScopedMixin row's
+    tenant_id points back to one of these rows (see tenancy.py). The very
+    first admin account ever created (is_owner=True) is the platform owner
+    who creates/manages the other tenant accounts from /tenants — tenants
+    themselves never see or manage other tenants.
+    """
     __tablename__ = "admin_users"
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String(100), unique=True, nullable=False)
     password_hash = Column(String(255), nullable=False)
     is_active = Column(Boolean, default=True)
+    # True only for the platform owner (first admin account). Owners manage
+    # tenant accounts; tenants are regular shop-admin users scoped to their
+    # own data everywhere else.
+    is_owner = Column(Boolean, default=False, nullable=False)
+    # Rental expiry. NULL = never expires (always true for the owner).
+    # Enforced in the tenant-context middleware (main.py): once past this
+    # date the account is auto-locked (is_active flips to False) on its next
+    # request, rather than a background job — no admin-config schedule needed.
+    expires_at = Column(DateTime, nullable=True)
+    display_name = Column(String(255), nullable=True)  # shown to the owner in the tenant list
+    notes = Column(Text, nullable=True)
     created_at = Column(DateTime, default=now)
     updated_at = Column(DateTime, default=now, onupdate=now)
 
 
-class Setting(Base):
+class Setting(Base, TenantScopedMixin):
     __tablename__ = "settings"
     id = Column(Integer, primary_key=True, index=True)
-    key = Column(String(100), unique=True, nullable=False)
+    # NOTE: uniqueness on `key` alone would collide across tenants (every
+    # tenant needs its own "exchange_rate_config" row, etc). The real
+    # constraint is (tenant_id, key) — enforced by a rebuilt index in
+    # main.py's migrations (SQLite can't ALTER an existing UNIQUE
+    # constraint in place), not by this column declaration.
+    key = Column(String(100), nullable=False)
     value = Column(Text, nullable=True)
     created_at = Column(DateTime, default=now)
     updated_at = Column(DateTime, default=now, onupdate=now)
 
 
-class TelegramBotConfig(Base):
+class TelegramBotConfig(Base, TenantScopedMixin):
     __tablename__ = "telegram_bot_config"
     id = Column(Integer, primary_key=True, index=True)
     bot_token_encrypted = Column(Text, nullable=True)
@@ -175,7 +216,7 @@ class TelegramBotConfig(Base):
     updated_at = Column(DateTime, default=now, onupdate=now)
 
 
-class NotificationEvent(Base):
+class NotificationEvent(Base, TenantScopedMixin):
     """
     Dedup/audit ledger for automatic "new product" / "restock" broadcasts.
     event_key is unique so the same real-world event (a specific product
@@ -197,7 +238,7 @@ class NotificationEvent(Base):
     status = Column(String(20), default="sent")  # "sent" | "skipped" | "failed"
 
 
-class ProductPriceHistory(Base):
+class ProductPriceHistory(Base, TenantScopedMixin):
     """
     Audit trail of every source_price/sale_price change on a Product, so
     admins can see exactly when and why a price moved (see
@@ -221,7 +262,7 @@ class ProductPriceHistory(Base):
     product = relationship("Product")
 
 
-class SepayConfig(Base):
+class SepayConfig(Base, TenantScopedMixin):
     """SePay payment gateway configuration. Sensitive fields are Fernet-encrypted."""
     __tablename__ = "sepay_config"
     id = Column(Integer, primary_key=True, index=True)
@@ -241,14 +282,16 @@ class SepayConfig(Base):
     updated_at = Column(DateTime, default=now, onupdate=now)
 
 
-class PaymentMethod(Base):
+class PaymentMethod(Base, TenantScopedMixin):
     """
     Configurable payment methods: sepay, binance_pay, usdt_bep20, usdt_trc20.
     config_encrypted stores a JSON blob (Fernet-encrypted) with method-specific keys.
     """
     __tablename__ = "payment_methods"
     id = Column(Integer, primary_key=True, index=True)
-    method_code = Column(String(50), unique=True, nullable=False)   # sepay|binance_pay|usdt_bep20|usdt_trc20
+    # NOTE: real uniqueness is (tenant_id, method_code) — see Setting above
+    # for why. Rebuilt in main.py's migrations.
+    method_code = Column(String(50), nullable=False)   # sepay|binance_pay|usdt_bep20|usdt_trc20
     display_name_vi = Column(String(100), nullable=False)
     display_name_en = Column(String(100), nullable=False)
     is_active = Column(Boolean, default=False)
@@ -257,7 +300,7 @@ class PaymentMethod(Base):
     updated_at = Column(DateTime, default=now, onupdate=now)
 
 
-class User(Base):
+class User(Base, TenantScopedMixin):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
     telegram_id = Column(String(50), unique=True, nullable=False)
@@ -292,7 +335,7 @@ class User(Base):
     rank = relationship("Rank", foreign_keys=[rank_id])
 
 
-class Rank(Base):
+class Rank(Base, TenantScopedMixin):
     """
     Admin-configurable membership tier ("Cấp bậc"). A user's rank is derived
     from their live total spend (SUM of paid orders), never from a manually
@@ -311,7 +354,7 @@ class Rank(Base):
     updated_at = Column(DateTime, default=now, onupdate=now)
 
 
-class EmojiIcon(Base):
+class EmojiIcon(Base, TenantScopedMixin):
     """
     Admin-managed library of Telegram custom emoji, used by the "Chọn icon
     sản phẩm" picker on the product add/edit pages (see
@@ -334,10 +377,12 @@ class EmojiIcon(Base):
     created_at = Column(DateTime, default=now)
 
 
-class Product(Base):
+class Product(Base, TenantScopedMixin):
     __tablename__ = "products"
     id = Column(Integer, primary_key=True, index=True)
-    product_code = Column(String(100), unique=True, nullable=False)
+    # NOTE: real uniqueness is (tenant_id, product_code) — two tenants may
+    # legitimately pick the same code. Rebuilt in main.py's migrations.
+    product_code = Column(String(100), nullable=False)
     name = Column(String(255), nullable=False)
     name_en = Column(String(255), nullable=True)    # English name (optional; falls back to name)
     description = Column(Text, nullable=True)
@@ -424,7 +469,7 @@ class Product(Base):
     inventory_items = relationship("InventoryItem", back_populates="product", cascade="all, delete-orphan")
 
 
-class RestockSubscription(Base):
+class RestockSubscription(Base, TenantScopedMixin):
     """
     Per-product "notify me when back in stock" waiting list. Created when a
     shopper taps "🔔 Báo khi có hàng" on an out-of-stock product; consumed
@@ -443,7 +488,7 @@ class RestockSubscription(Base):
     )
 
 
-class InventoryItem(Base):
+class InventoryItem(Base, TenantScopedMixin):
     """
     One row per individual stock credential ("kho tài khoản") for manual_stock products.
     Passwords/raw values must NEVER be written to ActivityLog or general logs.
@@ -473,7 +518,7 @@ class InventoryItem(Base):
     )
 
 
-class ApiConnection(Base):
+class ApiConnection(Base, TenantScopedMixin):
     __tablename__ = "api_connections"
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), nullable=False)
@@ -493,7 +538,7 @@ class ApiConnection(Base):
     orders = relationship("Order", back_populates="api_connection")
 
 
-class ApiProduct(Base):
+class ApiProduct(Base, TenantScopedMixin):
     __tablename__ = "api_products"
     id = Column(Integer, primary_key=True, index=True)
     api_connection_id = Column(Integer, ForeignKey("api_connections.id"), nullable=False)
@@ -532,7 +577,7 @@ class ApiProduct(Base):
     product_sources = relationship("ProductSource", back_populates="api_product")
 
 
-class ProductSource(Base):
+class ProductSource(Base, TenantScopedMixin):
     __tablename__ = "product_sources"
     id = Column(Integer, primary_key=True, index=True)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
@@ -549,7 +594,7 @@ class ProductSource(Base):
     order_attempts = relationship("OrderSourceAttempt", back_populates="product_source")
 
 
-class Order(Base):
+class Order(Base, TenantScopedMixin):
     __tablename__ = "orders"
     id = Column(Integer, primary_key=True, index=True)
     order_code = Column(String(100), unique=True, nullable=False)
@@ -637,7 +682,7 @@ class Order(Base):
     )
 
 
-class PaymentTransaction(Base):
+class PaymentTransaction(Base, TenantScopedMixin):
     """One row per incoming SePay webhook. Unique on (provider, external_transaction_id)."""
     __tablename__ = "payment_transactions"
     id = Column(Integer, primary_key=True, index=True)
@@ -665,7 +710,7 @@ class PaymentTransaction(Base):
     )
 
 
-class CryptoTransaction(Base):
+class CryptoTransaction(Base, TenantScopedMixin):
     """
     On-chain USDT transfers (BEP20 or TRC20) detected by the background monitor.
     Unique on (network, txid, log_index) to prevent double-processing.
@@ -699,7 +744,7 @@ class CryptoTransaction(Base):
     )
 
 
-class WalletTransaction(Base):
+class WalletTransaction(Base, TenantScopedMixin):
     """
     Immutable ledger row for every wallet balance change (deposit, purchase
     debit, auto-refund, or manual admin credit/debit). balance_before/after
@@ -723,7 +768,7 @@ class WalletTransaction(Base):
     order = relationship("Order", foreign_keys=[order_id])
 
 
-class WalletDeposit(Base):
+class WalletDeposit(Base, TenantScopedMixin):
     """
     A shopper-initiated top-up request. VND deposits are auto-credited from
     the SePay webhook (matched on reference_code in the transfer content);
@@ -763,7 +808,7 @@ class WalletDeposit(Base):
     user = relationship("User", foreign_keys=[telegram_user_id])
 
 
-class ApiClient(Base):
+class ApiClient(Base, TenantScopedMixin):
     """
     One row per customer who has generated a programmatic API key (bot menu
     "🔗 API"). A customer may only have one active client at a time — the
@@ -793,7 +838,7 @@ class ApiClient(Base):
     user = relationship("User", foreign_keys=[telegram_user_id])
 
 
-class ApiRequestLog(Base):
+class ApiRequestLog(Base, TenantScopedMixin):
     """One row per inbound customer-API request, written by the logging
     middleware right after the response is produced (see main.py)."""
     __tablename__ = "api_request_logs"
@@ -808,7 +853,7 @@ class ApiRequestLog(Base):
     client = relationship("ApiClient")
 
 
-class OrderSourceAttempt(Base):
+class OrderSourceAttempt(Base, TenantScopedMixin):
     __tablename__ = "order_source_attempts"
     id = Column(Integer, primary_key=True, index=True)
     order_id = Column(Integer, ForeignKey("orders.id"), nullable=False)
@@ -824,7 +869,7 @@ class OrderSourceAttempt(Base):
     product_source = relationship("ProductSource", back_populates="order_attempts")
 
 
-class OrderIssue(Base):
+class OrderIssue(Base, TenantScopedMixin):
     """
     A shopper's "⚠️ Báo lỗi" report against a delivered order, sent straight
     to the admin for review (view order / reply / refund to wallet / reject
@@ -855,7 +900,7 @@ class OrderIssue(Base):
     user = relationship("User", foreign_keys=[telegram_user_id])
 
 
-class ActivityLog(Base):
+class ActivityLog(Base, TenantScopedMixin):
     __tablename__ = "activity_logs"
     id = Column(Integer, primary_key=True, index=True)
     action = Column(String(255), nullable=False)
