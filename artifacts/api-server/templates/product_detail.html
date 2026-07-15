@@ -275,6 +275,15 @@
           <div class="form-section">
             <div class="form-section-title">2. Giá</div>
             <div class="row g-3">
+              {% if product.hide_source_price %}
+              <input type="hidden" name="source_price" value="{{ product.source_price|int if product.source_price is not none else 0 }}">
+              <div class="col-md-6"><label class="form-label">Giá bán (đ)</label><input type="number" name="sale_price" class="form-control price-sale-input" value="{{ product.sale_price|int }}" step="1" min="{{ product.min_allowed_sale_price|int if product.min_allowed_sale_price else 0 }}">
+                <div class="form-text">
+                  ≈ {{ "%.2f"|format(product.price_usdt or 0) }} USDT
+                  {% if product.min_allowed_sale_price %} — tối thiểu <strong>{{ "{:,.0f}".format(product.min_allowed_sale_price).replace(",", ".") }}đ</strong>{% endif %}
+                </div>
+              </div>
+              {% else %}
               <div class="col-md-6"><label class="form-label">Giá nguồn (đ)</label><input type="number" name="source_price" class="form-control price-source-input" value="{{ product.source_price|int if product.source_price is not none else 0 }}" step="1" min="0">
                 <div class="form-text">Giá nhập từ nhà cung cấp — tự cập nhật khi đồng bộ API.</div>
               </div>
@@ -286,6 +295,7 @@
                 <input type="text" class="form-control price-margin-preview" value="{{ product.price_margin|int if product.price_margin is not none else 0 }}đ" disabled>
                 <div class="form-text">= Giá bán − Giá nguồn, tự tính lại khi lưu.</div>
               </div>
+              {% endif %}
               <div class="col-md-6 d-flex align-items-end">
                 <div class="form-check form-switch">
                   <input class="form-check-input" type="checkbox" name="auto_adjust_price" value="1" id="autoAdjustDetail" {% if product.auto_adjust_price %}checked{% endif %}>

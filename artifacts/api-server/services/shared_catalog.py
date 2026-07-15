@@ -33,6 +33,24 @@ from tenancy import get_owner_tenant_id
 logger = logging.getLogger(__name__)
 
 
+def is_shared_from_admin_product(db: Session, product_id: int) -> bool:
+    """True when this Product's active source was attached via the owner's
+    shared catalog ("Kho hàng chung"), not the tenant's own API connection
+    or a manually-entered product. This is the ONLY case where the real
+    supplier cost must stay hidden from the tenant — see market_pricing.py
+    and routers/products.py for where this gates display/edit/enforcement."""
+    return (
+        db.query(ProductSource)
+        .filter(
+            ProductSource.product_id == product_id,
+            ProductSource.shared_from_admin == True,
+            ProductSource.is_active == True,
+        )
+        .first()
+        is not None
+    )
+
+
 def resolve_api_product(db: Session, source: ProductSource) -> ApiProduct | None:
     """The ApiProduct a ProductSource points to, regardless of which tenant
     owns it. Use this instead of `source.api_product` anywhere fulfillment

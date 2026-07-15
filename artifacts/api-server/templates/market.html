@@ -129,7 +129,7 @@
             </td>
             <td>
               {{ "{:,.0f}".format(ap.display_price).replace(",", ".") }}đ
-              {% if state_filter != 'listed' and ap.display_source_price %}
+              {% if state_filter != 'listed' and ap.display_source_price and request.state.is_owner %}
               <div><small class="text-muted">nguồn {{ "{:,.0f}".format(ap.display_source_price).replace(",", ".") }}đ</small></div>
               {% endif %}
             </td>
@@ -184,7 +184,7 @@
     </div>
     <div class="product-card-body">
       <div class="product-card-row">💰 {% if state_filter=='listed' %}Giá tối thiểu treo{% else %}Giá bán (đã +markup){% endif %}: <strong>{{ "{:,.0f}".format(ap.display_price).replace(",", ".") }}đ</strong>
-        {% if state_filter != 'listed' and ap.display_source_price %}
+        {% if state_filter != 'listed' and ap.display_source_price and request.state.is_owner %}
         <small class="text-muted">(nguồn {{ "{:,.0f}".format(ap.display_source_price).replace(",", ".") }}đ)</small>
         {% endif %}
       </div>
@@ -227,10 +227,12 @@
       <form action="/products/api-sources/{{ ap.id }}/create-product" method="post">
         <div class="modal-body">
           <p class="mb-1">{{ ap.display_icon }} <strong>{{ ap.display_name }}</strong></p>
+          {% if request.state.is_owner %}
           <p class="mb-3 text-muted small">
             Giá nguồn: {{ "{:,.0f}".format(ap.display_source_price or 0).replace(",", ".") }}đ
             — đã tự cộng markup, giá bán đề xuất bên dưới.
           </p>
+          {% endif %}
           <div class="mb-2">
             <label class="form-label fw-semibold">Giá treo (giá bán cho khách)</label>
             <input type="number"
@@ -238,10 +240,16 @@
                    class="form-control form-control-lg"
                    value="{{ ap.display_price or 0 }}"
                    step="1000"
-                   min="0"
+                   min="{% if request.state.is_owner %}0{% else %}{{ ap.display_price or 0 }}{% endif %}"
                    inputmode="decimal"
                    required>
-            <div class="form-text">Tự sửa nếu muốn giá khác — mặc định đã +markup từ giá nguồn.</div>
+            <div class="form-text">
+              {% if request.state.is_owner %}
+              Tự sửa nếu muốn giá khác — mặc định đã +markup từ giá nguồn.
+              {% else %}
+              Giá bán tối thiểu là {{ "{:,.0f}".format(ap.display_price or 0).replace(",", ".") }}đ — không thể đặt thấp hơn.
+              {% endif %}
+            </div>
           </div>
         </div>
         <div class="modal-footer">

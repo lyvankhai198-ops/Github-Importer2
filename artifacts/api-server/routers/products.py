@@ -85,6 +85,17 @@ async def products_list(
         for p in products:
             p.stock_available = get_available_count(db, p.id) if p.delivery_mode == DeliveryMode.manual_stock else None
 
+    # Chợ-sourced products: hide the real supplier cost from anyone but the
+    # owner, and surface the enforced minimum listing price instead — see
+    # services/shared_catalog.is_shared_from_admin_product.
+    from services import shared_catalog as _shared_catalog
+    from services.market_pricing import default_sale_price as _default_sale_price
+    _is_owner = request.state.is_owner
+    for p in products:
+        p.is_shared_from_admin = _shared_catalog.is_shared_from_admin_product(db, p.id)
+        p.hide_source_price = p.is_shared_from_admin and not _is_owner
+        p.min_allowed_sale_price = _default_sale_price(db, p.source_price or 0.0) if p.is_shared_from_admin else None
+
     # Distinct brand keys across all products (unfiltered) so the brand
     # dropdown always lists every brand, not just the ones on the current page.
     brand_keys = sorted({compute_brand_key(p.name) for p in db.query(Product.name).all() if compute_brand_key(p.name)})
@@ -198,6 +209,8 @@ async def products_market(
             if current is None or (src.product.is_active and not current.is_active):
                 linked_by_ap[src.api_product_id] = src.product
 
+    from services import shared_catalog as _shared_catalog
+
     for ap in api_products:
         ap.is_shared_from_admin = ap.id in shared_ap_ids
         ap.display_connection_name = conn_name_by_ap_id.get(ap.id, "")
@@ -213,6 +226,11 @@ async def products_market(
             ap.display_stock = info["stock"]
             ap.display_unlimited = product.delivery_mode.value in ("manual_admin", "manual")
             ap.last_update = product.updated_at
+            # Same hide-source-price / enforce-floor rule as the edit modal
+            # elsewhere — the modal here is keyed off `product`, not `ap`.
+            product.is_shared_from_admin = _shared_catalog.is_shared_from_admin_product(db, product.id)
+            product.hide_source_price = product.is_shared_from_admin and not is_owner
+            product.min_allowed_sale_price = default_sale_price(db, product.source_price or 0.0) if product.is_shared_from_admin else None
         else:
             ap.display_name = ap.external_name or ap.external_product_id
             ap.display_icon = "📦"
@@ -462,6 +480,21 @@ async def edit_product(
         flash(request, "Mã sản phẩm đã tồn tại ở sản phẩm khác!", "error")
         return RedirectResponse(url="/products", status_code=302)
 
+    # Chợ-sourced products: the tenant must never move the real supplier
+    # cost, and must never list below cost+markup — both the source_price
+    # they submitted and any sale_price under the floor are rejected here,
+    # independent of whatever the (possibly tampered) form actually sent.
+    from services import shared_catalog
+    from services.market_pricing import default_sale_price
+    is_owner = request.state.is_owner
+    is_shared = shared_catalog.is_shared_from_admin_product(db, product.id)
+    if is_shared and not is_owner:
+        source_price = product.source_price or 0.0  # ignore submitted value entirely
+        floor = default_sale_price(db, source_price)
+        if sale_price < floor:
+            flash(request, f"Giá bán tối thiểu cho sản phẩm này là {floor:,.0f}đ".replace(",", "."), "error")
+            return RedirectResponse(url="/products", status_code=302)
+
     try:
         from services.product_sync import (
             apply_admin_edit, apply_admin_en_edit, sync_translations, resolve_bilingual_fields,
@@ -704,12 +737,17 @@ async def create_product_from_source(
         if not shared_ap:
             flash(request, "Không tìm thấy sản phẩm nguồn!", "error")
             return RedirectResponse(url="/products/market", status_code=302)
+        from services.market_pricing import default_sale_price
+        floor = default_sale_price(db, shared_ap.external_price or 0.0)
+        final_price = sale_price if sale_price > 0 else floor
+        # Chợ-sourced item: never let a tenant list below cost+markup — the
+        # real supplier cost must stay hidden, so the message quotes only
+        # the (already-visible) minimum listing price, never the source price.
+        if not request.state.is_owner and final_price < floor:
+            flash(request, f"Giá treo tối thiểu cho sản phẩm này là {floor:,.0f}đ".replace(",", "."), "error")
+            return RedirectResponse(url="/products/market", status_code=302)
         try:
-            from services.market_pricing import default_sale_price
-            shared_catalog.attach_shared_product(
-                db, get_current_tenant(), api_product_id,
-                sale_price if sale_price > 0 else default_sale_price(db, shared_ap.external_price or 0.0),
-            )
+            shared_catalog.attach_shared_product(db, get_current_tenant(), api_product_id, final_price)
             flash(request, "Sản phẩm đã được treo lên Chợ!")
         except ValueError as e:
             flash(request, str(e), "error")
@@ -854,6 +892,14 @@ async def product_detail(product_id: int, request: Request, db: Session = Depend
     counts = get_inventory_counts(db, product_id) if product.delivery_mode == DeliveryMode.manual_stock else None
     has_orders = db.query(Order).filter(Order.product_id == product_id).first() is not None
     orders_count = db.query(Order).filter(Order.product_id == product_id).count()
+
+    # Same hide-source-price / enforce-floor rule as the list views — see
+    # services/shared_catalog.is_shared_from_admin_product.
+    from services import shared_catalog as _shared_catalog
+    from services.market_pricing import default_sale_price as _default_sale_price
+    product.is_shared_from_admin = _shared_catalog.is_shared_from_admin_product(db, product.id)
+    product.hide_source_price = product.is_shared_from_admin and not request.state.is_owner
+    product.min_allowed_sale_price = _default_sale_price(db, product.source_price or 0.0) if product.is_shared_from_admin else None
 
     inventory_page = 1
     inventory_items = []
