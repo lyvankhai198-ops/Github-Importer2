@@ -4,8 +4,8 @@ A web dashboard + Telegram bot for running a digital-goods shop: manage products
 
 ## Run & Operate
 
-- API + bot: runs via the `artifacts/api-server: API Server` workflow (`python3 main.py` inside `artifacts/api-server`)
-- Canvas/mockup sandbox: `artifacts/mockup-sandbox: Component Preview Server` workflow
+- API + bot: runs via the `API Server` workflow (`cd artifacts/api-server && PORT=8080 python3 main.py`). An `artifact.toml` exists at `artifacts/api-server/.replit-artifact/` from the original repo, but this project isn't registered as a Replit artifact in this workspace (`listArtifacts()` returns empty) — it's set up as a plain workflow instead, and is reachable at the workspace's root preview URL.
+- Canvas/mockup sandbox: not currently running; `artifacts/mockup-sandbox` also has an unregistered `artifact.toml`.
 - Default admin login: `admin` / `admin123` (change from the Settings page)
 - Telegram bot token, payment gateway keys, and integration API keys are configured from the web dashboard (Settings / API Connections pages), not env vars — they're stored encrypted in the database
 - `ENCRYPTION_KEY` / `SECRET_KEY` are set as environment variables so encrypted settings and sessions survive restarts
