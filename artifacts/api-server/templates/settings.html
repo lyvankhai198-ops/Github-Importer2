@@ -20,23 +20,6 @@
 <!-- ══════════════════════════════ Cấu hình bot (all settings in one page) ══════════════════════════════ -->
 <div class="tab-pane fade {% if active_tab == 'config' or not active_tab %}show active{% endif %}" id="tabConfig">
 
-  <!-- Shop Section -->
-  <div class="mb-3">
-    <div class="card">
-      <div class="card-header"><h6 class="mb-0">🏪 Thông tin cửa hàng</h6></div>
-      <form action="/settings/store" method="post">
-        <div class="card-body">
-          <div class="mb-3"><label class="form-label">Tên cửa hàng</label><input type="text" name="shop_name" class="form-control" value="AI Center Bot Manager"></div>
-          <div class="mb-3"><label class="form-label">Username hỗ trợ</label>
-            <div class="input-group"><span class="input-group-text">@</span>
-            <input type="text" name="support_username" class="form-control" value="{{ cfg.support_username or '' }}"></div>
-          </div>
-        </div>
-        <div class="card-footer"><button type="submit" class="btn btn-primary">Lưu cài đặt</button></div>
-      </form>
-    </div>
-  </div>
-
   <!-- Bot Section -->
   <div class="mb-3">
     <div class="row g-3">
