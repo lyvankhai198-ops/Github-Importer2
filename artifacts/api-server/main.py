@@ -815,22 +815,33 @@ async def lifespan(app: FastAPI):
     _background_tasks.append(asyncio.create_task(binance_pay_loop()))
     _background_tasks.append(asyncio.create_task(expire_wallet_deposits_loop()))
 
-    # Auto-start the Telegram bot if it's configured + enabled, so it comes
-    # back up on its own after a restart/redeploy without an admin visiting
-    # the web UI. If the token is missing/invalid, the site still starts —
-    # bot status simply stays "error" until fixed from /settings.
+    # Auto-start every tenant's Telegram bot that's configured + enabled, so
+    # they all come back up on their own after a restart/redeploy without an
+    # admin visiting the web UI. Each tenant gets its own BotManager (see
+    # services/bot_service.py) so they run concurrently and independently —
+    # one tenant's missing/invalid token only leaves THAT bot in "error"
+    # state, it doesn't block or get confused with anyone else's bot.
     from models import TelegramBotConfig
-    from services.bot_service import bot_manager
+    from services.bot_service import get_bot_manager
     from crypto import decrypt
     db3 = SessionLocal()
     try:
-        cfg = db3.query(TelegramBotConfig).first()
-        if cfg and cfg.is_enabled:
+        cfgs = (
+            db3.query(TelegramBotConfig)
+            .execution_options(skip_tenant_filter=True)
+            .filter(TelegramBotConfig.is_enabled == True)
+            .all()
+        )
+        started = 0
+        for cfg in cfgs:
             token = decrypt(cfg.bot_token_encrypted) if cfg.bot_token_encrypted else ""
-            if token:
-                await bot_manager.start_bot(token)
-            else:
-                logger.warning("TELEGRAM_BOT_AUTOSTART_SKIPPED: bot enabled but no token configured")
+            if not token:
+                logger.warning(f"TELEGRAM_BOT_AUTOSTART_SKIPPED tenant={cfg.tenant_id}: bot enabled but no token configured")
+                continue
+            with tenancy.tenant_scope(cfg.tenant_id):
+                await get_bot_manager(cfg.tenant_id).start_bot(token)
+            started += 1
+        logger.info(f"TELEGRAM_BOT_AUTOSTART: {started}/{len(cfgs)} tenant bot(s) started")
     finally:
         db3.close()
 
@@ -839,9 +850,10 @@ async def lifespan(app: FastAPI):
     yield
 
     # ── Shutdown ──────────────────────────────────────────────────────────────
-    from services.bot_service import bot_manager as _bm
-    if _bm.is_running():
-        await _bm.stop_bot()
+    from services.bot_service import get_all_bot_managers
+    for _tenant_id, _mgr in get_all_bot_managers().items():
+        if _mgr.is_running():
+            await _mgr.stop_bot()
 
     from services.api_service import stop_all_sync_schedulers
     stop_all_sync_schedulers()

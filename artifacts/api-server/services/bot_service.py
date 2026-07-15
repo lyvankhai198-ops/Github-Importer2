@@ -5,6 +5,7 @@ from typing import Optional
 from database import SessionLocal
 from models import TelegramBotConfig, BotStatus
 from crypto import decrypt
+from tenancy import tenant_scope
 
 logger = logging.getLogger(__name__)
 
@@ -22,9 +23,13 @@ def _backoff_delay(attempt: int) -> int:
 
 
 class BotManager:
-    _instance: Optional["BotManager"] = None
+    """Manages ONE tenant's Telegram bot process. Each tenant (rented-out
+    shop account) gets its own instance — see get_bot_manager() below —
+    so multiple tenants' bots can run concurrently without one tenant's
+    bot blocking or stealing another's "already running" state."""
 
-    def __init__(self):
+    def __init__(self, tenant_id: Optional[int] = None):
+        self._tenant_id = tenant_id
         self._bot_task: Optional[asyncio.Task] = None
         self._application = None
         self._status = BotStatus.stopped
@@ -33,12 +38,6 @@ class BotManager:
         self._stop_requested = False
         self._retry_count = 0
         self._last_error = ""
-
-    @classmethod
-    def get_instance(cls) -> "BotManager":
-        if cls._instance is None:
-            cls._instance = cls()
-        return cls._instance
 
     def is_running(self) -> bool:
         return self._bot_task is not None and not self._bot_task.done()
@@ -56,17 +55,21 @@ class BotManager:
     def _update_db_status(self, status: BotStatus, bot_name: str = None, bot_username: str = None):
         db = SessionLocal()
         try:
-            cfg = db.query(TelegramBotConfig).first()
-            if cfg:
-                cfg.bot_status = status
-                cfg.updated_at = datetime.utcnow()
-                if bot_name is not None:
-                    cfg.bot_name = bot_name
-                if bot_username is not None:
-                    cfg.bot_username = bot_username
-                db.commit()
+            # Scope explicitly to this manager's own tenant — this can run
+            # from inside a long-lived supervisor task, so it must not rely
+            # on whatever ambient tenant context happens to be set.
+            with tenant_scope(self._tenant_id):
+                cfg = db.query(TelegramBotConfig).first()
+                if cfg:
+                    cfg.bot_status = status
+                    cfg.updated_at = datetime.utcnow()
+                    if bot_name is not None:
+                        cfg.bot_name = bot_name
+                    if bot_username is not None:
+                        cfg.bot_username = bot_username
+                    db.commit()
         except Exception as e:
-            logger.error(f"DB status update error: {e}")
+            logger.error(f"DB status update error (tenant={self._tenant_id}): {e}")
         finally:
             db.close()
 
@@ -74,14 +77,20 @@ class BotManager:
         """Start the bot under the watchdog supervisor. Idempotent — safe to
         call again while already running/reconnecting."""
         if self.is_running():
-            logger.info("Bot already running")
+            logger.info(f"Bot already running (tenant={self._tenant_id})")
             return
         self._stop_requested = False
         self._retry_count = 0
         self._last_error = ""
         self._status = BotStatus.starting
         self._update_db_status(BotStatus.starting)
-        self._bot_task = asyncio.create_task(self._supervise(token))
+        # asyncio.create_task() copies the current contextvars context at
+        # creation time, so wrapping it in this tenant's scope keeps the
+        # supervisor task (and every DB query/handler it spawns) scoped to
+        # THIS tenant for its entire lifetime, regardless of what tenant
+        # happens to be ambient by the time it actually runs.
+        with tenant_scope(self._tenant_id):
+            self._bot_task = asyncio.create_task(self._supervise(token))
 
     async def _supervise(self, token: str):
         """
@@ -244,4 +253,43 @@ class BotManager:
         return False
 
 
-bot_manager = BotManager.get_instance()
+# ── Per-tenant registry ─────────────────────────────────────────────────────
+# One BotManager per tenant (rented-out shop account), keyed by tenant_id, so
+# each tenant's bot runs independently — starting/stopping tenant A's bot
+# never affects tenant B's, and "is it already running?" is answered per
+# tenant instead of for the whole process.
+_managers: dict = {}
+
+
+def get_bot_manager(tenant_id: Optional[int]) -> "BotManager":
+    """Get (or lazily create) the BotManager for a specific tenant."""
+    mgr = _managers.get(tenant_id)
+    if mgr is None:
+        mgr = BotManager(tenant_id)
+        _managers[tenant_id] = mgr
+    return mgr
+
+
+def get_all_bot_managers() -> dict:
+    """All BotManager instances created so far, keyed by tenant_id. Used at
+    shutdown to stop every tenant's bot, and for any admin-wide overview."""
+    return dict(_managers)
+
+
+class _CurrentTenantBotManagerProxy:
+    """Backward/forward-compatible proxy: every existing call site does
+    `from services.bot_service import bot_manager; bot_manager.foo(...)`.
+    Rather than rewriting every one of those call sites (routers/services
+    that already run inside the correct ambient tenant scope — either an
+    HTTP request scoped by TenantContextMiddleware, or a background loop
+    that explicitly uses tenant_scope()), this proxy resolves `bot_manager`
+    to the BotManager for whatever tenant is ambient *at the moment of
+    attribute access*, so `bot_manager.send_message(...)` etc. keep working
+    unchanged while actually operating on the correct tenant's bot."""
+
+    def __getattr__(self, name):
+        from tenancy import get_current_tenant
+        return getattr(get_bot_manager(get_current_tenant()), name)
+
+
+bot_manager = _CurrentTenantBotManagerProxy()
