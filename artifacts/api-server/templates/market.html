@@ -72,7 +72,7 @@
     <a class="nav-link {% if state_filter=='listed' %}active{% endif %}" href="/products/market?brand={{ brand_filter }}&state=listed">Đang treo</a>
   </li>
   <li class="nav-item">
-    <a class="nav-link {% if state_filter=='unlisted' %}active{% endif %}" href="/products/market?brand={{ brand_filter }}&state=unlisted">Chưa treo</a>
+    <a class="nav-link {% if state_filter=='unlisted' %}active{% endif %}" href="/products/market?brand={{ brand_filter }}&state=unlisted">Nguồn hàng</a>
   </li>
 </ul>
 
@@ -80,7 +80,7 @@
   {% if other_tab_has_products %}
   <div class="alert alert-info">
     {% if state_filter == 'listed' %}
-    Chưa treo sản phẩm nào cả. Chuyển sang tab <a href="/products/market?state=unlisted">Chưa treo</a> để chọn sản phẩm và treo lên Chợ.
+    Chưa treo sản phẩm nào cả. Chuyển sang tab <a href="/products/market?state=unlisted">Nguồn hàng</a> để chọn sản phẩm và treo lên Chợ.
     {% else %}
     Không còn sản phẩm nào chưa treo — tất cả đã ở tab <a href="/products/market?state=listed">Đang treo</a>.
     {% endif %}
