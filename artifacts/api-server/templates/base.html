@@ -23,7 +23,8 @@
     </div>
     <ul class="sidebar-nav">
       <li><a href="/" class="sidebar-link {% if request.url.path == '/' %}active{% endif %}"><i class="bi bi-speedometer2"></i> Tổng quan</a></li>
-      <li><a href="/products" class="sidebar-link {% if '/products' in request.url.path %}active{% endif %}"><i class="bi bi-box-seam"></i> Sản phẩm</a></li>
+      <li><a href="/products" class="sidebar-link {% if '/products' in request.url.path and '/products/market' not in request.url.path %}active{% endif %}"><i class="bi bi-box-seam"></i> Sản phẩm</a></li>
+      <li><a href="/products/market" class="sidebar-link {% if '/products/market' in request.url.path %}active{% endif %}"><i class="bi bi-shop"></i> Chợ</a></li>
       <li><a href="/orders" class="sidebar-link {% if '/orders' in request.url.path %}active{% endif %}"><i class="bi bi-receipt"></i> Đơn hàng</a></li>
       <li><a href="/api-connections" class="sidebar-link {% if '/api-connections' in request.url.path %}active{% endif %}"><i class="bi bi-plug"></i> Kết nối API</a></li>
       <li><a href="/users" class="sidebar-link {% if '/users' in request.url.path %}active{% endif %}"><i class="bi bi-people"></i> Người dùng</a></li>

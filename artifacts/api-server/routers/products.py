@@ -117,6 +117,70 @@ async def products_list(
     return response
 
 
+@router.get("/products/market", response_class=HTMLResponse)
+async def products_market(
+    request: Request, db: Session = Depends(get_db),
+    brand: str = "", state: str = "listed",
+):
+    """
+    "Chợ" view — canboso-style browsing: a grid of brand chips (each showing
+    how many of that brand's products are currently treo/listed), and, once a
+    brand is picked, a price-ascending table of that brand's products for the
+    selected state ("listed" = treo, "unlisted" = chưa treo) with a one-click
+    toggle action and access to the same edit modal used on /products.
+    """
+    if not check_auth(request):
+        return RedirectResponse(url="/login", status_code=302)
+    from services.normalize import compute_brand_key
+    from services.product_service import get_product_stock_status
+
+    all_products = db.query(Product).all()
+
+    # Brand chip counts reflect currently-listed (treo) products only — that
+    # is what "Chợ" is showing off, mirroring the canboso reference (each
+    # chip's number is how many listings are live under that brand).
+    brand_counts: dict[str, int] = {}
+    for p in all_products:
+        if not p.is_active:
+            continue
+        bk = compute_brand_key(p.name)
+        if not bk:
+            continue
+        brand_counts[bk] = brand_counts.get(bk, 0) + 1
+    brands = sorted(brand_counts.items(), key=lambda kv: kv[0])
+    total_listed = sum(brand_counts.values())
+
+    is_listed_state = state != "unlisted"
+    products = [p for p in all_products if p.is_active == is_listed_state]
+    if brand:
+        products = [p for p in products if compute_brand_key(p.name) == brand]
+
+    for p in products:
+        info = get_product_stock_status(p.id, db)
+        p.stock_display = info["stock"]
+        p.stock_status = info["status"]
+
+    # Price ascending — "Giá tối thiểu treo" first, matching the canboso table.
+    products.sort(key=lambda p: (p.sale_price or 0, p.name or ""))
+
+    api_connections = db.query(ApiConnection).filter(ApiConnection.is_active == True).all()
+    from models import EmojiIcon
+    emoji_icons = db.query(EmojiIcon).filter(EmojiIcon.is_active == True).order_by(EmojiIcon.sort_order.asc(), EmojiIcon.id.asc()).all()
+    flash_msg = request.session.pop("flash", None)
+    response = templates.TemplateResponse(request, "market.html", {
+        "products": products,
+        "api_connections": api_connections,
+        "emoji_icons": emoji_icons,
+        "brands": brands,
+        "total_listed": total_listed,
+        "brand_filter": brand,
+        "state_filter": "unlisted" if not is_listed_state else "listed",
+        "flash": flash_msg,
+    })
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    return response
+
+
 def _parse_optional_float(raw: str | None) -> float | None:
     """Blank/whitespace-only form field -> None (no limit); otherwise parsed float."""
     if raw is None:
