@@ -32,7 +32,13 @@ def _friendly_error_message(message: str) -> str:
 
 
 async def sync_api_products(db: Session, api_connection_id: int) -> dict:
-    conn = db.query(ApiConnection).filter(ApiConnection.id == api_connection_id).first()
+    # skip_tenant_filter: this may be the OWNER's connection being refreshed
+    # on behalf of a non-owner tenant viewing shared-catalog ("Chợ dùng
+    # chung") products — without bypassing the filter here, the lookup would
+    # silently return None under a non-owner tenant's request context and
+    # the sync would be skipped entirely, leaving stock stale for everyone
+    # but the owner.
+    conn = db.query(ApiConnection).execution_options(skip_tenant_filter=True).filter(ApiConnection.id == api_connection_id).first()
     if not conn:
         return {"success": False, "message": "Connection not found"}
     adapter = api_manager.get_adapter(conn)
@@ -421,7 +427,11 @@ async def sync_active_supplier_products(db: Session) -> dict:
             return {"ran": False, "failed": []}
         _last_full_sync_at = now
 
-    connections = db.query(ApiConnection).filter(ApiConnection.is_active == True).all()
+    # skip_tenant_filter: a shopper viewing "Chợ" may be a non-owner tenant —
+    # every active connection (including ones owned by the admin and merely
+    # shared with this tenant) must be refreshed, not just this tenant's own,
+    # or shared-catalog products go stale/"Hết hàng" for anyone but the owner.
+    connections = db.query(ApiConnection).execution_options(skip_tenant_filter=True).filter(ApiConnection.is_active == True).all()
     if not connections:
         return {"ran": True, "failed": []}
 

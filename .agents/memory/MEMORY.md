@@ -1,3 +1,4 @@
+- [Shared-catalog sync tenant scope](shared-catalog-sync-tenant-scope.md) — supplier sync must bypass tenant filter or a non-owner's "Chợ" view sees stale/false "hết hàng" for the owner's shared products
 - [Multi-method payment arch](multi-method-payment.md) — order created first (no method), payment method shown as inline keyboard; method chosen → order updated + payment instructions sent
 - [Crypto payment uniqueness](crypto-uniqueness.md) — tiny per-order offset on USDT amount prevents ambiguous matching of concurrent BEP20/TRC20 transfers to the same wallet
 - [Binance Pay two modes](binance-modes.md) — single PaymentMethod row "binance_pay"; mode "manual"|"merchant" stored in config_encrypted JSON; manual=admin confirms, merchant=Binance API webhook
