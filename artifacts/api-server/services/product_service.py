@@ -38,8 +38,9 @@ def get_product_stock_status(product_id: int, db: Session) -> dict:
     any_synced = False
     any_error = False
 
+    from services.shared_catalog import resolve_api_product
     for src in sources:
-        ap = src.api_product
+        ap = resolve_api_product(db, src)
         if not ap:
             any_error = True
             continue

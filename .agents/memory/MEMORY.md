@@ -29,3 +29,4 @@
 - [ENCRYPTION_KEY must be stable across restarts](encryption-key-stability.md) — unset env var used to regenerate a random key every boot, silently breaking every saved secret; now persisted to a gitignored file as a fallback
 - [Multi-tenant architecture](multi-tenant-architecture.md) — AdminUser IS the tenant; session-level SQLAlchemy auto-filter scopes all queries; fail-safe-to-owner default; SQLite legacy-unique rebuild recipe
 - [Ví chợ (market wallet) design](market-wallet-vi-cho.md) — VND-denominated wallet funds virtual stock (balance÷cost) for chợ-sourced products; combined cost+fee debit at order completion; crypto deposits mirror customer wallet matching
+- [Shared-catalog cross-tenant resolution](shared-catalog-cross-tenant.md) — tenants list from owner's API connections without their own key; bypass tenant filter by known FK id, not via relationship, when a row can legitimately point cross-tenant

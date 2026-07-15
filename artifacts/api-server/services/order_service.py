@@ -113,7 +113,10 @@ async def create_order(
             attempt_num = 1
 
             while source:
-                adapter = api_manager.get_adapter(source.api_product.connection)
+                from services.shared_catalog import resolve_api_product, resolve_api_connection
+                src_api_product = resolve_api_product(db, source)
+                src_connection = resolve_api_connection(db, src_api_product)
+                adapter = api_manager.get_adapter(src_connection)
                 # Email-requiring suppliers (e.g. AI Center Buyer) need a
                 # buyer email on every purchase; the bot doesn't
                 # collect one from shoppers on this manual/admin-triggered
@@ -121,12 +124,12 @@ async def create_order(
                 # used. Adapters that don't need it ignore it.
                 buyer_email = f"tguser{telegram_user_id}@aicenter-orders.local"
                 buy_result = await adapter.buy_product(
-                    product_id=source.api_product.external_product_id,
+                    product_id=src_api_product.external_product_id,
                     quantity=quantity,
                     idempotency_key=idem_key,
                     buyer_email=buyer_email,
-                    requires_customer_email=bool(source.api_product.external_requires_customer_email),
-                    requires_slot_months=bool(source.api_product.external_requires_slot_months),
+                    requires_customer_email=bool(src_api_product.external_requires_customer_email),
+                    requires_slot_months=bool(src_api_product.external_requires_slot_months),
                 )
 
                 attempt = OrderSourceAttempt(
@@ -172,10 +175,10 @@ async def create_order(
                         # Still no items after polling → pending_manual for admin
                         order.status = OrderStatus.pending_manual
 
-                    order.api_connection_id = source.api_product.api_connection_id
+                    order.api_connection_id = src_api_product.api_connection_id
                     order.external_order_id = buy_result.get("order_id")
                     order.external_order_code = external_order_code
-                    order.source_unit_price = source.api_product.external_price
+                    order.source_unit_price = src_api_product.external_price
                     # Store raw response — strip any sensitive balance info before logging
                     safe_data = {k: v for k, v in raw_data.items() if k not in ("balance_after", "balance")}
                     order.delivery_data = json.dumps(safe_data, ensure_ascii=False)

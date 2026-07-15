@@ -429,6 +429,9 @@ def _run_migrations():
         "CREATE INDEX IF NOT EXISTS ix_market_wallet_transactions_admin ON market_wallet_transactions (admin_user_id)",
         "ALTER TABLE crypto_transactions ADD COLUMN matched_market_deposit_id INTEGER",
         "ALTER TABLE payment_transactions ADD COLUMN matched_market_deposit_id INTEGER",
+        # "Chợ dùng chung nguồn API của admin" — see services/shared_catalog.py
+        "ALTER TABLE api_connections ADD COLUMN is_shared_with_tenants BOOLEAN DEFAULT 0",
+        "ALTER TABLE product_sources ADD COLUMN shared_from_admin BOOLEAN DEFAULT 0",
     ]
     with engine.connect() as conn:
         ran_language_selected_migration = False
@@ -971,6 +974,7 @@ from routers import emoji_icons
 from routers import github_webhook
 from routers import tenants  # owner-only tenant account management
 from routers import market_wallet  # ví chợ (nạp/rút) for tenants & owner review
+from routers import shared_catalog  # kho hàng chung — tenants browse/attach owner's shared API catalog
 
 app.include_router(auth.router)
 app.include_router(dashboard.router)
@@ -988,6 +992,7 @@ app.include_router(emoji_icons.router)
 app.include_router(github_webhook.router)  # POST /github-webhook — VPS auto-deploy (public, HMAC-signed)
 app.include_router(tenants.router)  # owner-only tenant account management
 app.include_router(market_wallet.router)  # ví chợ (nạp/rút) for tenants & owner review
+app.include_router(shared_catalog.router)  # kho hàng chung — tenants browse/attach owner's shared API catalog
 
 
 if __name__ == "__main__":

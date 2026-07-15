@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Sản phẩm chợ chung của tôi - AI Center{% endblock %}
+{% block page_title %}🗂️ Sản phẩm tôi đã treo từ Kho hàng chung{% endblock %}
+{% block content %}
+
+<div class="mb-3">
+  <a href="/shared-catalog" class="btn btn-outline-primary btn-sm"><i class="bi bi-arrow-left"></i> Duyệt kho hàng chung</a>
+</div>
+
+<div class="table-responsive">
+  <table class="table table-hover align-middle">
+    <thead>
+      <tr>
+        <th>Sản phẩm</th>
+        <th>Giá vốn hiện tại</th>
+        <th>Giá bán</th>
+        <th>Tồn kho</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      {% set p = row.product %}
+      {% set ap = row.api_product %}
+      <tr>
+        <td>
+          <div class="fw-semibold">{{ p.name if p else "—" }}</div>
+          {% if p %}<div class="text-muted small">{{ p.product_code }}</div>{% endif %}
+        </td>
+        <td>{{ "{:,.0f}".format((p.source_price if p else 0) or 0).replace(",", ".") }}đ</td>
+        <td>{{ "{:,.0f}".format((p.sale_price if p else 0) or 0).replace(",", ".") }}đ</td>
+        <td>
+          {% if ap and (ap.external_stock or 0) > 0 %}
+            <span class="badge bg-success">{{ ap.external_stock }}</span>
+          {% else %}
+            <span class="badge bg-secondary">Hết hàng</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if p %}
+          <a href="/products/{{ p.id }}/edit" class="btn btn-sm btn-outline-secondary"><i class="bi bi-pencil"></i> Sửa giá bán</a>
+          <form action="/shared-catalog/detach/{{ p.id }}" method="post" style="display:inline" onsubmit="return confirm('Ẩn sản phẩm này khỏi Chợ của bạn?')">
+            <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-eye-slash"></i> Ẩn</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="text-center text-muted py-4">Bạn chưa treo sản phẩm nào từ kho hàng chung.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

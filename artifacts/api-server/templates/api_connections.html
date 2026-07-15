@@ -18,6 +18,7 @@
         <div class="mb-2">
           <span class="badge bg-info me-1">{{ c.api_type.value }}</span>
           <span class="badge bg-secondary">{{ c.auth_type.value }}</span>
+          {% if c.is_shared_with_tenants %}<span class="badge bg-warning text-dark ms-1"><i class="bi bi-people-fill"></i> Chia sẻ chợ chung</span>{% endif %}
         </div>
         <div class="text-muted small mb-1"><i class="bi bi-globe"></i> {{ c.base_url[:40] }}{% if c.base_url|length > 40 %}...{% endif %}</div>
         <div class="text-muted small mb-1"><i class="bi bi-key"></i> {{ mask_key(c.api_key_encrypted) if c.api_key_encrypted else '—' }}</div>
@@ -69,6 +70,14 @@
               <option value="false" {% if not c.is_active %}selected{% endif %}>Inactive</option>
             </select>
           </div>
+          {% if request.state.is_owner %}
+          <div class="mb-3 form-check">
+            <input type="hidden" name="is_shared_with_tenants" value="false">
+            <input type="checkbox" class="form-check-input" id="shared_{{ c.id }}" name="is_shared_with_tenants" value="true" {% if c.is_shared_with_tenants %}checked{% endif %}>
+            <label class="form-check-label" for="shared_{{ c.id }}">Chia sẻ catalog này cho các khách thuê (Kho hàng chung)</label>
+            <div class="form-text">Khách thuê sẽ thấy các sản phẩm đã sync từ kết nối này trong "Kho hàng chung" và có thể treo lên Chợ của họ — không cần API key riêng.</div>
+          </div>
+          {% endif %}
         </div>
         <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button><button type="submit" class="btn btn-primary">Lưu</button></div>
       </form>
@@ -114,6 +123,14 @@
         <div class="mb-3"><label class="form-label">Trạng thái</label>
           <select name="is_active" class="form-select"><option value="true">Active</option><option value="false">Inactive</option></select>
         </div>
+        {% if request.state.is_owner %}
+        <div class="mb-3 form-check">
+          <input type="hidden" name="is_shared_with_tenants" value="false">
+          <input type="checkbox" class="form-check-input" id="shared_new" name="is_shared_with_tenants" value="true">
+          <label class="form-check-label" for="shared_new">Chia sẻ catalog này cho các khách thuê (Kho hàng chung)</label>
+          <div class="form-text">Khách thuê sẽ thấy các sản phẩm đã sync từ kết nối này trong "Kho hàng chung" và có thể treo lên Chợ của họ — không cần API key riêng.</div>
+        </div>
+        {% endif %}
       </div>
       <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button><button type="submit" class="btn btn-primary">Thêm</button></div>
     </form>

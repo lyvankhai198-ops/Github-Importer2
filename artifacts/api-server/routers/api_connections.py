@@ -85,6 +85,7 @@ async def add_connection(
     api_type: str = Form("zampto_standard"),
     sync_interval_minutes: int = Form(60),
     is_active: str = Form("true"),
+    is_shared_with_tenants: str = Form("false"),
 ):
     if not check_auth(request):
         return RedirectResponse(url="/login", status_code=302)
@@ -101,6 +102,7 @@ async def add_connection(
         api_type=ApiType(api_type),
         sync_interval_minutes=sync_interval_minutes,
         is_active=(is_active == "true"),
+        is_shared_with_tenants=(is_shared_with_tenants == "true"),
     )
     db.add(conn)
     db.commit()
@@ -125,6 +127,7 @@ async def edit_connection(
     api_type: str = Form("zampto_standard"),
     sync_interval_minutes: int = Form(60),
     is_active: str = Form("true"),
+    is_shared_with_tenants: str = Form("false"),
 ):
     if not check_auth(request):
         return RedirectResponse(url="/login", status_code=302)
@@ -145,6 +148,7 @@ async def edit_connection(
     conn.api_type = ApiType(api_type)
     conn.sync_interval_minutes = sync_interval_minutes
     conn.is_active = (is_active == "true")
+    conn.is_shared_with_tenants = (is_shared_with_tenants == "true")
     db.commit()
     api_manager.invalidate(conn_id)
     # Re-apply the live scheduler so an interval change or reactivation takes

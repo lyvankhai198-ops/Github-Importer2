@@ -496,12 +496,12 @@ async def _render_order_detail_text(db, order, lang: str) -> str:
 
     seller = "—"
     if product:
-        src = next(
-            (s for s in getattr(product, "sources", []) or []
-             if s.api_product and s.api_product.external_seller), None,
-        )
-        if src:
-            seller = src.api_product.external_seller
+        from services.shared_catalog import resolve_api_product
+        for s in getattr(product, "sources", []) or []:
+            ap = resolve_api_product(db, s)
+            if ap and ap.external_seller:
+                seller = ap.external_seller
+                break
 
     account_text = _order_account_text(order)
     account_block = (
@@ -1333,13 +1333,15 @@ async def _render_product_detail(query, context, db, lang: str, product_id: int)
 
     # Freshness check — re-sync if stale (>60s)
     from models import DeliveryMode
+    from services.shared_catalog import resolve_api_product
     if p.delivery_mode == DeliveryMode.api_auto:
         for src in sources:
-            if src.api_product and src.api_product.last_sync_at:
-                age = datetime.utcnow() - src.api_product.last_sync_at
+            src_ap = resolve_api_product(db, src)
+            if src_ap and src_ap.last_sync_at:
+                age = datetime.utcnow() - src_ap.last_sync_at
                 if age > timedelta(seconds=60):
                     from services.api_service import sync_api_products
-                    await sync_api_products(db, src.api_product.api_connection_id)
+                    await sync_api_products(db, src_ap.api_connection_id)
                     db.expire_all()
                     detail = get_product_detail(db, product_id)
                     if detail:
@@ -1367,9 +1369,11 @@ async def _render_product_detail(query, context, db, lang: str, product_id: int)
     min_qty = p.min_quantity or 1
     api_src = None
     for src in sources:
-        if src.is_active and src.api_product:
-            api_src = src.api_product
-            break
+        if src.is_active:
+            ap = resolve_api_product(db, src)
+            if ap:
+                api_src = ap
+                break
 
     from services.normalize import format_usdt, translate_shorthand_to_en
 
@@ -3215,15 +3219,17 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             p = detail["product"]
             sources = detail["sources"]
             from models import DeliveryMode
+            from services.shared_catalog import resolve_api_product
 
             # Re-sync if stale (>60s)
             if p.delivery_mode == DeliveryMode.api_auto:
                 for src in sources:
-                    if src.api_product and src.api_product.last_sync_at:
-                        age = datetime.utcnow() - src.api_product.last_sync_at
+                    src_ap = resolve_api_product(db, src)
+                    if src_ap and src_ap.last_sync_at:
+                        age = datetime.utcnow() - src_ap.last_sync_at
                         if age > timedelta(seconds=60):
                             from services.api_service import sync_api_products
-                            await sync_api_products(db, src.api_product.api_connection_id)
+                            await sync_api_products(db, src_ap.api_connection_id)
                             db.expire_all()
                             detail = get_product_detail(db, product_id)
                             if detail:

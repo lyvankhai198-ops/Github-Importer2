@@ -50,8 +50,14 @@ async def sync_api_products(db: Session, api_connection_id: int) -> dict:
         # Aggregated per-product (a product can have several sources on this
         # same connection) so restock/out-of-stock detection reflects the
         # product's total stock, not just a single source's.
+        # skip_tenant_filter: this connection belongs to the owner (current
+        # tenant scope) but its ProductSource rows may belong to OTHER
+        # tenants — "Kho hàng chung" lets any tenant attach a source that
+        # points at the owner's ApiProduct (see services/shared_catalog.py).
+        # Without bypassing the filter here, every other tenant's shared
+        # listings would silently stop syncing.
         pre_sync_stock = defaultdict(int)
-        for src in db.query(ProductSource).join(ApiProduct).filter(
+        for src in db.query(ProductSource).join(ApiProduct).execution_options(skip_tenant_filter=True).filter(
                 ApiProduct.api_connection_id == api_connection_id).all():
             if src.api_product:
                 pre_sync_stock[src.product_id] += (src.api_product.external_stock or 0)
@@ -140,8 +146,10 @@ async def sync_api_products(db: Session, api_connection_id: int) -> dict:
         # (see services/product_sync.py).
         from services.product_sync import sync_product_from_api_product, sync_translations, auto_assign_icon_if_unlocked
         from services.translation_alerts import notify_admin_translation_failed
+        from services.shared_catalog import resolve_product
         from models import DeliveryMode
-        sources = db.query(ProductSource).join(ApiProduct).filter(
+        # skip_tenant_filter — see the pre_sync_stock query above for why.
+        sources = db.query(ProductSource).join(ApiProduct).execution_options(skip_tenant_filter=True).filter(
             ApiProduct.api_connection_id == api_connection_id
         ).all()
         transitions = []  # (product_id, back_in_stock: bool)
@@ -159,6 +167,11 @@ async def sync_api_products(db: Session, api_connection_id: int) -> dict:
                     ((src.priority or 0) == (current.priority or 0) and src.id < current.id):
                 primary_source_by_product[src.product_id] = src
 
+        # Products belonging to a shared-catalog attachment (see
+        # services/shared_catalog.py) may belong to a DIFFERENT tenant than
+        # this sync tick's owner scope — resolve_product bypasses the tenant
+        # filter by the already-known product_id instead of the plain
+        # `.product` relationship, which would silently return None for them.
         for src in sources:
             if not src.api_product:
                 continue
@@ -167,35 +180,37 @@ async def sync_api_products(db: Session, api_connection_id: int) -> dict:
             src.last_cost = src.api_product.external_price
             post_sync_stock[src.product_id] += new_stock
 
-            if src.product and src.product.source_type == SourceType.api and \
-                    src.product.delivery_mode == DeliveryMode.api_auto:
-                sync_product_from_api_product(src.product, src.api_product)
+            src_product = resolve_product(db, src)
+            if src_product and src_product.source_type == SourceType.api and \
+                    src_product.delivery_mode == DeliveryMode.api_auto:
+                sync_product_from_api_product(src_product, src.api_product)
                 # Keep the non-source language auto-filled/re-translated from
                 # the (possibly just-updated) source text, unless the admin
                 # has locked it with a hand-typed value. Never fails the
                 # sync — a translation failure is recorded on the product
                 # and reported via a deduplicated admin-only alert below.
-                sync_translations(src.product)
-                if src.product.translation_status == "failed":
+                sync_translations(src_product)
+                if src_product.translation_status == "failed":
                     try:
-                        await notify_admin_translation_failed(db, src.product)
+                        await notify_admin_translation_failed(db, src_product)
                     except Exception:
-                        logger.exception(f"[api_sync] translation-failure alert errored for product {src.product.id}")
+                        logger.exception(f"[api_sync] translation-failure alert errored for product {src_product.id}")
                 # Auto-assign a name-keyword emoji unless the admin already
                 # chose one manually.
-                auto_assign_icon_if_unlocked(src.product)
+                auto_assign_icon_if_unlocked(src_product)
 
         # Auto price-adjustment: only the primary source's cost drives
         # Product.source_price, so multiple linked suppliers never fight
         # over the sale price on the same sync.
         price_sync_results = []
         for product_id, primary_src in primary_source_by_product.items():
-            if not primary_src.product or primary_src.api_product is None:
+            primary_product = resolve_product(db, primary_src)
+            if not primary_product or primary_src.api_product is None:
                 continue
             new_cost = primary_src.api_product.external_price
             if new_cost is None:
                 continue
-            price_sync_results.append((primary_src.product, new_cost))
+            price_sync_results.append((primary_product, new_cost, bool(primary_src.shared_from_admin)))
 
         for product_id, new_total in post_sync_stock.items():
             old_total = pre_sync_stock.get(product_id, 0)
@@ -237,6 +252,14 @@ async def sync_api_products(db: Session, api_connection_id: int) -> dict:
 
         # Auto price-adjustment: propagate each product's primary-source cost
         # onto Product.source_price/sale_price (see services/price_sync_service.py).
+        # Shared-catalog attachments (shared_from_admin) skip the full
+        # margin-preserving/approval-gated pipeline — that pipeline reads
+        # this product's OWN tenant guard-rail settings, but this sync tick
+        # is scoped to the OWNER tenant, so it can't safely evaluate another
+        # tenant's approval thresholds here. Instead just keep source_price
+        # in sync (a tenant sets/edits their own sale_price directly), which
+        # is all Ví chợ's virtual-stock math (services/market_stock_service.py)
+        # actually depends on.
         if price_sync_results:
             from services.price_sync_service import handle_source_price_change
             rate = None
@@ -245,8 +268,15 @@ async def sync_api_products(db: Session, api_connection_id: int) -> dict:
                 rate = float(get_exchange_config(db).get("fixed_rate") or 26500.0)
             except Exception:
                 rate = None
-            for product, new_cost in price_sync_results:
+            for product, new_cost, is_shared in price_sync_results:
                 try:
+                    if is_shared:
+                        if product.source_price != new_cost:
+                            product.source_price = new_cost
+                            product.last_source_price = new_cost
+                            product.last_price_updated_at = now
+                            db.commit()
+                        continue
                     db.refresh(product)
                     await handle_source_price_change(db, product, new_cost, source_connection_id=api_connection_id, exchange_rate=rate)
                 except Exception as e:

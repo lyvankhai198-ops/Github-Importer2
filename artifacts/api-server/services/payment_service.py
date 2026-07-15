@@ -685,7 +685,10 @@ async def process_paid_order(order_id: int):
         _processing_keys.add(idem_key)
 
         try:
-            adapter = api_manager.get_adapter(source.api_product.connection)
+            from services.shared_catalog import resolve_api_product, resolve_api_connection
+            src_api_product = resolve_api_product(db, source)
+            src_connection = resolve_api_connection(db, src_api_product)
+            adapter = api_manager.get_adapter(src_connection)
             # AI Center Buyer (and any other email-requiring supplier) needs
             # a buyer email on every purchase; the bot doesn't
             # collect one from shoppers, so a deterministic per-user
@@ -693,12 +696,12 @@ async def process_paid_order(order_id: int):
             # simply ignore it.
             buyer_email = f"tguser{order.telegram_user_id}@aicenter-orders.local"
             buy_result = await adapter.buy_product(
-                product_id=source.api_product.external_product_id,
+                product_id=src_api_product.external_product_id,
                 quantity=order.quantity,
                 idempotency_key=idem_key,
                 buyer_email=buyer_email,
-                requires_customer_email=bool(source.api_product.external_requires_customer_email),
-                requires_slot_months=bool(source.api_product.external_requires_slot_months),
+                requires_customer_email=bool(src_api_product.external_requires_customer_email),
+                requires_slot_months=bool(src_api_product.external_requires_slot_months),
             )
 
             attempt = OrderSourceAttempt(
@@ -732,7 +735,7 @@ async def process_paid_order(order_id: int):
             # go straight to the seller-pending status. Any supplier without
             # this concept (external_item_type is None) keeps the original
             # "account" behavior below, unchanged.
-            is_slot_item = (source.api_product.external_item_type or "").lower() == "slot"
+            is_slot_item = (src_api_product.external_item_type or "").lower() == "slot"
 
             if is_slot_item:
                 items = []
@@ -743,10 +746,10 @@ async def process_paid_order(order_id: int):
                     buy_result.get("order_id") or ""
                 )
                 order.status = OrderStatus.pending_seller_fulfillment
-                order.api_connection_id = source.api_product.api_connection_id
+                order.api_connection_id = src_api_product.api_connection_id
                 order.external_order_id = buy_result.get("order_id")
                 order.external_order_code = external_order_code
-                order.source_unit_price = source.api_product.external_price
+                order.source_unit_price = src_api_product.external_price
                 safe_data = {k: v for k, v in raw_data.items() if k not in ("balance_after", "balance")}
                 order.delivery_data = json.dumps(safe_data, ensure_ascii=False)
                 order.delivery_items = json.dumps([], ensure_ascii=False)
@@ -776,10 +779,10 @@ async def process_paid_order(order_id: int):
                 else:
                     order.status = OrderStatus.pending_manual
 
-                order.api_connection_id = source.api_product.api_connection_id
+                order.api_connection_id = src_api_product.api_connection_id
                 order.external_order_id = buy_result.get("order_id")
                 order.external_order_code = external_order_code
-                order.source_unit_price = source.api_product.external_price
+                order.source_unit_price = src_api_product.external_price
                 safe_data = {k: v for k, v in raw_data.items() if k not in ("balance_after", "balance")}
                 order.delivery_data = json.dumps(safe_data, ensure_ascii=False)
                 order.delivery_items = json.dumps(items, ensure_ascii=False)

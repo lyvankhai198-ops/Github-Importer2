@@ -547,6 +547,12 @@ class ApiConnection(Base, TenantScopedMixin):
     auth_type = Column(SAEnum(AuthType), default=AuthType.x_api_key)
     api_type = Column(SAEnum(ApiType), default=ApiType.zampto_standard)
     is_active = Column(Boolean, default=True)
+    # Owner-only toggle: exposes this connection's synced ApiProduct catalog
+    # to every tenant via "Kho hàng chung" so they can list ("treo chợ")
+    # items from it without creating their own connection/API key. See
+    # services/shared_catalog.py. Meaningless (ignored) on a non-owner
+    # tenant's own connection.
+    is_shared_with_tenants = Column(Boolean, default=False, nullable=False)
     sync_interval_minutes = Column(Integer, default=60)
     last_sync_at = Column(DateTime, nullable=True)
     last_success_at = Column(DateTime, nullable=True)
@@ -604,6 +610,13 @@ class ProductSource(Base, TenantScopedMixin):
     api_product_id = Column(Integer, ForeignKey("api_products.id"), nullable=False)
     priority = Column(Integer, default=1)
     is_active = Column(Boolean, default=True)
+    # True when this source was created via "Kho hàng chung" (see
+    # services/shared_catalog.py) — api_product_id then points at an
+    # ApiProduct owned by the OWNER's tenant, not this row's own tenant_id.
+    # Fulfillment/sync code must resolve api_product/connection via
+    # shared_catalog helpers (tenant-filter bypass by known id) rather than
+    # the plain relationship, which the tenant-scoping filter would hide.
+    shared_from_admin = Column(Boolean, default=False, nullable=False)
     last_cost = Column(Float, nullable=True)
     last_stock = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=now)
