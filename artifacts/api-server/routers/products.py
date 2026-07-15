@@ -213,7 +213,14 @@ async def products_market(
 
     for ap in api_products:
         ap.is_shared_from_admin = ap.id in shared_ap_ids
-        ap.display_connection_name = conn_name_by_ap_id.get(ap.id, "")
+        # A non-owner tenant must never learn which real supplier connection
+        # (e.g. "canboso") an admin-shared item comes from — that would leak
+        # exactly the kind of sourcing info the price-secrecy rule protects.
+        # Only the owner sees the real connection name; tenants just see "Chợ".
+        if ap.is_shared_from_admin and not is_owner:
+            ap.display_connection_name = "Chợ"
+        else:
+            ap.display_connection_name = conn_name_by_ap_id.get(ap.id, "")
         product = linked_by_ap.get(ap.id)
         ap.linked_product = product
         ap.is_listed = bool(product and product.is_active)
