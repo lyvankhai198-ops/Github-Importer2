@@ -589,15 +589,18 @@ def format_delivery_message(order, items: list, product_name: str, lang: str = "
         return text, None
     else:
         # Tạo file TXT — never inline JSON or internal data, plain text only.
+        # >10 accounts: the file is the ONLY place the credentials appear —
+        # no preview lines in the chat text. Pasting even a few accounts
+        # inline defeats the point of using a file for a large batch (still
+        # exposes credentials directly in the chat log/notifications).
         file_content = f"{file_order_label}: {order.order_code}\n{file_product_label}: {product_name}\n"
         file_content += "=" * 40 + "\n"
         file_content += "\n".join(lines)
-        account_block = _account_blocks(lines[:3])
-        text = (
-            header + "\n" + account_block + "\n"
-            f"<i>... {'and ' if lang == 'en' else 'và '}{len(lines) - 3} {more_suffix}</i>\n\n"
-            + thanks
+        all_in_file_note = (
+            f"<i>See attached file ({len(lines)} accounts)</i>" if lang == "en"
+            else f"<i>Xem file đính kèm ({len(lines)} tài khoản)</i>"
         )
+        text = header + "\n" + all_in_file_note + "\n\n" + thanks
         return text, file_content.encode("utf-8")
 
 
