@@ -1,6 +1,9 @@
+import logging
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from models import Product, ProductSource, ApiProduct
+
+logger = logging.getLogger(__name__)
 
 
 def get_product_stock_status(product_id: int, db: Session) -> dict:
@@ -43,19 +46,38 @@ def get_product_stock_status(product_id: int, db: Session) -> dict:
         ap = resolve_api_product(db, src)
         if not ap:
             any_error = True
+            logger.warning(
+                f"STOCK_DEBUG product_id={product_id} src_id={src.id} "
+                f"api_product_id={src.api_product_id} reason=api_product_not_found"
+            )
             continue
         if ap.last_sync_at is None:
             any_error = True
+            logger.warning(
+                f"STOCK_DEBUG product_id={product_id} src_id={src.id} "
+                f"api_product_id={ap.id} reason=never_synced"
+            )
             continue
         # If last sync is too old, treat as error
         age = datetime.utcnow() - ap.last_sync_at
         if age > timedelta(minutes=10):
             any_error = True
+            logger.warning(
+                f"STOCK_DEBUG product_id={product_id} src_id={src.id} "
+                f"api_product_id={ap.id} reason=stale age_seconds={age.total_seconds():.0f} "
+                f"last_sync_at={ap.last_sync_at.isoformat()} external_stock={ap.external_stock}"
+            )
             continue
         any_synced = True
+        logger.info(
+            f"STOCK_DEBUG product_id={product_id} src_id={src.id} api_product_id={ap.id} "
+            f"is_active={src.is_active} src_last_stock={src.last_stock} "
+            f"ap_external_stock={ap.external_stock} age_seconds={age.total_seconds():.0f}"
+        )
         total_stock += max(0, src.last_stock or 0)
 
     if not any_synced:
+        logger.warning(f"STOCK_DEBUG product_id={product_id} result=unavailable any_error={any_error} n_sources={len(sources)}")
         return {"stock": 0, "status": "unavailable"}
 
     # Ví chợ gating — a non-owner tenant's real supplier availability is
@@ -63,8 +85,14 @@ def get_product_stock_status(product_id: int, db: Session) -> dict:
     # fund (see services/market_stock_service.py). The owner's own listings
     # are never capped.
     from services.market_stock_service import is_gated_by_market_wallet, get_virtual_stock
+    pre_wallet_stock = total_stock
     if is_gated_by_market_wallet(db, product):
-        total_stock = min(total_stock, get_virtual_stock(db, product))
+        virtual = get_virtual_stock(db, product)
+        total_stock = min(total_stock, virtual)
+        logger.info(
+            f"STOCK_DEBUG product_id={product_id} wallet_gated=True "
+            f"pre_wallet_stock={pre_wallet_stock} virtual_stock={virtual} final={total_stock}"
+        )
 
     if total_stock <= 0:
         return {"stock": 0, "status": "out_of_stock"}
