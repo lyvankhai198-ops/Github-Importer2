@@ -151,8 +151,22 @@ body {
 }
 .stat-card:hover { transform: translateY(-2px); box-shadow: 0 6px 24px rgba(0,0,0,0.12); }
 .stat-icon { font-size: 1.8rem; margin-bottom: 8px; }
-.stat-value { font-size: 1.5rem; font-weight: 700; color: var(--text); line-height: 1.2; }
+/* overflow-wrap/word-break: a long revenue figure (e.g. "123.456.789đ") has
+   no spaces and "." isn't always a valid browser break point — without this,
+   one big number can force its .col-6 flex item wider than 50%, which (since
+   Bootstrap columns are flex-shrink:0) pushes the whole row past the mobile
+   viewport width. See also the `.row > *` min-width:0 rule below. */
+.stat-value { font-size: 1.5rem; font-weight: 700; color: var(--text); line-height: 1.2; overflow-wrap: anywhere; word-break: break-word; }
 .stat-label { font-size: 0.78rem; color: var(--text-muted); margin-top: 4px; }
+
+/* Bootstrap grid columns are flex items with the browser default
+   min-width:auto, which lets un-wrappable content (long numbers, nowrap
+   badges) force a column wider than its declared %, silently pushing the
+   whole row — and the page — past the viewport on mobile. This is invisible
+   because html/body already clip overflow-x, so it just looks like content
+   is cut off rather than scrollable. min-width:0 lets columns actually
+   shrink to their declared width and wrap their content instead. */
+.row > [class*="col-"] { min-width: 0; }
 
 /* ── Status Badges ── */
 .status-badge {
