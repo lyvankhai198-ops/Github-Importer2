@@ -1,9 +1,10 @@
 """
-Tests for services.payment_service.process_paid_order's CanBoSo Market
-branching: account-type items deliver instantly (existing behavior), while
-slot-type items go to pending_seller_fulfillment. Also covers the API-error
-path and that buy_product is called at most once per order (no double
-purchase on a repeated call).
+Tests for services.payment_service.process_paid_order's account-vs-slot
+branching (shared infra used by any supplier with this concept, e.g. AI
+Center Buyer): account-type items deliver instantly (existing behavior),
+while slot-type items go to pending_seller_fulfillment. Also covers the
+API-error path and that buy_product is called at most once per order (no
+double purchase on a repeated call).
 """
 import sys
 from pathlib import Path
@@ -41,14 +42,14 @@ class FakeAdapter:
 
 def _seed_order(session, item_type: str, delivery_mode=DeliveryMode.api_auto):
     conn = ApiConnection(
-        name="CanBoSo", base_url="https://canboso.com/api/public/market",
-        api_key_encrypted="", auth_type=AuthType.x_api_key, api_type=ApiType.canboso_market,
+        name="Slot Supplier", base_url="https://example.com/api/products",
+        api_key_encrypted="", auth_type=AuthType.x_api_key, api_type=ApiType.aicenter_buyer,
     )
     session.add(conn)
     session.commit()
 
     api_product = ApiProduct(
-        api_connection_id=conn.id, external_product_id="cb-1", external_name="Test item",
+        api_connection_id=conn.id, external_product_id="sp-1", external_name="Test item",
         external_price=10000, external_stock=5, external_item_type=item_type,
         external_seller="sellerX", external_category="cat",
     )

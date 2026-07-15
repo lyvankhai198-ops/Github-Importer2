@@ -3,7 +3,6 @@ from models import ApiConnection, ApiType
 from integrations.base import BaseAdapter
 from integrations.zampto import ZamptoAdapter
 from integrations.custom import CustomAdapter
-from integrations.canboso import CanBosoAdapter
 from integrations.aicenter_buyer import AICenterBuyerAdapter
 from crypto import decrypt
 
@@ -25,8 +24,6 @@ class APIManager:
         api_key = decrypt(api_connection.api_key_encrypted) if api_connection.api_key_encrypted else ""
         if api_connection.api_type == ApiType.zampto_standard:
             adapter = ZamptoAdapter(base_url=api_connection.base_url, api_key=api_key)
-        elif api_connection.api_type == ApiType.canboso_market:
-            adapter = CanBosoAdapter(base_url=api_connection.base_url, api_key=api_key)
         elif api_connection.api_type == ApiType.aicenter_buyer:
             adapter = AICenterBuyerAdapter(base_url=api_connection.base_url, api_key=api_key)
         else:

@@ -41,7 +41,6 @@ class AuthType(str, enum.Enum):
 class ApiType(str, enum.Enum):
     zampto_standard = "zampto_standard"
     custom = "custom"
-    canboso_market = "canboso_market"
     aicenter_buyer = "aicenter_buyer"
 
 
@@ -508,7 +507,7 @@ class ApiProduct(Base):
     external_duration = Column(String(255), nullable=True)
     external_image_url = Column(String(1000), nullable=True)
     external_status = Column(String(100), nullable=True)
-    # ── Supplier-specific fields (e.g. CanBoSo Market) ──────────────────────
+    # ── Generic supplier fields (shared across adapters, not tied to one) ───
     # item_type distinguishes "account" (delivered instantly on purchase)
     # from "slot" (purchase just creates a request the seller must fulfill).
     # Left NULL for suppliers that don't have this concept — treated as

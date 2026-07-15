@@ -339,30 +339,6 @@ def normalize_product_data(raw_item: dict) -> dict:
     }
 
 
-def normalize_canboso_product(raw_item: dict) -> dict:
-    """
-    Map a CanBoSo Market ("https://canboso.com/api/public/market") product
-    item onto the internal normalized shape, plus the supplier-specific
-    fields normalize_product_data() doesn't know about:
-      - item_type: "account" (delivered instantly) or "slot" (seller must
-        fulfill the request after purchase).
-      - seller: the marketplace seller/vendor name.
-      - category: category tag or emoji shown in the CanBoSo listing.
-    """
-    base = normalize_product_data(raw_item)
-
-    type_raw = str(
-        raw_item.get("slotProductType") or raw_item.get("productType") or
-        raw_item.get("product_type") or raw_item.get("type") or ""
-    ).strip().lower()
-    base["item_type"] = "slot" if "slot" in type_raw else "account"
-
-    base["seller"] = str(raw_item.get("seller") or raw_item.get("seller_name") or raw_item.get("sellerName") or "")
-    base["category"] = str(raw_item.get("category") or raw_item.get("emoji") or "")
-
-    return base
-
-
 def normalize_aicenter_buyer_product(raw_item: dict, wallet_currency: str = None) -> dict:
     """
     Map an "AI Center Buyer" (canboso.com /api/telegram-buyer/products) item

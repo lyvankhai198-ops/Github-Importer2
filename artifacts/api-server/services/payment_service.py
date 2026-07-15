@@ -685,8 +685,8 @@ async def process_paid_order(order_id: int):
 
         try:
             adapter = api_manager.get_adapter(source.api_product.connection)
-            # CanBoSo Market / AI Center Buyer (and any other email-requiring
-            # supplier) needs a buyer email on every purchase; the bot doesn't
+            # AI Center Buyer (and any other email-requiring supplier) needs
+            # a buyer email on every purchase; the bot doesn't
             # collect one from shoppers, so a deterministic per-user
             # placeholder is used. Adapters that don't need it (Zampto/Custom)
             # simply ignore it.
@@ -726,8 +726,7 @@ async def process_paid_order(order_id: int):
 
             raw_data = buy_result.get("data", {})
 
-            # "slot"-type items (currently only CanBoSo Market) are never
-            # delivered instantly — the purchase just files a request the
+            # "slot"-type items are never delivered instantly — the purchase just files a request the
             # seller must fulfill by hand. Skip item extraction/polling and
             # go straight to the seller-pending status. Any supplier without
             # this concept (external_item_type is None) keeps the original
@@ -911,7 +910,7 @@ async def _notify_paid_waiting_stock(order: Order, db: Session):
 
 
 async def _notify_pending_seller_fulfillment(order: Order, db: Session):
-    """Payment received; this is a slot-type item (e.g. CanBoSo Market) —
+    """Payment received; this is a slot-type item (e.g. AI Center Buyer) —
     the purchase just filed a request the seller still has to fulfill."""
     try:
         from services.bot_service import bot_manager

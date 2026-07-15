@@ -209,10 +209,10 @@ def _run_migrations():
         "CREATE INDEX IF NOT EXISTS ix_wallet_deposits_status ON wallet_deposits (status)",
         "ALTER TABLE payment_transactions ADD COLUMN matched_deposit_id INTEGER",
         "ALTER TABLE crypto_transactions ADD COLUMN matched_deposit_id INTEGER",
-        # CanBoSo Market supplier integration: item_type distinguishes
-        # instantly-delivered "account" products from "slot" products (which
-        # only create a pending request for the seller to fulfill), plus the
-        # seller/category tags this supplier's product listing exposes.
+        # Generic supplier fields (shared across adapters): item_type
+        # distinguishes instantly-delivered "account" products from "slot"
+        # products (which only create a pending request for the seller to
+        # fulfill), plus the seller/category tags a supplier's listing exposes.
         "ALTER TABLE api_products ADD COLUMN external_item_type VARCHAR(20)",
         "ALTER TABLE api_products ADD COLUMN external_seller VARCHAR(255)",
         "ALTER TABLE api_products ADD COLUMN external_category VARCHAR(100)",
@@ -220,7 +220,7 @@ def _run_migrations():
         # AI Center Buyer supplier integration (canboso.com/api/telegram-buyer):
         # slot-vs-account distinction, USD pricing, and per-product purchase
         # requirements (customer email / slot months) surfaced by its own
-        # products endpoint (independent of the CanBoSo Market fields above).
+        # products endpoint (independent of the generic fields above).
         "ALTER TABLE api_products ADD COLUMN external_is_slot_product BOOLEAN",
         "ALTER TABLE api_products ADD COLUMN external_slot_durations TEXT",
         "ALTER TABLE api_products ADD COLUMN external_requires_customer_email BOOLEAN",

@@ -114,8 +114,8 @@ async def create_order(
 
             while source:
                 adapter = api_manager.get_adapter(source.api_product.connection)
-                # Email-requiring suppliers (CanBoSo Market, AI Center Buyer)
-                # need a buyer email on every purchase; the bot doesn't
+                # Email-requiring suppliers (e.g. AI Center Buyer) need a
+                # buyer email on every purchase; the bot doesn't
                 # collect one from shoppers on this manual/admin-triggered
                 # path either, so a deterministic per-user placeholder is
                 # used. Adapters that don't need it ignore it.
