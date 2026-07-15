@@ -3,15 +3,14 @@ Exchange rate service: VND → USDT conversion.
 
 Admin configures one of two modes:
   1. fixed_rate: 1 USDT = N VND (admin-set)
-  2. auto_rate:  fetched from Binance/CoinGecko + crypto_markup_percent buffer
+  2. auto_rate:  fetched from Binance/CoinGecko + markup_percent buffer
 
 Config stored in Setting table under key "exchange_rate_config" as JSON:
 {
-  "mode": "fixed" | "auto",
-  "fixed_rate": 26500,          // VND per 1 USDT
-  "crypto_markup_percent": 2.0, // e.g. 2% buffer
-  "round_to_decimals": 4,       // USDT rounding precision
-  "auto_source": "binance"      // "binance" | "coingecko"
+  "mode": "fixed" | "auto_binance" | "auto_coingecko",
+  "fixed_rate": 26500,      // VND per 1 USDT
+  "markup_percent": 2.0,    // e.g. 2% buffer
+  "round_to_decimals": 4    // USDT rounding precision
 }
 """
 
@@ -23,11 +22,10 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 DEFAULT_CONFIG = {
-    "mode": "fixed",
+    "mode": "fixed",  # "fixed" | "auto_binance" | "auto_coingecko"
     "fixed_rate": 26500.0,
-    "crypto_markup_percent": 2.0,
+    "markup_percent": 2.0,
     "round_to_decimals": 4,
-    "auto_source": "binance",
 }
 
 # Simple in-memory cache for auto rate
@@ -102,8 +100,9 @@ async def get_current_rate(db) -> float:
     """Return VND per 1 USDT. Uses fixed or auto mode from config."""
     import time
     cfg = get_exchange_config(db)
+    mode = cfg.get("mode", "fixed")
 
-    if cfg["mode"] == "fixed":
+    if mode == "fixed":
         return float(cfg.get("fixed_rate") or 26500.0)
 
     # Auto mode — check cache
@@ -111,7 +110,7 @@ async def get_current_rate(db) -> float:
     if _rate_cache["rate"] and (now - _rate_cache["fetched_at"]) < _CACHE_TTL:
         return _rate_cache["rate"]
 
-    source = cfg.get("auto_source", "binance")
+    source = "coingecko" if mode == "auto_coingecko" else "binance"
     rate = None
     if source == "binance":
         rate = await _fetch_usdt_vnd_rate_binance()
@@ -125,6 +124,11 @@ async def get_current_rate(db) -> float:
     _rate_cache["rate"] = rate
     _rate_cache["fetched_at"] = now
     return rate
+
+
+async def get_vnd_usdt_rate(db) -> float:
+    """Alias used by the /api/exchange-rate endpoint."""
+    return await get_current_rate(db)
 
 
 def vnd_to_usdt(vnd_amount: float, rate: float, markup_percent: float = 0.0,
@@ -148,7 +152,7 @@ async def calculate_crypto_amount(db, vnd_amount: float) -> tuple[float, float]:
     """
     cfg = get_exchange_config(db)
     rate = await get_current_rate(db)
-    markup = float(cfg.get("crypto_markup_percent") or 0.0)
+    markup = float(cfg.get("markup_percent") or 0.0)
     round_to = int(cfg.get("round_to_decimals") or 4)
     usdt = vnd_to_usdt(vnd_amount, rate, markup, round_to)
     return usdt, rate
