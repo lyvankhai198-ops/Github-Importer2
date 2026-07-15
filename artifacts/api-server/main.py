@@ -4,7 +4,7 @@ import asyncio
 import uvicorn
 from contextlib import asynccontextmanager
 from pathlib import Path
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
@@ -650,6 +650,24 @@ async def api_request_logger(request, call_next):
                 db.close()
         except Exception:
             logger.exception("api_request_logger failed")
+    return response
+
+
+@app.middleware("http")
+async def _no_cache_admin_pages(request: Request, call_next):
+    """
+    Admin pages are session-gated and change on every action (add/edit
+    connection, sync, etc). Without explicit no-store headers, mobile
+    browsers/intermediate proxies can serve a stale cached HTML snapshot
+    after a real change (e.g. showing a connection as saved when it no
+    longer is), which looks exactly like a data-loss bug from the user's
+    side. Static assets (/static/...) are intentionally excluded so they
+    stay cacheable.
+    """
+    response = await call_next(request)
+    if not request.url.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
     return response
 
 
