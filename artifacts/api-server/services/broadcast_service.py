@@ -13,8 +13,24 @@ from models import User, TelegramBotConfig
 logger = logging.getLogger(__name__)
 
 
+def _is_permanently_unreachable(exc: Exception) -> bool:
+    """
+    "Chat not found" (a BadRequest, not Forbidden) means the chat_id is
+    permanently invalid — deleted account, never actually started the bot,
+    or a stale/test telegram_id. Unlike Forbidden (user blocked the bot,
+    which is at least a real chat that could reopen it), this can never
+    succeed again. Left unmarked, every future broadcast retries the same
+    growing pile of dead chat_ids forever: each retry costs a real HTTP
+    round-trip, and with no per-message delay a large dead-user backlog
+    can dominate the bot's outbound request queue for minutes, making the
+    bot look "stuck" to real users (including the admin) whose own
+    replies get queued behind it.
+    """
+    return "chat not found" in str(exc).lower()
+
+
 async def send_broadcast(db: Session, title: str, content: str, image_path: str | None = None) -> dict:
-    from telegram.error import Forbidden
+    from telegram.error import Forbidden, BadRequest
     from services.bot_service import bot_manager
     if not bot_manager.is_running():
         return {"sent": 0, "failed": 0, "blocked": 0, "total": 0, "error": "Bot chưa chạy — vui lòng bật bot trước khi gửi thông báo."}
@@ -55,6 +71,15 @@ async def send_broadcast(db: Session, title: str, content: str, image_path: str 
             user.is_blocked = True
             db.commit()
             logger.warning(f"[broadcast] user {user.telegram_id} has blocked the bot — marked is_blocked")
+        except BadRequest as e:
+            failed += 1
+            if _is_permanently_unreachable(e):
+                blocked += 1
+                user.is_blocked = True
+                db.commit()
+                logger.warning(f"[broadcast] user {user.telegram_id} chat not found — marked is_blocked")
+            else:
+                logger.error(f"[broadcast] send failed for user {user.telegram_id}: {e}")
         except Exception as e:
             failed += 1
             logger.error(f"[broadcast] send failed for user {user.telegram_id}: {e}")
@@ -81,7 +106,7 @@ async def _broadcast_message_with_buy_button(db: Session, texts: dict, product_i
     template in their own language.
     """
     from telegram import InlineKeyboardMarkup, InlineKeyboardButton
-    from telegram.error import Forbidden
+    from telegram.error import Forbidden, BadRequest
     from services.bot_service import bot_manager
     from bot.i18n import t
 
@@ -123,6 +148,14 @@ async def _broadcast_message_with_buy_button(db: Session, texts: dict, product_i
                 blocked += 1
                 user.is_blocked = True
                 db.commit()
+            except BadRequest as e:
+                failed += 1
+                if _is_permanently_unreachable(e):
+                    blocked += 1
+                    user.is_blocked = True
+                    db.commit()
+                else:
+                    logger.error(f"[product_notify] send failed for user {user.telegram_id}: {e}")
             except Exception as e:
                 failed += 1
                 logger.error(f"[product_notify] send failed for user {user.telegram_id}: {e}")
