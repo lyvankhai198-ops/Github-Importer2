@@ -44,6 +44,25 @@ def flash(request: Request, msg: str, type: str = "success"):
     request.session["flash"] = {"type": type, "msg": msg}
 
 
+def _owner_sepay_config(db: Session):
+    """Owner's SePay config for ví chợ bank-transfer deposits.
+    Must bypass tenant filter — tenants never have their own SePay config row,
+    all ví chợ money lands with the owner (same principle as crypto wallet)."""
+    from models import SepayConfig
+    from crypto import decrypt
+    import json
+    owner_id = get_owner_tenant_id()
+    cfg = (
+        db.query(SepayConfig)
+        .execution_options(skip_tenant_filter=True)
+        .filter(SepayConfig.tenant_id == owner_id, SepayConfig.is_enabled == True)
+        .first()
+    )
+    if not cfg or not cfg.account_number or not cfg.bank_bin:
+        return None
+    return cfg
+
+
 def _owner_crypto_payment_display(db: Session, method: str):
     """Owner's configured receiving address for a crypto method — PaymentMethod
     is tenant-scoped, so tenants must look this up bypassing their own scope
@@ -149,6 +168,30 @@ async def market_wallet_page(request: Request, db: Session = Depends(get_db)):
         .limit(20)
         .all()
     )
+    # Determine which deposit methods are available to show in the form
+    from services.payment_service import generate_vietqr_url
+    sepay_cfg = _owner_sepay_config(db)
+    sepay_enabled = bool(sepay_cfg)
+
+    # Pre-build VietQR URLs for any pending bank-transfer deposits so the
+    # template can display them inline without more DB lookups.
+    bank_deposit_details = {}  # deposit.id → {"qr_url": ..., "account_number": ..., ...}
+    for d in deposits:
+        if d.method == "bank_transfer" and d.status.value in ("pending",) and d.payment_content and sepay_cfg:
+            bank_deposit_details[d.id] = {
+                "qr_url": generate_vietqr_url(
+                    bank_bin=sepay_cfg.bank_bin,
+                    account_number=sepay_cfg.account_number,
+                    amount=int(d.vnd_credit_amount or d.amount),
+                    payment_code=d.payment_content,
+                    account_name=sepay_cfg.account_name or "",
+                ),
+                "account_number": sepay_cfg.account_number,
+                "account_name": sepay_cfg.account_name or "",
+                "bank_name": sepay_cfg.bank_name or "",
+                "payment_content": d.payment_content,
+            }
+
     flash_msg = request.session.pop("flash", None)
     return templates.TemplateResponse(request, "market_wallet.html", {
         "admin": admin,
@@ -160,6 +203,9 @@ async def market_wallet_page(request: Request, db: Session = Depends(get_db)):
         "deposits": deposits,
         "withdrawals": withdrawals,
         "rate": _current_usdt_rate(db),
+        "sepay_enabled": sepay_enabled,
+        "sepay_cfg": sepay_cfg,
+        "bank_deposit_details": bank_deposit_details,
         "flash": flash_msg,
     })
 
@@ -177,6 +223,50 @@ async def create_deposit(
         flash(request, "Số tiền nạp không hợp lệ!", "error")
         return RedirectResponse(url="/market-wallet", status_code=302)
 
+    # ── Bank transfer (SePay / VietQR) — VND, no conversion needed ──────────
+    if method == "bank_transfer":
+        sepay_cfg = _owner_sepay_config(db)
+        if not sepay_cfg:
+            flash(request, "Chuyển khoản ngân hàng chưa được cấu hình!", "error")
+            return RedirectResponse(url="/market-wallet", status_code=302)
+
+        import uuid as _uuid
+        ref_hex = _uuid.uuid4().hex[:8].upper()
+        ref_code = f"MWDEP-{ref_hex}"          # e.g. MWDEP-A1B2C3D4
+
+        from services.payment_service import generate_vietqr_url
+        qr_url = generate_vietqr_url(
+            bank_bin=sepay_cfg.bank_bin,
+            account_number=sepay_cfg.account_number,
+            amount=vnd_amount,
+            payment_code=ref_code.replace("-", ""),   # SePay strips punctuation
+            account_name=sepay_cfg.account_name or "",
+        )
+
+        deposit = MarketWalletDeposit(
+            admin_user_id=admin.id,
+            currency=WalletCurrency.VND,
+            amount=vnd_amount,
+            vnd_credit_amount=vnd_amount,
+            method="bank_transfer",
+            reference_code=ref_code,
+            payment_content=ref_code.replace("-", ""),   # exactly what tenant writes in transfer note
+            status=WalletDepositStatus.pending,
+            network="VND",
+            receiving_address=sepay_cfg.account_number,
+            confirmations=0,
+            required_confirmations=None,
+            expires_at=datetime.utcnow() + timedelta(hours=24),
+        )
+        db.add(deposit)
+        db.commit()
+        flash(request,
+              f"Đã tạo yêu cầu nạp ví chợ — chuyển khoản "
+              f"{int(vnd_amount):,}đ tới {sepay_cfg.account_number} "
+              f"({sepay_cfg.account_name or ''}) với nội dung: {ref_code.replace('-', '')}".replace(",", "."))
+        return RedirectResponse(url="/market-wallet", status_code=302)
+
+    # ── Crypto (USDT BEP20 / TRC20 / Binance Pay) ────────────────────────────
     payment_info = _owner_crypto_payment_display(db, method)
     if not payment_info:
         flash(request, "Phương thức thanh toán này chưa được cấu hình!", "error")

@@ -303,6 +303,7 @@ def _find_payment_code(content: str, prefix: str = "AIC") -> str | None:
 
 
 _DEPOSIT_REF_RE = re.compile(r"(DEP[0-9A-Fa-f]{8})", re.IGNORECASE)
+_MARKET_DEP_REF_RE = re.compile(r"(MWDEP[0-9A-Fa-f]{8})", re.IGNORECASE)
 
 
 def _find_deposit_reference(content: str) -> str | None:
@@ -310,6 +311,13 @@ def _find_deposit_reference(content: str) -> str | None:
     content often strips punctuation, so match with or without the dash."""
     match = _DEPOSIT_REF_RE.search((content or "").replace("-", "").replace(" ", ""))
     return f"DEP-{match.group(1)[3:].upper()}" if match else None
+
+
+def _find_market_deposit_reference(content: str) -> str | None:
+    """Market-wallet (ví chợ) bank-transfer deposit codes look like MWDEP-A1B2C3D4.
+    Same punctuation-stripping as the customer wallet variant above."""
+    match = _MARKET_DEP_REF_RE.search((content or "").replace("-", "").replace(" ", ""))
+    return f"MWDEP-{match.group(1)[5:].upper()}" if match else None
 
 
 def _try_credit_vnd_deposit(db: Session, tx_id: str, amount_in: float, content: str, raw: dict, tx_date) -> dict | None:
@@ -394,6 +402,80 @@ def _try_credit_vnd_deposit(db: Session, tx_id: str, amount_in: float, content: 
     db.refresh(deposit)
     asyncio.create_task(_notify_deposit_credited_async(deposit.id))
     return {"success": True, "action": "deposit_credited", "deposit_id": deposit.id}
+
+
+def _try_credit_market_vnd_deposit(
+    db: Session, tx_id: str, amount_in: float, content: str, raw: dict, tx_date
+) -> dict | None:
+    """
+    Attempt to match a SePay bank-transfer to a pending ví chợ (market wallet)
+    VND deposit via its MWDEP-XXXXXXXX reference code in the transfer content.
+    Mirrors _try_credit_vnd_deposit — same idempotency / escalation logic,
+    crediting via market_wallet_service instead of wallet_service.
+    """
+    from models import MarketWalletDeposit, WalletDepositStatus, WalletCurrency, WalletTxType
+    from services import market_wallet_service
+
+    ref = _find_market_deposit_reference(content)
+    if not ref:
+        return None
+    deposit = db.query(MarketWalletDeposit).filter(
+        MarketWalletDeposit.reference_code == ref,
+        MarketWalletDeposit.currency == WalletCurrency.VND,
+    ).first()
+    if not deposit:
+        return None
+
+    if deposit.status == WalletDepositStatus.credited:
+        return {"success": True, "action": "market_deposit_already_done", "deposit_id": deposit.id}
+
+    if deposit.status in (WalletDepositStatus.expired, WalletDepositStatus.cancelled,
+                           WalletDepositStatus.failed, WalletDepositStatus.manual_review):
+        if deposit.status == WalletDepositStatus.manual_review:
+            return {"success": True, "action": "market_deposit_needs_review", "deposit_id": deposit.id}
+        from sqlalchemy import text as _sql_text
+        rows = db.execute(
+            _sql_text(
+                "UPDATE market_wallet_deposits SET status='manual_review', "
+                "external_transaction_id=:txid, raw_transaction_data=:raw, "
+                "failed_reason=:reason WHERE id=:id AND status=:prev_status"
+            ),
+            {
+                "txid": str(tx_id), "raw": json.dumps(raw, ensure_ascii=False)[:5000],
+                "reason": f"Chuyển khoản khớp mã {ref} sau khi yêu cầu đã {deposit.status.value} — cần admin kiểm tra.",
+                "id": deposit.id, "prev_status": deposit.status.value,
+            },
+        )
+        db.commit()
+        if rows.rowcount == 0:
+            return {"success": True, "action": "market_deposit_already_done", "deposit_id": deposit.id}
+        return {"success": True, "action": "market_deposit_needs_review", "deposit_id": deposit.id}
+
+    # Credit the VND amount requested (not the bank-transfer amount, which may
+    # differ by rounding or fees). A 1đ tolerance handles minor bank fee quirks.
+    credit_amount = deposit.vnd_credit_amount or deposit.amount
+    if amount_in < credit_amount - 1:
+        return {"success": True, "action": "market_deposit_insufficient", "deposit_id": deposit.id}
+
+    now_iso = datetime.utcnow().isoformat(sep=" ")
+    try:
+        market_wallet_service.credit_market_wallet(
+            db, deposit.admin_user_id, WalletCurrency.VND, credit_amount,
+            WalletTxType.deposit, deposit_id=deposit.id,
+            note=f"Auto-credited SePay bank transfer — Ví chợ (txid={tx_id})",
+            actor="system",
+            extra_updates=[(
+                "UPDATE market_wallet_deposits SET status='credited', external_transaction_id=?, "
+                "verified_at=?, credited_at=?, raw_transaction_data=? "
+                "WHERE id=? AND status NOT IN ('credited','failed','expired','cancelled')",
+                (tx_id, now_iso, now_iso, json.dumps(raw, ensure_ascii=False)[:5000], deposit.id),
+            )],
+        )
+    except market_wallet_service.AlreadyProcessedError:
+        return {"success": True, "action": "market_deposit_already_done", "deposit_id": deposit.id}
+
+    logger.info(f"[sepay] market wallet deposit credited: deposit_id={deposit.id} amount={credit_amount} tx_id={tx_id}")
+    return {"success": True, "action": "market_deposit_credited", "deposit_id": deposit.id}
 
 
 def _notify_admin_deposit_needs_review(db: Session, deposit) -> None:
@@ -526,6 +608,16 @@ def process_webhook_transaction(db: Session, raw: dict) -> dict:
             db.add(tx)
             db.commit()
             return deposit_result
+        # If no customer wallet deposit matched, try ví chợ (market wallet) bank deposit
+        market_deposit_result = _try_credit_market_vnd_deposit(
+            db, tx_id, amount_in, tx_data["transfer_content"], raw, tx_date,
+        )
+        if market_deposit_result:
+            tx.matched_market_deposit_id = market_deposit_result.get("deposit_id")
+            tx.match_status = market_deposit_result.get("action")
+            db.add(tx)
+            db.commit()
+            return market_deposit_result
         db.add(tx)
         db.commit()
         return {"success": True, "action": "unmatched"}

@@ -39,20 +39,52 @@
     <div class="card h-100">
       <div class="card-header fw-semibold">💰 Nạp ví chợ</div>
       <div class="card-body">
-        <form action="/market-wallet/deposit" method="post">
-          <div class="mb-2">
+        <form action="/market-wallet/deposit" method="post" id="depositForm">
+          <div class="mb-3">
             <label class="form-label">Số tiền (VND)</label>
-            <input type="number" name="vnd_amount" class="form-control" min="10000" step="1000" required>
+            <input type="text" name="vnd_amount" class="form-control vnd-price-input" inputmode="numeric" autocomplete="off" required>
+            <div class="form-text">Tối thiểu 10.000đ</div>
           </div>
-          <div class="mb-2">
+          <div class="mb-3">
             <label class="form-label">Phương thức</label>
-            <select name="method" class="form-select">
-              <option value="usdt_bep20">USDT (BEP20)</option>
-              <option value="usdt_trc20">USDT (TRC20)</option>
-              <option value="binance_pay">Binance Pay</option>
-            </select>
+            <div id="methodCards" class="d-flex flex-column gap-2">
+              {% if sepay_enabled %}
+              <label class="method-card d-flex align-items-center gap-2 p-2 rounded border cursor-pointer" style="cursor:pointer">
+                <input type="radio" name="method" value="bank_transfer" class="form-check-input mt-0 method-radio" checked>
+                <span class="fs-5">🏦</span>
+                <div>
+                  <div class="fw-semibold">Chuyển khoản ngân hàng (tự động)</div>
+                  <div class="text-muted small">Duyệt tự động qua SePay — {{ sepay_cfg.bank_name or '' }} {{ sepay_cfg.account_number }}</div>
+                </div>
+              </label>
+              {% endif %}
+              <label class="method-card d-flex align-items-center gap-2 p-2 rounded border cursor-pointer" style="cursor:pointer">
+                <input type="radio" name="method" value="usdt_bep20" class="form-check-input mt-0 method-radio" {% if not sepay_enabled %}checked{% endif %}>
+                <span class="fs-5">💎</span>
+                <div>
+                  <div class="fw-semibold">USDT (BEP20)</div>
+                  <div class="text-muted small">Binance Smart Chain</div>
+                </div>
+              </label>
+              <label class="method-card d-flex align-items-center gap-2 p-2 rounded border cursor-pointer" style="cursor:pointer">
+                <input type="radio" name="method" value="usdt_trc20" class="form-check-input mt-0 method-radio">
+                <span class="fs-5">💠</span>
+                <div>
+                  <div class="fw-semibold">USDT (TRC20)</div>
+                  <div class="text-muted small">Tron Network</div>
+                </div>
+              </label>
+              <label class="method-card d-flex align-items-center gap-2 p-2 rounded border cursor-pointer" style="cursor:pointer">
+                <input type="radio" name="method" value="binance_pay" class="form-check-input mt-0 method-radio">
+                <span class="fs-5">🅱️</span>
+                <div>
+                  <div class="fw-semibold">Binance Pay</div>
+                  <div class="text-muted small">Chuyển USDT qua Binance Pay ID</div>
+                </div>
+              </label>
+            </div>
           </div>
-          <button type="submit" class="btn btn-primary">Tạo yêu cầu nạp</button>
+          <button type="submit" class="btn btn-primary w-100">Tạo yêu cầu nạp</button>
         </form>
       </div>
     </div>
@@ -64,7 +96,8 @@
         <form action="/market-wallet/withdraw" method="post">
           <div class="mb-2">
             <label class="form-label">Số tiền (VND)</label>
-            <input type="number" name="amount" class="form-control" min="1000" step="1000" max="{{ available }}" required>
+            <input type="text" name="amount" class="form-control vnd-price-input" inputmode="numeric" autocomplete="off" required>
+            <div class="form-text">Khả dụng: <strong>{{ "{:,.0f}".format(available).replace(",", ".") }}đ</strong></div>
           </div>
           <div class="mb-2">
             <label class="form-label">Thông tin nhận tiền (STK / địa chỉ crypto)</label>
@@ -79,32 +112,67 @@
 
 <div class="card mb-3">
   <div class="card-header fw-semibold">Yêu cầu nạp gần đây</div>
-  <div class="card-body p-0">
+  <div class="card-body {% if deposits %}p-0{% endif %}">
+    {% if deposits %}
     <div class="table-responsive">
       <table class="table table-sm mb-0 align-middle">
-        <thead><tr><th>Mã</th><th>Số tiền</th><th>PT/Network</th><th>Trạng thái</th><th>Ngày tạo</th></tr></thead>
+        <thead><tr><th>Mã</th><th>Số tiền</th><th>PT / Tài khoản</th><th>Trạng thái</th><th>Ngày tạo</th></tr></thead>
         <tbody>
           {% for d in deposits %}
           {% set st = d.status.value if d.status.value is defined else d.status %}
           <tr>
             <td><code>{{ d.reference_code }}</code></td>
-            <td>{{ "%.4f"|format(d.amount) }} {{ d.currency.value }} (≈{{ "{:,.0f}".format(d.vnd_credit_amount or 0).replace(",", ".") }}đ)</td>
-            <td>{{ d.method }}<div class="text-muted small">{{ d.network }} → {{ d.receiving_address }}</div></td>
+            <td>
+              {% if d.method == "bank_transfer" %}
+                {{ "{:,.0f}".format(d.vnd_credit_amount or d.amount).replace(",", ".") }}đ
+              {% else %}
+                {{ "%.4f"|format(d.amount) }} {{ d.currency.value }}<div class="text-muted small">≈ {{ "{:,.0f}".format(d.vnd_credit_amount or 0).replace(",", ".") }}đ</div>
+              {% endif %}
+            </td>
+            <td>
+              {% if d.method == "bank_transfer" %}
+                🏦 Chuyển khoản<div class="text-muted small">{{ d.receiving_address }}</div>
+              {% else %}
+                {{ d.method }}<div class="text-muted small">{{ d.network }} → {{ d.receiving_address }}</div>
+              {% endif %}
+            </td>
             <td>
               {% if st == "credited" %}<span class="badge bg-success">Đã cộng ví</span>
               {% elif st == "manual_review" %}<span class="badge bg-warning text-dark">Chờ admin duyệt</span>
-              {% elif st in ("pending","detected","confirming") %}<span class="badge bg-info text-dark">Đang xử lý ({{ d.confirmations or 0 }}/{{ d.required_confirmations or '?' }})</span>
+              {% elif st in ("pending","detected","confirming") %}
+                {% if d.method == "bank_transfer" %}
+                  <span class="badge bg-info text-dark">Chờ chuyển khoản</span>
+                {% else %}
+                  <span class="badge bg-info text-dark">Đang xử lý ({{ d.confirmations or 0 }}/{{ d.required_confirmations or '?' }})</span>
+                {% endif %}
               {% elif st == "expired" %}<span class="badge bg-dark">Hết hạn</span>
               {% else %}<span class="badge bg-danger">Thất bại</span>{% endif %}
+
+              {# Show QR card inline for pending bank-transfer deposits #}
+              {% if d.method == "bank_transfer" and st == "pending" and d.id in bank_deposit_details %}
+              {% set bk = bank_deposit_details[d.id] %}
+              <div class="mt-2 p-2 rounded border bg-light" style="max-width:260px">
+                <div class="text-center mb-1">
+                  <img src="{{ bk.qr_url }}" alt="VietQR" style="max-width:180px;border-radius:6px">
+                </div>
+                <div class="small"><strong>Ngân hàng:</strong> {{ bk.bank_name }}</div>
+                <div class="small"><strong>STK:</strong> {{ bk.account_number }}</div>
+                <div class="small"><strong>Tên:</strong> {{ bk.account_name }}</div>
+                <div class="small"><strong>Số tiền:</strong> {{ "{:,.0f}".format(d.vnd_credit_amount or d.amount).replace(",", ".") }}đ</div>
+                <div class="small fw-bold text-danger"><strong>Nội dung:</strong> {{ bk.payment_content }}</div>
+                <div class="text-muted" style="font-size:0.7rem">Hệ thống tự động xác nhận sau khi nhận tiền qua SePay. Không thay đổi nội dung chuyển khoản!</div>
+              </div>
+              {% endif %}
             </td>
             <td><small>{{ d.created_at.strftime('%d/%m/%Y %H:%M') }}</small></td>
           </tr>
-          {% else %}
-          <tr><td colspan="5" class="text-center text-muted py-3">Chưa có yêu cầu nạp nào</td></tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
+    {% else %}
+    <div class="text-center text-muted py-3">Chưa có yêu cầu nạp nào</div>
+    {% endif %}
   </div>
 </div>
 
@@ -176,4 +244,22 @@
   </div>
 </div>
 
+{% endblock %}
+{% block scripts %}
+<script>
+// Highlight selected payment method card
+document.querySelectorAll('.method-radio').forEach(function(radio) {
+  function updateHighlight() {
+    document.querySelectorAll('.method-card').forEach(function(card) {
+      card.classList.toggle('border-primary', card.querySelector('.method-radio')?.checked || false);
+      card.classList.toggle('bg-primary', card.querySelector('.method-radio')?.checked || false);
+      card.classList.toggle('bg-opacity-10', card.querySelector('.method-radio')?.checked || false);
+    });
+  }
+  radio.addEventListener('change', updateHighlight);
+  if (radio.checked) {
+    setTimeout(updateHighlight, 0);
+  }
+});
+</script>
 {% endblock %}

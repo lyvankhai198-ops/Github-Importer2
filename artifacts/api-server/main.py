@@ -432,6 +432,8 @@ def _run_migrations():
         # "Chợ dùng chung nguồn API của admin" — see services/shared_catalog.py
         "ALTER TABLE api_connections ADD COLUMN is_shared_with_tenants BOOLEAN DEFAULT 0",
         "ALTER TABLE product_sources ADD COLUMN shared_from_admin BOOLEAN DEFAULT 0",
+        # Ví chợ bank-transfer (SePay) deposits — reference code in transfer content
+        "ALTER TABLE market_wallet_deposits ADD COLUMN payment_content VARCHAR(100)",
     ]
     with engine.connect() as conn:
         ran_language_selected_migration = False

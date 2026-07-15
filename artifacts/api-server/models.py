@@ -895,8 +895,11 @@ class MarketWalletDeposit(Base):
     confirmed_at = Column(DateTime, nullable=True)
     confirmed_by = Column(String(100), nullable=True)
     # ── Auto-verification fields (mirrors WalletDeposit) ────────────────────
-    network = Column(String(50), nullable=True)             # BEP20 | TRC20 | BINANCE
+    network = Column(String(50), nullable=True)             # BEP20 | TRC20 | BINANCE | VND (bank transfer)
     receiving_address = Column(String(200), nullable=True)
+    # For VND/bank-transfer deposits: the exact content the tenant must put in
+    # the "Nội dung chuyển khoản" field so SePay can auto-match the transfer.
+    payment_content = Column(String(100), nullable=True)
     external_transaction_id = Column(String(255), nullable=True, index=True)
     confirmations = Column(Integer, nullable=True, default=0)
     required_confirmations = Column(Integer, nullable=True)
