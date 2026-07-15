@@ -1,6 +1,6 @@
 {% extends "base.html" %}
-{% block title %}Cài đặt - AI Center{% endblock %}
-{% block page_title %}⚙️ Cài đặt{% endblock %}
+{% block title %}Cấu hình - AI Center{% endblock %}
+{% block page_title %}⚙️ Cấu hình{% endblock %}
 
 {% block extra_head %}
 <style>
@@ -11,24 +11,19 @@
 
 {% block content %}
 <ul class="nav nav-tabs mb-4 flex-wrap" id="settingsTabs">
-  <li class="nav-item"><button class="nav-link {% if active_tab == 'shop' or not active_tab %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#tabShop">🏪 Cửa hàng</button></li>
-  <li class="nav-item"><button class="nav-link {% if active_tab == 'bot' %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#tabBot">🤖 Bot Telegram</button></li>
-  <li class="nav-item"><button class="nav-link {% if active_tab == 'sepay' %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#tabSepay">🏦 SePay</button></li>
-  <li class="nav-item"><button class="nav-link {% if active_tab == 'binance' %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#tabBinance">🟡 Binance Pay</button></li>
-  <li class="nav-item"><button class="nav-link {% if active_tab == 'bep20' %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#tabBep20">🟨 BEP20</button></li>
-  <li class="nav-item"><button class="nav-link {% if active_tab == 'trc20' %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#tabTrc20">🔴 TRC20</button></li>
-  <li class="nav-item"><button class="nav-link {% if active_tab == 'erc20' %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#tabErc20">🔵 ERC20</button></li>
-  <li class="nav-item"><button class="nav-link {% if active_tab == 'exchange_rate' %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#tabExchangeRate">💱 Tỉ giá</button></li>
-  <li class="nav-item"><button class="nav-link {% if active_tab == 'order' %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#tabOrder">📦 Đơn hàng</button></li>
-  <li class="nav-item"><button class="nav-link {% if active_tab == 'api' %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#tabApi">🔗 API</button></li>
+  <li class="nav-item"><button class="nav-link {% if active_tab == 'config' or not active_tab %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#tabConfig">🤖 Cấu hình bot</button></li>
+  <li class="nav-item"><button class="nav-link {% if active_tab == 'guide' %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#tabGuide">📖 Hướng dẫn</button></li>
 </ul>
 
 <div class="tab-content">
 
-  <!-- Shop Tab -->
-  <div class="tab-pane fade {% if active_tab == 'shop' or not active_tab %}show active{% endif %}" id="tabShop">
+<!-- ══════════════════════════════ Cấu hình bot (all settings in one page) ══════════════════════════════ -->
+<div class="tab-pane fade {% if active_tab == 'config' or not active_tab %}show active{% endif %}" id="tabConfig">
+
+  <!-- Shop Section -->
+  <div class="mb-3">
     <div class="card">
-      <div class="card-header"><h6 class="mb-0">Thông tin cửa hàng</h6></div>
+      <div class="card-header"><h6 class="mb-0">🏪 Thông tin cửa hàng</h6></div>
       <form action="/settings/store" method="post">
         <div class="card-body">
           <div class="mb-3"><label class="form-label">Tên cửa hàng</label><input type="text" name="shop_name" class="form-control" value="AI Center Bot Manager"></div>
@@ -42,8 +37,8 @@
     </div>
   </div>
 
-  <!-- Bot Tab -->
-  <div class="tab-pane fade {% if active_tab == 'bot' %}show active{% endif %}" id="tabBot">
+  <!-- Bot Section -->
+  <div class="mb-3">
     <div class="row g-3">
       <div class="col-12 col-lg-7">
         <div class="card mb-3">
@@ -171,8 +166,8 @@
     </div>
   </div>
 
-  <!-- SePay Tab -->
-  <div class="tab-pane fade {% if active_tab == 'sepay' %}show active{% endif %}" id="tabSepay">
+  <!-- SePay Section -->
+  <div class="mb-3">
     <div class="row g-3">
       <!-- Config card -->
       <div class="col-12 col-lg-7">
@@ -331,8 +326,8 @@
     </div>
   </div>
 
-  <!-- Binance Pay Tab -->
-  <div class="tab-pane fade {% if active_tab == 'binance' %}show active{% endif %}" id="tabBinance">
+  <!-- Binance Pay Section -->
+  <div class="mb-3">
     <div class="row g-3">
       <div class="col-12 col-lg-7">
         <div class="card mb-3">
@@ -424,8 +419,8 @@
     </div>
   </div>
 
-  <!-- USDT BEP20 Tab -->
-  <div class="tab-pane fade {% if active_tab == 'bep20' %}show active{% endif %}" id="tabBep20">
+  <!-- USDT BEP20 Section -->
+  <div class="mb-3">
     <div class="row g-3">
       <div class="col-12 col-lg-7">
         <div class="card mb-3">
@@ -500,8 +495,8 @@
     </div>
   </div>
 
-  <!-- USDT TRC20 Tab -->
-  <div class="tab-pane fade {% if active_tab == 'trc20' %}show active{% endif %}" id="tabTrc20">
+  <!-- USDT TRC20 Section -->
+  <div class="mb-3">
     <div class="row g-3">
       <div class="col-12 col-lg-7">
         <div class="card mb-3">
@@ -572,8 +567,8 @@
     </div>
   </div>
 
-  <!-- USDT ERC20 Tab -->
-  <div class="tab-pane fade {% if active_tab == 'erc20' %}show active{% endif %}" id="tabErc20">
+  <!-- USDT ERC20 Section -->
+  <div class="mb-3">
     <div class="row g-3">
       <div class="col-12 col-lg-7">
         <div class="card mb-3">
@@ -643,8 +638,8 @@
     </div>
   </div>
 
-  <!-- Exchange Rate Tab -->
-  <div class="tab-pane fade {% if active_tab == 'exchange_rate' %}show active{% endif %}" id="tabExchangeRate">
+  <!-- Exchange Rate Section -->
+  <div class="mb-3">
     <div class="row g-3">
       <div class="col-12 col-lg-7">
         <div class="card mb-3">
@@ -704,10 +699,10 @@
     </div>
   </div>
 
-  <!-- Order Tab -->
-  <div class="tab-pane fade {% if active_tab == 'order' %}show active{% endif %}" id="tabOrder">
+  <!-- Order Section -->
+  <div class="mb-3">
     <div class="card">
-      <div class="card-header"><h6 class="mb-0">Cài đặt đơn hàng</h6></div>
+      <div class="card-header"><h6 class="mb-0">📦 Cài đặt đơn hàng</h6></div>
       <form action="/settings/order" method="post">
         <div class="card-body">
           <div class="mb-3">
@@ -720,10 +715,10 @@
     </div>
   </div>
 
-  <!-- API Tab -->
-  <div class="tab-pane fade {% if active_tab == 'api' %}show active{% endif %}" id="tabApi">
+  <!-- API Section -->
+  <div class="mb-3">
     <div class="card">
-      <div class="card-header"><h6 class="mb-0">Cài đặt API</h6></div>
+      <div class="card-header"><h6 class="mb-0">🔗 Cài đặt API</h6></div>
       <form action="/settings/api" method="post">
         <div class="card-body">
           <div class="mb-3"><label class="form-label">Timeout (giây)</label><input type="number" name="api_timeout" class="form-control" value="30" min="5"></div>
@@ -733,6 +728,19 @@
       </form>
     </div>
   </div>
+
+</div>
+
+<!-- ══════════════════════════════ Hướng dẫn ══════════════════════════════ -->
+<div class="tab-pane fade {% if active_tab == 'guide' %}show active{% endif %}" id="tabGuide">
+  <div class="card">
+    <div class="card-header"><h6 class="mb-0">📖 Hướng dẫn</h6></div>
+    <div class="card-body text-center text-muted py-5">
+      <i class="bi bi-journal-text" style="font-size:2rem;"></i>
+      <p class="mt-3 mb-0">Nội dung hướng dẫn sẽ được cập nhật sau.</p>
+    </div>
+  </div>
+</div>
 
 </div>
 {% endblock %}
@@ -923,14 +931,13 @@ async function loadPaymentMethodConfig(code) {
   } catch(e) { return null; }
 }
 
-// Load Binance config when tab shown
-document.querySelector('[data-bs-target="#tabBinance"]')?.addEventListener('shown.bs.tab', async () => {
+// Load Binance config on page ready (all sections are now on one page)
+async function loadBinanceSection() {
   const d = await loadPaymentMethodConfig('binance_pay');
   _applyBinanceConfig(d);
-});
+}
 
-// Load BEP20 config when tab shown
-document.querySelector('[data-bs-target="#tabBep20"]')?.addEventListener('shown.bs.tab', async () => {
+async function loadBep20Section() {
   const d = await loadPaymentMethodConfig('usdt_bep20');
   if (!d) return;
   const badge = document.getElementById('bep20Badge');
@@ -945,10 +952,9 @@ document.querySelector('[data-bs-target="#tabBep20"]')?.addEventListener('shown.
   if (cfg.required_confirmations) document.getElementById('bep20Confs').value = cfg.required_confirmations;
   if (cfg.poll_interval_seconds) document.getElementById('bep20Poll').value = cfg.poll_interval_seconds;
   if (cfg.timeout_minutes) document.getElementById('bep20Timeout').value = cfg.timeout_minutes;
-});
+}
 
-// Load TRC20 config when tab shown
-document.querySelector('[data-bs-target="#tabTrc20"]')?.addEventListener('shown.bs.tab', async () => {
+async function loadTrc20Section() {
   const d = await loadPaymentMethodConfig('usdt_trc20');
   if (!d) return;
   const badge = document.getElementById('trc20Badge');
@@ -961,10 +967,9 @@ document.querySelector('[data-bs-target="#tabTrc20"]')?.addEventListener('shown.
   if (cfg.required_confirmations) document.getElementById('trc20Confs').value = cfg.required_confirmations;
   if (cfg.poll_interval_seconds) document.getElementById('trc20Poll').value = cfg.poll_interval_seconds;
   if (cfg.timeout_minutes) document.getElementById('trc20Timeout').value = cfg.timeout_minutes;
-});
+}
 
-// Load ERC20 config when tab shown
-document.querySelector('[data-bs-target="#tabErc20"]')?.addEventListener('shown.bs.tab', async () => {
+async function loadErc20Section() {
   const d = await loadPaymentMethodConfig('usdt_erc20');
   if (!d) return;
   const badge = document.getElementById('erc20Badge');
@@ -977,10 +982,9 @@ document.querySelector('[data-bs-target="#tabErc20"]')?.addEventListener('shown.
   if (cfg.required_confirmations) document.getElementById('erc20Confs').value = cfg.required_confirmations;
   if (cfg.poll_interval_seconds) document.getElementById('erc20Poll').value = cfg.poll_interval_seconds;
   if (cfg.timeout_minutes) document.getElementById('erc20Timeout').value = cfg.timeout_minutes;
-});
+}
 
-// Load exchange rate config when tab shown
-document.querySelector('[data-bs-target="#tabExchangeRate"]')?.addEventListener('shown.bs.tab', async () => {
+async function loadExchangeRateSection() {
   const r = await fetch('/api/exchange-rate');
   const d = await r.json().catch(() => null);
   if (!d?.success) return;
@@ -995,7 +999,7 @@ document.querySelector('[data-bs-target="#tabExchangeRate"]')?.addEventListener(
       `<div class="display-6 text-primary fw-bold">${Number(d.rate).toLocaleString('vi-VN')} đ</div>
        <div class="text-muted small mt-1">VND / 1 USDT (sau markup)</div>`;
   }
-});
+}
 
 function toggleRateMode() {
   const mode = document.querySelector('input[name="rate_mode"]:checked')?.value;
@@ -1021,34 +1025,17 @@ async function previewRate() {
   }
 }
 
-// ── If active tab is a new payment tab, load its config immediately ────────────
+// ── All sections live on the one "Cấu hình bot" page now — load every
+// payment method's saved config immediately instead of waiting for a tab
+// switch that no longer exists. ──────────────────────────────────────────────
 (async () => {
-  const tab = '{{ active_tab }}';
-  if (tab === 'binance') {
-    const d = await loadPaymentMethodConfig('binance_pay');
-    _applyBinanceConfig(d);
-  } else if (tab === 'bep20') {
-    const d = await loadPaymentMethodConfig('usdt_bep20');
-    if (d) {
-      document.getElementById('bep20Enabled').checked = d.is_active;
-      const cfg = d.config || {};
-      if (cfg.wallet_address) document.getElementById('bep20Wallet').value = cfg.wallet_address;
-    }
-  } else if (tab === 'trc20') {
-    const d = await loadPaymentMethodConfig('usdt_trc20');
-    if (d) {
-      document.getElementById('trc20Enabled').checked = d.is_active;
-      const cfg = d.config || {};
-      if (cfg.wallet_address) document.getElementById('trc20Wallet').value = cfg.wallet_address;
-    }
-  } else if (tab === 'erc20') {
-    const d = await loadPaymentMethodConfig('usdt_erc20');
-    if (d) {
-      document.getElementById('erc20Enabled').checked = d.is_active;
-      const cfg = d.config || {};
-      if (cfg.wallet_address) document.getElementById('erc20Wallet').value = cfg.wallet_address;
-    }
-  }
+  await Promise.all([
+    loadBinanceSection(),
+    loadBep20Section(),
+    loadTrc20Section(),
+    loadErc20Section(),
+    loadExchangeRateSection(),
+  ]);
 })();
 </script>
 {% endblock %}

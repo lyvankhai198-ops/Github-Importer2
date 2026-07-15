@@ -58,7 +58,7 @@ async def settings_page(request: Request, db: Session = Depends(get_db)):
     masked_webhook_secret = mask_key(decrypt(sepay.webhook_secret_encrypted)) if sepay.webhook_secret_encrypted else ""
     base_url = str(request.base_url).rstrip("/")
     webhook_url = f"{base_url}/webhooks/sepay"
-    active_tab = request.query_params.get("tab", "shop")
+    active_tab = request.query_params.get("tab", "config")
     return templates.TemplateResponse(request, "settings.html", {
         "cfg": cfg,
         "sepay": sepay,
