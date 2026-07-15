@@ -26,7 +26,9 @@
       <li><a href="/products" class="sidebar-link {% if '/products' in request.url.path and '/products/market' not in request.url.path %}active{% endif %}"><i class="bi bi-box-seam"></i> Sản phẩm</a></li>
       <li><a href="/products/market" class="sidebar-link {% if '/products/market' in request.url.path %}active{% endif %}"><i class="bi bi-shop"></i> Chợ</a></li>
       <li><a href="/orders" class="sidebar-link {% if '/orders' in request.url.path %}active{% endif %}"><i class="bi bi-receipt"></i> Đơn hàng</a></li>
+      {% if request.state.is_owner %}
       <li><a href="/api-connections" class="sidebar-link {% if '/api-connections' in request.url.path %}active{% endif %}"><i class="bi bi-plug"></i> Kết nối API</a></li>
+      {% endif %}
       <li><a href="/users" class="sidebar-link {% if '/users' in request.url.path %}active{% endif %}"><i class="bi bi-people"></i> Người dùng</a></li>
       <li><a href="/wallet" class="sidebar-link {% if '/wallet' in request.url.path %}active{% endif %}"><i class="bi bi-wallet2"></i> Ví khách hàng</a></li>
       <li><a href="/market-wallet" class="sidebar-link {% if request.url.path == '/market-wallet' %}active{% endif %}"><i class="bi bi-bank"></i> Ví chợ</a></li>

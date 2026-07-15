@@ -45,7 +45,7 @@
   <div class="text-muted market-sync-note">
     <i class="bi bi-arrow-repeat"></i> Sản phẩm được tự động đồng bộ từ API nhà cung cấp.
   </div>
-  {% if api_connections %}
+  {% if api_connections and request.state.is_owner %}
   <form action="/products/sync-all" method="post">
     <button type="submit" class="btn btn-sm btn-outline-success">
       <i class="bi bi-arrow-repeat"></i> Đồng bộ ngay
@@ -76,10 +76,16 @@
   </li>
 </ul>
 
-{% if not api_connections %}
-<div class="alert alert-warning">
-  Chưa có kết nối API nào đang hoạt động. Vào <a href="/api-connections">Kết nối API</a> để thêm nguồn hàng trước khi treo sản phẩm lên Chợ.
-</div>
+{% if not products and not brands|selectattr("count", "gt", 0)|list %}
+  {% if request.state.is_owner %}
+  <div class="alert alert-warning">
+    Chưa có kết nối API nào đang hoạt động. Vào <a href="/api-connections">Kết nối API</a> để thêm nguồn hàng trước khi treo sản phẩm lên Chợ.
+  </div>
+  {% else %}
+  <div class="alert alert-warning">
+    Chưa có sản phẩm nào để treo lên Chợ. Vui lòng liên hệ admin để được chia sẻ nguồn hàng.
+  </div>
+  {% endif %}
 {% endif %}
 
 <!-- ── Desktop table ── -->

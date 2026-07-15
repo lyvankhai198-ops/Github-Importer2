@@ -34,6 +34,14 @@ def check_auth(request: Request):
     return request.session.get("admin_id")
 
 
+def check_owner(request: Request) -> bool:
+    """Only the owner tenant manages API connections (its own API keys/base
+    URLs). Non-owner tenants only ever consume connections the owner has
+    explicitly shared, from the Chợ page — they never see or configure a
+    connection of their own, so every route below is owner-only."""
+    return bool(request.state.is_owner)
+
+
 def _non_ascii_error(value: str, field_label: str) -> str | None:
     """
     Returns a Vietnamese error message if `value` contains a non-ASCII
@@ -64,6 +72,8 @@ def flash(request: Request, msg: str, type: str = "success"):
 async def list_connections(request: Request, db: Session = Depends(get_db)):
     if not check_auth(request):
         return RedirectResponse(url="/login", status_code=302)
+    if not check_owner(request):
+        return RedirectResponse(url="/products/market", status_code=302)
     connections = db.query(ApiConnection).order_by(ApiConnection.created_at.desc()).all()
     flash_msg = request.session.pop("flash", None)
     return templates.TemplateResponse(request, "api_connections.html", {
@@ -89,6 +99,8 @@ async def add_connection(
 ):
     if not check_auth(request):
         return RedirectResponse(url="/login", status_code=302)
+    if not check_owner(request):
+        return RedirectResponse(url="/products/market", status_code=302)
     base_url = _resolve_base_url(base_url, api_type)
     err = _non_ascii_error(api_key, "API Key") or _non_ascii_error(base_url, "URL")
     if err:
@@ -131,6 +143,8 @@ async def edit_connection(
 ):
     if not check_auth(request):
         return RedirectResponse(url="/login", status_code=302)
+    if not check_owner(request):
+        return RedirectResponse(url="/products/market", status_code=302)
     conn = db.query(ApiConnection).filter(ApiConnection.id == conn_id).first()
     if not conn:
         flash(request, "Không tìm thấy kết nối!", "error")
@@ -164,6 +178,8 @@ async def edit_connection(
 async def test_connection(conn_id: int, request: Request, db: Session = Depends(get_db)):
     if not check_auth(request):
         return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    if not check_owner(request):
+        return JSONResponse({"error": "Unauthorized"}, status_code=403)
     result = await test_api_connection(db, conn_id)
     return JSONResponse(result)
 
@@ -172,6 +188,8 @@ async def test_connection(conn_id: int, request: Request, db: Session = Depends(
 async def get_balance(conn_id: int, request: Request, db: Session = Depends(get_db)):
     if not check_auth(request):
         return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    if not check_owner(request):
+        return JSONResponse({"error": "Unauthorized"}, status_code=403)
     result = await get_api_balance(db, conn_id)
     return JSONResponse(result)
 
@@ -180,6 +198,8 @@ async def get_balance(conn_id: int, request: Request, db: Session = Depends(get_
 async def sync_connection(conn_id: int, request: Request, db: Session = Depends(get_db)):
     if not check_auth(request):
         return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    if not check_owner(request):
+        return JSONResponse({"error": "Unauthorized"}, status_code=403)
     result = await sync_api_products(db, conn_id)
     return JSONResponse(result)
 
@@ -188,6 +208,8 @@ async def sync_connection(conn_id: int, request: Request, db: Session = Depends(
 async def toggle_connection(conn_id: int, request: Request, db: Session = Depends(get_db)):
     if not check_auth(request):
         return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    if not check_owner(request):
+        return JSONResponse({"error": "Unauthorized"}, status_code=403)
     conn = db.query(ApiConnection).filter(ApiConnection.id == conn_id).first()
     if not conn:
         return JSONResponse({"error": "Not found"}, status_code=404)
@@ -203,6 +225,8 @@ async def toggle_connection(conn_id: int, request: Request, db: Session = Depend
 async def delete_connection(conn_id: int, request: Request, db: Session = Depends(get_db)):
     if not check_auth(request):
         return RedirectResponse(url="/login", status_code=302)
+    if not check_owner(request):
+        return RedirectResponse(url="/products/market", status_code=302)
     conn = db.query(ApiConnection).filter(ApiConnection.id == conn_id).first()
     if conn:
         stop_sync_scheduler(conn_id)
@@ -217,6 +241,8 @@ async def delete_connection(conn_id: int, request: Request, db: Session = Depend
 async def view_products(conn_id: int, request: Request, db: Session = Depends(get_db), page: int = 1):
     if not check_auth(request):
         return RedirectResponse(url="/login", status_code=302)
+    if not check_owner(request):
+        return RedirectResponse(url="/products/market", status_code=302)
     conn = db.query(ApiConnection).filter(ApiConnection.id == conn_id).first()
     if not conn:
         return RedirectResponse(url="/api-connections", status_code=302)
@@ -241,6 +267,8 @@ async def view_products(conn_id: int, request: Request, db: Session = Depends(ge
 async def view_orders(conn_id: int, request: Request, db: Session = Depends(get_db)):
     if not check_auth(request):
         return RedirectResponse(url="/login", status_code=302)
+    if not check_owner(request):
+        return RedirectResponse(url="/products/market", status_code=302)
     from models import Order
     orders = db.query(Order).filter(Order.api_connection_id == conn_id).order_by(Order.created_at.desc()).limit(50).all()
     conn = db.query(ApiConnection).filter(ApiConnection.id == conn_id).first()
