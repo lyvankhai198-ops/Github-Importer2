@@ -405,8 +405,21 @@ async def _sync_loop(api_connection_id: int, interval_minutes: int):
 # Short-lived cache so rapid repeated taps on "Products" don't re-hit every
 # source; per-source timeout + isolated DB session so one slow/broken source
 # can never hang the bot or block the others.
+#
+# _SOURCE_TIMEOUT_SECONDS used to be 8s, which was too tight for a real
+# multi-page supplier fetch (e.g. CanBoSo's public market API, paginated
+# 100 items/page): a normal page taking a couple seconds under real network
+# latency would blow the 8s wait_for budget every single time, permanently
+# cancelling the sync mid-fetch and leaving ProductSource.last_stock stuck
+# on old data forever (repeated "API_SYNC_TIMEOUT" in logs with no eventual
+# success) — a shared-catalog product would then flip to "Hết hàng" once its
+# last successful sync passed the unrelated 10-minute staleness window in
+# get_product_stock_status, even though the supplier genuinely had stock.
+# Connections still sync in parallel (see sync_active_supplier_products), so
+# raising this only affects worst-case latency for a single slow/broken
+# connection, not the others.
 _SYNC_CACHE_SECONDS = 30
-_SOURCE_TIMEOUT_SECONDS = 8
+_SOURCE_TIMEOUT_SECONDS = 20
 _last_full_sync_at: datetime | None = None
 _full_sync_lock = asyncio.Lock()
 
