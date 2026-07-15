@@ -4,7 +4,16 @@ chợ-sourced (source_type=api) product a non-owner tenant's bot may still
 sell, based on their prepaid market_wallet_balance.
 
 Formula — pooled wallet, NOT split evenly across attached products:
-    virtual_units = floor(tenant.market_wallet_balance / product.source_price)
+    effective_unit_cost = product.source_price * (1 + platform_fee_percent / 100)
+    virtual_units = floor(tenant.market_wallet_balance / effective_unit_cost)
+
+The platform fee is included in the per-unit cost used here because
+debit_for_sale debits cost + fee together as one atomic transaction at
+sale time (see market_wallet_service.debit_for_sale) — if the displayed
+count only accounted for source_price and ignored the fee, the last
+"available" unit shown to a tenant could fail with InsufficientBalanceError
+at the moment of actual purchase, since the real debit is larger than the
+raw cost used to compute the displayed number.
 
 The wallet is one shared pool: every attached product is checked against
 the FULL current balance, not a pre-divided slice of it. This matches how
@@ -53,5 +62,10 @@ def get_virtual_stock(db: Session, product: Product) -> int:
     cost_price = product.source_price or 0.0
     if cost_price <= 0:
         return 0
+    from services.market_pricing import get_platform_fee_percent
+    fee_pct = get_platform_fee_percent(db) or 0.0
+    effective_unit_cost = cost_price * (1 + fee_pct / 100)
+    if effective_unit_cost <= 0:
+        return 0
     balance = admin.market_wallet_balance or 0.0
-    return max(0, int(balance // cost_price))
+    return max(0, int(balance // effective_unit_cost))
