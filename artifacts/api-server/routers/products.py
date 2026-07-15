@@ -123,27 +123,84 @@ async def products_market(
     brand: str = "", state: str = "listed",
 ):
     """
-    "Chợ" view — canboso-style browsing: a grid of brand chips (each showing
-    how many of that brand's products are currently treo/listed), and, once a
-    brand is picked, a price-ascending table of that brand's products for the
-    selected state ("listed" = treo, "unlisted" = chưa treo) with a one-click
-    toggle action and access to the same edit modal used on /products.
+    "Chợ" view — browses products pulled straight from the connected supplier
+    API(s) (ApiProduct rows, kept fresh by the background sync scheduler and
+    refreshed on-demand here too), not the local bot catalog. Each source
+    item shows a one-click "Treo" (list) action that pulls it into the bot's
+    product list, or, once listed, a "Lấy xuống treo" (Gỡ) action that
+    unlists it again — the source item itself is never deleted, so it can be
+    re-treo'd any time without re-fetching.
     """
     if not check_auth(request):
         return RedirectResponse(url="/login", status_code=302)
     from services.normalize import compute_brand_key
     from services.product_service import get_product_stock_status
+    from services.api_service import sync_active_supplier_products
 
-    all_products = db.query(Product).all()
+    # Pull the freshest supplier data before rendering — the periodic
+    # scheduler already keeps ApiProduct up to date in the background, but a
+    # human opening "Chợ" should never see stale numbers (this is cheap: it's
+    # a no-op if the last full sync ran within the last 30s).
+    try:
+        await sync_active_supplier_products(db)
+    except Exception:
+        logger.exception("[products_market] on-demand sync failed")
 
-    # Brand chip counts reflect currently-listed (treo) products only — that
-    # is what "Chợ" is showing off, mirroring the canboso reference (each
-    # chip's number is how many listings are live under that brand).
+    api_products = (
+        db.query(ApiProduct)
+        .join(ApiConnection, ApiProduct.api_connection_id == ApiConnection.id)
+        .filter(ApiConnection.is_active == True)
+        .all()
+    )
+
+    # One query for every ProductSource linking these source items to a bot
+    # product, so "is this currently treo'd?" never costs an extra query per row.
+    ap_ids = [ap.id for ap in api_products]
+    linked_by_ap: dict[int, Product] = {}
+    if ap_ids:
+        sources = (
+            db.query(ProductSource)
+            .filter(ProductSource.api_product_id.in_(ap_ids))
+            .all()
+        )
+        for src in sources:
+            if not src.product:
+                continue
+            current = linked_by_ap.get(src.api_product_id)
+            # Prefer an active product over an inactive one if a source ever
+            # ends up linked to more than one (rare — manual "Liên kết").
+            if current is None or (src.product.is_active and not current.is_active):
+                linked_by_ap[src.api_product_id] = src.product
+
+    for ap in api_products:
+        product = linked_by_ap.get(ap.id)
+        ap.linked_product = product
+        ap.is_listed = bool(product and product.is_active)
+        if ap.is_listed:
+            info = get_product_stock_status(product.id, db)
+            ap.display_name = product.name
+            ap.display_icon = product.telegram_icon or "📦"
+            ap.display_image = product.image_path
+            ap.display_price = product.sale_price or 0
+            ap.display_stock = info["stock"]
+            ap.display_unlimited = product.delivery_mode.value in ("manual_admin", "manual")
+            ap.last_update = product.updated_at
+        else:
+            ap.display_name = ap.external_name or ap.external_product_id
+            ap.display_icon = "📦"
+            ap.display_image = ap.external_image_url
+            ap.display_price = ap.external_price or 0
+            ap.display_stock = ap.external_stock or 0
+            ap.display_unlimited = False
+            ap.last_update = ap.last_sync_at
+
+    # Brand chip counts reflect currently-listed (treo) source items only —
+    # each chip's number is how many of that brand's listings are live.
     brand_counts: dict[str, int] = {}
-    for p in all_products:
-        if not p.is_active:
+    for ap in api_products:
+        if not ap.is_listed:
             continue
-        bk = compute_brand_key(p.name)
+        bk = compute_brand_key(ap.display_name)
         if not bk:
             continue
         brand_counts[bk] = brand_counts.get(bk, 0) + 1
@@ -151,17 +208,12 @@ async def products_market(
     total_listed = sum(brand_counts.values())
 
     is_listed_state = state != "unlisted"
-    products = [p for p in all_products if p.is_active == is_listed_state]
+    products = [ap for ap in api_products if ap.is_listed == is_listed_state]
     if brand:
-        products = [p for p in products if compute_brand_key(p.name) == brand]
-
-    for p in products:
-        info = get_product_stock_status(p.id, db)
-        p.stock_display = info["stock"]
-        p.stock_status = info["status"]
+        products = [ap for ap in products if compute_brand_key(ap.display_name) == brand]
 
     # Price ascending — "Giá tối thiểu treo" first, matching the canboso table.
-    products.sort(key=lambda p: (p.sale_price or 0, p.name or ""))
+    products.sort(key=lambda ap: (ap.display_price or 0, ap.display_name or ""))
 
     api_connections = db.query(ApiConnection).filter(ApiConnection.is_active == True).all()
     from models import EmojiIcon
@@ -602,7 +654,27 @@ async def create_product_from_source(
     code = f"API-{ap.api_connection_id}-{ap.external_product_id}"
     existing = db.query(Product).filter(Product.product_code == code).first()
     if existing:
-        flash(request, "Sản phẩm đã tồn tại!", "error")
+        if existing.is_active:
+            flash(request, "Sản phẩm đã tồn tại!", "error")
+            return RedirectResponse(url="/products/api-sources", status_code=302)
+        # Previously treo'd then gỡ (unlisted) — re-treo by reactivating the
+        # same product instead of blocking, so a source item can be listed/
+        # unlisted repeatedly without ever losing its order history.
+        existing.is_active = True
+        source = db.query(ProductSource).filter(
+            ProductSource.product_id == existing.id,
+            ProductSource.api_product_id == ap.id,
+        ).first()
+        if source:
+            source.is_active = True
+        else:
+            source = ProductSource(
+                product_id=existing.id, api_product_id=ap.id, priority=1,
+                is_active=True, last_cost=ap.external_price, last_stock=ap.external_stock,
+            )
+            db.add(source)
+        db.commit()
+        flash(request, "Sản phẩm đã được treo lại!")
         return RedirectResponse(url="/products/api-sources", status_code=302)
 
     # Use sale_price if admin set it; otherwise default to source price
