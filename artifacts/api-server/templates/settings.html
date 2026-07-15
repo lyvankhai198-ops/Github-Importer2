@@ -335,65 +335,31 @@
           </div>
           <form action="/settings/payment-method/binance" method="post" enctype="multipart/form-data">
             <div class="card-body">
-              <div class="alert alert-warning small py-2">
-                ⚠️ API Key chỉ cần quyền đọc <strong>"Enable Reading"</strong> — không được tự đăng ký Binance Pay Merchant. Không bao giờ bật quyền rút tiền/giao dịch cho API Key này.
-              </div>
               <div class="mb-3 form-check form-switch">
                 <input class="form-check-input" type="checkbox" name="is_enabled" id="binanceEnabled">
                 <label class="form-check-label fw-semibold" for="binanceEnabled">Bật Binance Pay</label>
               </div>
               <div class="mb-3">
-                <label class="form-label">Binance ID nhận tiền</label>
-                <input type="text" name="receiver_binance_id" id="binanceReceiverId" class="form-control" placeholder="123456789">
-                <small class="text-muted">Binance ID của tài khoản shop — dùng để đối chiếu người nhận trong Pay History.</small>
-              </div>
-              <div class="row g-2">
-                <div class="col-6">
-                  <label class="form-label">API Key</label>
-                  <div class="input-group">
-                    <input type="password" name="api_key" id="binanceApiKey" class="form-control" placeholder="••••••••••••">
-                    <button type="button" class="btn btn-outline-secondary" onclick="togglePass('binanceApiKey',this)"><i class="bi bi-eye"></i></button>
-                  </div>
+                <label class="form-label">Binance API Key</label>
+                <div class="input-group">
+                  <input type="password" name="api_key" id="binanceApiKey" class="form-control" placeholder="••••••••••••">
+                  <button type="button" class="btn btn-outline-secondary" onclick="togglePass('binanceApiKey',this)"><i class="bi bi-eye"></i></button>
                 </div>
-                <div class="col-6">
-                  <label class="form-label">Secret Key</label>
-                  <div class="input-group">
-                    <input type="password" name="secret_key" id="binanceSecretKey" class="form-control" placeholder="••••••••••••">
-                    <button type="button" class="btn btn-outline-secondary" onclick="togglePass('binanceSecretKey',this)"><i class="bi bi-eye"></i></button>
-                  </div>
-                </div>
-              </div>
-              <div class="mt-2 mb-3">
-                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="testBinanceConnection()">🔌 Test connection</button>
-                <span id="binanceTestResult" class="small ms-2"></span>
-              </div>
-              <div class="row g-2">
-                <div class="col-4">
-                  <label class="form-label">Coin mặc định</label>
-                  <input type="text" name="default_coin" id="binanceCoin" class="form-control" value="USDT">
-                </div>
-                <div class="col-4">
-                  <label class="form-label">Hết hạn đơn (phút)</label>
-                  <input type="number" name="order_expiry_minutes" id="binanceExpiry" class="form-control" value="30" min="5" max="1440">
-                </div>
-                <div class="col-4">
-                  <label class="form-label">Khoảng kiểm tra tối thiểu (giây)</label>
-                  <input type="number" name="min_check_interval_seconds" id="binanceMinInterval" class="form-control" value="15" min="5" max="300">
-                </div>
-              </div>
-              <div class="mb-3 mt-2">
-                <label class="form-label">Sai số cho phép (USDT)</label>
-                <input type="number" step="0.0001" name="amount_tolerance" id="binanceTolerance" class="form-control" value="0" min="0" style="max-width:180px">
-                <small class="text-muted">Mặc định 0 — số tiền phải khớp chính xác.</small>
               </div>
               <div class="mb-3">
-                <label class="form-label">Ảnh QR Binance Pay cá nhân (tuỳ chọn)</label>
-                <input type="file" name="qr_image" accept="image/*" class="form-control">
-                <div id="binanceQrPreview" class="mt-2"></div>
-                <div class="form-check mt-1" id="binanceRemoveQrWrap" style="display:none">
-                  <input class="form-check-input" type="checkbox" name="remove_qr_image" id="binanceRemoveQr">
-                  <label class="form-check-label small" for="binanceRemoveQr">Xoá ảnh QR hiện tại</label>
+                <label class="form-label">Binance Secret Key</label>
+                <div class="input-group">
+                  <input type="password" name="secret_key" id="binanceSecretKey" class="form-control" placeholder="••••••••••••">
+                  <button type="button" class="btn btn-outline-secondary" onclick="togglePass('binanceSecretKey',this)"><i class="bi bi-eye"></i></button>
                 </div>
+              </div>
+              <div class="mb-3">
+                <label class="form-label">Binance ID</label>
+                <input type="text" name="receiver_binance_id" id="binanceReceiverId" class="form-control" placeholder="123456789">
+              </div>
+              <div class="mb-2">
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="testBinanceConnection()">🔌 Test connection</button>
+                <span id="binanceTestResult" class="small ms-2"></span>
               </div>
             </div>
             <div class="card-footer"><button type="submit" class="btn btn-primary">💾 Lưu cài đặt Binance Pay</button></div>
@@ -877,21 +843,8 @@ function _applyBinanceConfig(d) {
   if (enabledEl) enabledEl.checked = d.is_active;
   const cfg = d.config || {};
   if (cfg.receiver_binance_id) document.getElementById('binanceReceiverId').value = cfg.receiver_binance_id;
-  if (cfg.default_coin) document.getElementById('binanceCoin').value = cfg.default_coin;
-  if (cfg.order_expiry_minutes) document.getElementById('binanceExpiry').value = cfg.order_expiry_minutes;
-  if (cfg.min_check_interval_seconds) document.getElementById('binanceMinInterval').value = cfg.min_check_interval_seconds;
-  if (cfg.amount_tolerance !== undefined && cfg.amount_tolerance !== null) document.getElementById('binanceTolerance').value = cfg.amount_tolerance;
   if (cfg.api_key) document.getElementById('binanceApiKey').value = cfg.api_key;
   if (cfg.secret_key) document.getElementById('binanceSecretKey').value = cfg.secret_key;
-  const qrPreview = document.getElementById('binanceQrPreview');
-  const removeWrap = document.getElementById('binanceRemoveQrWrap');
-  if (cfg.qr_image_path) {
-    if (qrPreview) qrPreview.innerHTML = `<img src="${cfg.qr_image_path}" style="max-width:160px" class="border rounded">`;
-    if (removeWrap) removeWrap.style.display = '';
-  } else {
-    if (qrPreview) qrPreview.innerHTML = '';
-    if (removeWrap) removeWrap.style.display = 'none';
-  }
 }
 
 async function testBinanceConnection() {
