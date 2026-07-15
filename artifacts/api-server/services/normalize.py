@@ -722,6 +722,38 @@ def auto_assign_emoji(name: str | None) -> str:
     return _DEFAULT_ICON
 
 
+# ── Chợ market categories ────────────────────────────────────────────────────
+# A fixed, curated list (not the free-form per-word brand key below) — the
+# admin asked for exactly these buckets so "Chợ" stays scannable instead of
+# fragmenting into one chip per distinct first word. Order matters twice:
+# it's both the match priority (first keyword hit wins, so e.g. "gemini"
+# doesn't get caught by a later generic rule) and the on-screen chip order.
+MARKET_CATEGORIES = [
+    {"key": "antigravity", "label": "Antigravity", "icon": "🚀", "keywords": ["antigravity"]},
+    {"key": "adobe", "label": "Adobe", "icon": "🅰️", "keywords": ["adobe"]},
+    {"key": "capcut", "label": "CapCut", "icon": "🎬", "keywords": ["capcut"]},
+    {"key": "canva", "label": "Canva", "icon": "🎨", "keywords": ["canva"]},
+    {"key": "chatgpt", "label": "ChatGPT", "icon": "🤖", "keywords": ["chatgpt", "chat gpt", "gpt"]},
+    {"key": "grok", "label": "Grok", "icon": "✨", "keywords": ["grok"]},
+    {"key": "claude", "label": "Claude", "icon": "🧠", "keywords": ["claude"]},
+    {"key": "google", "label": "Google", "icon": "🔍", "keywords": ["google", "gemini"]},
+    {"key": "khac", "label": "Khác", "icon": "📦", "keywords": []},  # catch-all, always last
+]
+
+
+def classify_market_category(name: str | None) -> str:
+    """
+    Map a product/source name to one of the fixed MARKET_CATEGORIES keys
+    used by the "Chợ" page's brand chips. Falls back to "khac" (Khác) when
+    nothing matches, so every item always lands in exactly one bucket.
+    """
+    lname = (name or "").lower()
+    for cat in MARKET_CATEGORIES:
+        if any(kw in lname for kw in cat["keywords"]):
+            return cat["key"]
+    return "khac"
+
+
 # ── Brand grouping key ───────────────────────────────────────────────────────
 
 _BRAND_KEY_RE = re.compile(r"[A-Za-zÀ-ỹ0-9]+")

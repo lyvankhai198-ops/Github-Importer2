@@ -133,7 +133,6 @@ async def products_market(
     """
     if not check_auth(request):
         return RedirectResponse(url="/login", status_code=302)
-    from services.normalize import compute_brand_key
     from services.product_service import get_product_stock_status
     from services.api_service import sync_active_supplier_products
 
@@ -194,38 +193,31 @@ async def products_market(
             ap.display_unlimited = False
             ap.last_update = ap.last_sync_at
 
-    # Brand chips always reflect the tab currently being viewed — on "Đang
-    # treo" they group live listings; on "Chưa treo" they group the raw
-    # supplier catalog, so an admin hunting for e.g. "Adobe" source items to
-    # treo sees an "Adobe" chip even though nothing from that brand is listed
-    # yet. Each chip also carries a representative icon (same keyword-based
-    # auto-icon logic used to assign product icons) so brands are scannable
-    # at a glance instead of being a wall of plain text, matching the bot's
-    # own category picker.
-    from services.normalize import auto_assign_emoji
+    # Category chips are a fixed, curated list (MARKET_CATEGORIES) rather than
+    # one chip per distinct first word — that fragmented into dozens of noisy
+    # single-item chips (Admin, Api, Cdk, Fam...) which was hard to scan.
+    # Chips always reflect the tab currently being viewed (listed vs
+    # unlisted) and are always shown in the fixed order, even at zero count,
+    # so the menu never reflows as items move between categories.
+    from services.normalize import MARKET_CATEGORIES, classify_market_category
     is_listed_state = state != "unlisted"
     state_products = [ap for ap in api_products if ap.is_listed == is_listed_state]
 
-    brand_counts: dict[str, int] = {}
-    brand_icons: dict[str, str] = {}
-    brand_names: dict[str, str] = {}
     for ap in state_products:
-        bk = compute_brand_key(ap.display_name)
-        if not bk:
-            continue
-        brand_counts[bk] = brand_counts.get(bk, 0) + 1
-        if bk not in brand_icons:
-            brand_icons[bk] = ap.display_icon if ap.is_listed else auto_assign_emoji(ap.display_name)
-            brand_names[bk] = bk.capitalize()
-    brands = sorted(
-        ({"key": bk, "count": c, "icon": brand_icons[bk], "label": brand_names[bk]} for bk, c in brand_counts.items()),
-        key=lambda b: b["key"],
-    )
-    total_listed = sum(brand_counts.values())
+        ap.category_key = classify_market_category(ap.display_name)
+
+    category_counts: dict[str, int] = {}
+    for ap in state_products:
+        category_counts[ap.category_key] = category_counts.get(ap.category_key, 0) + 1
+    brands = [
+        {"key": cat["key"], "label": cat["label"], "icon": cat["icon"], "count": category_counts.get(cat["key"], 0)}
+        for cat in MARKET_CATEGORIES
+    ]
+    total_listed = len(state_products)
 
     products = state_products
     if brand:
-        products = [ap for ap in products if compute_brand_key(ap.display_name) == brand]
+        products = [ap for ap in products if ap.category_key == brand]
 
     # Price ascending — "Giá tối thiểu treo" first, matching the canboso table.
     products.sort(key=lambda ap: (ap.display_price or 0, ap.display_name or ""))
