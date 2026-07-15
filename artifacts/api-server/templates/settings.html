@@ -328,8 +328,6 @@
 
   <!-- Binance Pay Section -->
   <div class="mb-3">
-    <div class="row g-3">
-      <div class="col-12 col-lg-7">
         <div class="card mb-3">
           <div class="card-header d-flex justify-content-between align-items-center">
             <h6 class="mb-0">🟡 Binance Pay</h6>
@@ -401,28 +399,10 @@
             <div class="card-footer"><button type="submit" class="btn btn-primary">💾 Lưu cài đặt Binance Pay</button></div>
           </form>
         </div>
-      </div>
-      <div class="col-12 col-lg-5">
-        <div class="card">
-          <div class="card-header"><h6 class="mb-0">ℹ️ Hướng dẫn</h6></div>
-          <div class="card-body small">
-            <p>Thanh toán Binance Pay được xác minh bằng cách đọc <strong>lịch sử Pay History</strong> của chính tài khoản Binance của bạn (không cần đăng ký Binance Pay Merchant).</p>
-            <ol class="ps-3">
-              <li>Vào Binance → Account → API Management → tạo API Key mới.</li>
-              <li>Chỉ bật quyền <strong>"Enable Reading"</strong>.</li>
-              <li>Dán API Key/Secret Key vào đây và nhấn "Test connection".</li>
-            </ol>
-            <p>Khách hàng sẽ chuyển đúng số USDT tới Binance ID của bạn và gửi TXID để hệ thống tự đối chiếu.</p>
-          </div>
-        </div>
-      </div>
-    </div>
   </div>
 
   <!-- USDT BEP20 Section -->
   <div class="mb-3">
-    <div class="row g-3">
-      <div class="col-12 col-lg-7">
         <div class="card mb-3">
           <div class="card-header d-flex justify-content-between align-items-center">
             <h6 class="mb-0">🟨 USDT BEP20 (BSC)</h6>
@@ -475,30 +455,11 @@
             <div class="card-footer"><button type="submit" class="btn btn-primary">💾 Lưu USDT BEP20</button></div>
           </form>
         </div>
-      </div>
-      <div class="col-12 col-lg-5">
-        <div class="card">
-          <div class="card-header"><h6 class="mb-0">ℹ️ Hướng dẫn BEP20</h6></div>
-          <div class="card-body small">
-            <p>Hệ thống sẽ tự động theo dõi USDT đến địa chỉ ví của bạn trên BNB Smart Chain.</p>
-            <p><strong>Ghi chú quan trọng:</strong></p>
-            <ul>
-              <li>Mỗi đơn có số USDT duy nhất (offset nhỏ) để phân biệt các lệnh đồng thời</li>
-              <li>BSCScan API Key giúp quét chính xác hơn (khuyến nghị)</li>
-              <li>Nếu không có BSCScan API, worker dùng RPC fallback (giới hạn)</li>
-              <li>Cần ít nhất <strong>12 confirmations</strong> BSC ≈ ~36 giây</li>
-            </ul>
-            <div id="bep20CurrentConfig" class="mt-2"></div>
-          </div>
-        </div>
-      </div>
-    </div>
+        <div id="bep20CurrentConfig"></div>
   </div>
 
   <!-- USDT TRC20 Section -->
   <div class="mb-3">
-    <div class="row g-3">
-      <div class="col-12 col-lg-7">
         <div class="card mb-3">
           <div class="card-header d-flex justify-content-between align-items-center">
             <h6 class="mb-0">🔴 USDT TRC20 (TRON)</h6>
@@ -547,30 +508,11 @@
             <div class="card-footer"><button type="submit" class="btn btn-primary">💾 Lưu USDT TRC20</button></div>
           </form>
         </div>
-      </div>
-      <div class="col-12 col-lg-5">
-        <div class="card">
-          <div class="card-header"><h6 class="mb-0">ℹ️ Hướng dẫn TRC20</h6></div>
-          <div class="card-body small">
-            <p>Hệ thống sẽ tự động quét USDT đến địa chỉ ví TRON của bạn qua TronGrid API.</p>
-            <p><strong>Ghi chú quan trọng:</strong></p>
-            <ul>
-              <li>TRC20 phí giao dịch rất thấp (&lt;$1) — phổ biến ở VN</li>
-              <li>Thời gian xác nhận: 20 blocks ≈ ~60 giây</li>
-              <li>TronGrid free tier: 1000 req/day — đủ cho lưu lượng nhỏ</li>
-              <li>Nâng lên TronGrid Pro nếu có nhiều đơn đồng thời</li>
-            </ul>
-            <div id="trc20CurrentConfig" class="mt-2"></div>
-          </div>
-        </div>
-      </div>
-    </div>
+        <div id="trc20CurrentConfig"></div>
   </div>
 
   <!-- USDT ERC20 Section -->
   <div class="mb-3">
-    <div class="row g-3">
-      <div class="col-12 col-lg-7">
         <div class="card mb-3">
           <div class="card-header d-flex justify-content-between align-items-center">
             <h6 class="mb-0">🔵 USDT ERC20 (Ethereum)</h6>
@@ -619,23 +561,7 @@
             <div class="card-footer"><button type="submit" class="btn btn-primary">💾 Lưu USDT ERC20</button></div>
           </form>
         </div>
-      </div>
-      <div class="col-12 col-lg-5">
-        <div class="card">
-          <div class="card-header"><h6 class="mb-0">ℹ️ Hướng dẫn ERC20</h6></div>
-          <div class="card-body small">
-            <p>Hệ thống sẽ tự động theo dõi USDT đến địa chỉ ví của bạn trên Ethereum.</p>
-            <p><strong>Ghi chú quan trọng:</strong></p>
-            <ul>
-              <li>Phí gas Ethereum thường cao hơn BEP20/TRC20 — phù hợp cho đơn giá trị lớn</li>
-              <li>Etherscan API Key là bắt buộc để quét giao dịch</li>
-              <li>Cần ít nhất <strong>12 confirmations</strong> Ethereum ≈ ~3 phút</li>
-            </ul>
-            <div id="erc20CurrentConfig" class="mt-2"></div>
-          </div>
-        </div>
-      </div>
-    </div>
+        <div id="erc20CurrentConfig"></div>
   </div>
 
   <!-- Exchange Rate Section -->
@@ -733,13 +659,90 @@
 
 <!-- ══════════════════════════════ Hướng dẫn ══════════════════════════════ -->
 <div class="tab-pane fade {% if active_tab == 'guide' %}show active{% endif %}" id="tabGuide">
-  <div class="card">
-    <div class="card-header"><h6 class="mb-0">📖 Hướng dẫn</h6></div>
-    <div class="card-body text-center text-muted py-5">
-      <i class="bi bi-journal-text" style="font-size:2rem;"></i>
-      <p class="mt-3 mb-0">Nội dung hướng dẫn sẽ được cập nhật sau.</p>
+
+  <div class="card mb-3">
+    <div class="card-header"><h6 class="mb-0">🚀 Cập nhật hệ thống</h6></div>
+    <div class="card-body">
+      <p class="text-muted small mb-2">Chạy các lệnh sau trên server để lấy code mới nhất và khởi động lại bot:</p>
+      <div class="input-group">
+        <textarea id="deployCmd" class="form-control font-monospace small" rows="3" readonly>cd /root/Github-Importer2
+git pull
+systemctl restart aicenter.service</textarea>
+        <button class="btn btn-outline-secondary" type="button" onclick="copyGuideText('deployCmd', this)"><i class="bi bi-clipboard"></i> Sao chép</button>
+      </div>
     </div>
   </div>
+
+  <div class="card mb-3">
+    <div class="card-header"><h6 class="mb-0">🤖 Tạo bot với BotFather</h6></div>
+    <div class="card-body">
+      <p class="small">Tạo bot Telegram, lấy token do BotFather cấp và dán đúng vào ô <strong>Bot Token</strong> ở tab Cấu hình bot.</p>
+      <div class="d-flex gap-2 flex-wrap mb-3">
+        <a href="https://t.me/BotFather" target="_blank" class="btn btn-sm btn-outline-primary">Mở @BotFather</a>
+        <a href="https://fptshop.com.vn/tin-tuc/thu-thuat/bot-telegram-la-gi-162528" target="_blank" class="btn btn-sm btn-outline-primary">Xem hướng dẫn tạo bot</a>
+      </div>
+      <div class="alert alert-success small py-2 mb-3">
+        <strong>Lưu ý bảo mật:</strong> Token do BotFather cấp là khóa điều khiển bot. Không gửi token này cho người khác hoặc đăng trong group.
+      </div>
+      <ol class="small ps-3 mb-0">
+        <li>Mở Telegram và nhắn cho @BotFather.</li>
+        <li>Gõ <code>/newbot</code>.</li>
+        <li>Nhập tên bot hiển thị, ví dụ <code>AI Center Bot</code>.</li>
+        <li>Nhập username bot, phải kết thúc bằng <code>bot</code>, ví dụ <code>aicenter_demo_bot</code>.</li>
+        <li>BotFather sẽ trả về một chuỗi token dạng <code>123456789:AA....</code> Hãy sao chép token này.</li>
+        <li>Quay lại trang này và dán token vào ô <strong>Bot Token</strong> trong tab Cấu hình bot.</li>
+      </ol>
+    </div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-header"><h6 class="mb-0">🏦 SePay</h6></div>
+    <div class="card-body">
+      <p class="small">Đăng ký SePay, liên kết ngân hàng, tạo webhook và dùng đúng giá trị cho ô <strong>API Key Sepay</strong> / <strong>Webhook Secret</strong> trên tab Cấu hình bot.</p>
+      <div class="d-flex gap-2 flex-wrap mb-3">
+        <a href="https://my.sepay.vn/" target="_blank" class="btn btn-sm btn-outline-primary">Mở SePay</a>
+        <a href="https://docs.sepay.vn/" target="_blank" class="btn btn-sm btn-outline-primary">Hướng dẫn thêm ngân hàng</a>
+        <a href="https://docs.sepay.vn/tich-hop-webhooks.html" target="_blank" class="btn btn-sm btn-outline-primary">Tài liệu webhook SePay</a>
+      </div>
+      <div class="alert alert-info small py-2 mb-3">
+        <strong>Điền trên web:</strong> Ô <strong>API Key Sepay</strong> phải là đúng chuỗi bí mật bạn tự đặt ở bước chọn chứng thực API Key của webhook SePay.<br>
+        Header SePay sẽ gửi sang hệ thống theo dạng <code>Authorization: Apikey &lt;CHUOI_BAN_TU_DAT&gt;</code>.
+      </div>
+      <ol class="small ps-3 mb-0">
+        <li>Đăng ký hoặc đăng nhập tại my.sepay.vn.</li>
+        <li>Vào menu Ngân hàng → Kết nối tài khoản để liên kết ngân hàng.</li>
+        <li>Vào menu WebHooks → + Thêm webhooks.</li>
+        <li>Chọn sự kiện nhận tiền vào, chọn đúng tài khoản ngân hàng cần theo dõi và bật tùy chọn webhook xác thực thanh toán nếu bạn dùng để đối soát đơn.</li>
+        <li>Dán đúng URL callback (mục "Cấu hình Webhook" ở tab Cấu hình bot) vào ô Gọi đến URL.</li>
+        <li>Ở phần chứng thực, chọn API Key, sau đó tự đặt một chuỗi bí mật và nhập lại đúng chuỗi đó vào ô API Key Sepay trên web này.</li>
+        <li>Lưu webhook và chuyển thử một giao dịch nhỏ để kiểm tra log webhook trong SePay.</li>
+      </ol>
+    </div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-header"><h6 class="mb-0">🟡 Binance API Key</h6></div>
+    <div class="card-body">
+      <p class="small">Hướng dẫn lấy Binance API Key và Secret Key để dán vào ô <strong>API Key</strong> / <strong>Secret Key</strong> của mục Binance Pay trên tab Cấu hình bot.</p>
+      <div class="d-flex gap-2 flex-wrap mb-3">
+        <a href="https://www.binance.com/en/my/settings/api-management" target="_blank" class="btn btn-sm btn-outline-primary">Mở API Management</a>
+        <a href="https://www.binance.com/en/academy/articles/binance-ai-agent-skills-how-to-install-and-use-them" target="_blank" class="btn btn-sm btn-outline-primary">Hướng dẫn chính thức</a>
+        <a href="https://www.binance.com/en/academy/articles/what-are-api-keys-and-security-types" target="_blank" class="btn btn-sm btn-outline-primary">Quyền API</a>
+      </div>
+      <div class="alert alert-warning small py-2 mb-3">
+        Hệ thống hiện kiểm tra khóa Binance bằng cách đọc số dư tài khoản, nên bật <strong>Enable Reading</strong> là đủ để test an toàn.<br>
+        Không bật <strong>Enable withdrawals</strong>. Nếu sau này bạn muốn dùng các chức năng giao dịch, Binance yêu cầu whitelist IP trước khi bật quyền giao dịch Spot hoặc Margin.
+      </div>
+      <ol class="small ps-3 mb-0">
+        <li>Đăng nhập Binance và vào Profile → API Management.</li>
+        <li>Chọn Create API rồi chọn kiểu System generated.</li>
+        <li>Hoàn tất bước xác minh bảo mật của Binance.</li>
+        <li>Sao chép API Key và Secret Key, sau đó dán vào mục Binance Pay trên tab Cấu hình bot.</li>
+        <li>Bật tối thiểu quyền Enable reading để hệ thống đọc số dư kiểm tra cấu hình.</li>
+      </ol>
+    </div>
+  </div>
+
 </div>
 
 </div>
@@ -754,6 +757,15 @@ document.getElementById('toggleBotToken')?.addEventListener('click', function() 
   inp.type = inp.type === 'password' ? 'text' : 'password';
   icon.className = inp.type === 'password' ? 'bi bi-eye' : 'bi bi-eye-slash';
 });
+
+function copyGuideText(elId, btn) {
+  const el = document.getElementById(elId);
+  navigator.clipboard.writeText(el.value).then(() => {
+    const original = btn.innerHTML;
+    btn.innerHTML = '<i class="bi bi-check2"></i> Đã chép';
+    setTimeout(() => { btn.innerHTML = original; }, 1500);
+  });
+}
 
 function togglePass(inputId, btn) {
   const inp = document.getElementById(inputId);
