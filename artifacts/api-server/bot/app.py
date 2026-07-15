@@ -1,3 +1,6 @@
+import logging
+import traceback
+
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler,
     CallbackQueryHandler, filters,
@@ -10,13 +13,40 @@ from bot.handlers import (
     media_message_handler,
 )
 
+logger = logging.getLogger(__name__)
+
 
 async def setup_application(token: str, db_session_factory):
     async def _post_init(app):
         """Set default Telegram Menu commands on startup."""
         await _set_bot_commands(app.bot, lang="vi")
 
+    async def _on_error(update, context):
+        """
+        Without this, an exception raised inside any handler is silently
+        swallowed by PTB (just a bare log line) and the user gets NO reply
+        at all — indistinguishable from the bot being dead. Log the full
+        traceback (tenant-scoped, since this app runs one Application per
+        tenant) so a "no reply to /start" report is actually debuggable,
+        and best-effort tell the user something went wrong instead of
+        leaving them staring at silence.
+        """
+        logger.error(
+            "TELEGRAM_HANDLER_ERROR: %s\n%s",
+            context.error,
+            "".join(traceback.format_exception(type(context.error), context.error, context.error.__traceback__)),
+        )
+        try:
+            if update is not None and getattr(update, "effective_chat", None):
+                await context.bot.send_message(
+                    chat_id=update.effective_chat.id,
+                    text="⚠️ Đã có lỗi xảy ra, vui lòng thử lại hoặc liên hệ hỗ trợ.",
+                )
+        except Exception:
+            pass
+
     app = ApplicationBuilder().token(token).post_init(_post_init).build()
+    app.add_error_handler(_on_error)
 
     # ── Slash commands ────────────────────────────────────────────────────────
     app.add_handler(CommandHandler("start",    start_handler))
