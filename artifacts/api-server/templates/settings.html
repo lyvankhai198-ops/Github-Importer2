@@ -326,155 +326,96 @@
     </div>
   </div>
 
-  <!-- Binance Pay Section -->
+  <!-- Binance Pay + USDT BEP20 + USDT TRC20 — combined into one section -->
   <div class="mb-3">
-        <div class="card mb-3">
-          <div class="card-header d-flex justify-content-between align-items-center">
-            <h6 class="mb-0">🟡 Binance Pay</h6>
-            <span class="badge" id="binanceBadge" style="background:#f0b90b;color:#000">Đang tải...</span>
-          </div>
-          <form action="/settings/payment-method/binance" method="post" enctype="multipart/form-data">
-            <div class="card-body">
-              <div class="mb-3 form-check form-switch">
-                <input class="form-check-input" type="checkbox" name="is_enabled" id="binanceEnabled">
-                <label class="form-check-label fw-semibold" for="binanceEnabled">Bật Binance Pay</label>
-              </div>
-              <div class="mb-3">
-                <label class="form-label">Binance API Key</label>
-                <div class="input-group">
-                  <input type="password" name="api_key" id="binanceApiKey" class="form-control" placeholder="••••••••••••">
-                  <button type="button" class="btn btn-outline-secondary" onclick="togglePass('binanceApiKey',this)"><i class="bi bi-eye"></i></button>
-                </div>
-              </div>
-              <div class="mb-3">
-                <label class="form-label">Binance Secret Key</label>
-                <div class="input-group">
-                  <input type="password" name="secret_key" id="binanceSecretKey" class="form-control" placeholder="••••••••••••">
-                  <button type="button" class="btn btn-outline-secondary" onclick="togglePass('binanceSecretKey',this)"><i class="bi bi-eye"></i></button>
-                </div>
-              </div>
-              <div class="mb-3">
-                <label class="form-label">Binance ID</label>
-                <input type="text" name="receiver_binance_id" id="binanceReceiverId" class="form-control" placeholder="123456789">
-              </div>
-              <div class="mb-2">
-                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="testBinanceConnection()">🔌 Test connection</button>
-                <span id="binanceTestResult" class="small ms-2"></span>
-              </div>
-            </div>
-            <div class="card-footer"><button type="submit" class="btn btn-primary">💾 Lưu cài đặt Binance Pay</button></div>
-          </form>
-        </div>
-  </div>
+    <div class="card">
+      <div class="card-header"><h6 class="mb-0">🟡 Binance Pay / USDT</h6></div>
 
-  <!-- USDT BEP20 Section -->
-  <div class="mb-3">
-        <div class="card mb-3">
-          <div class="card-header d-flex justify-content-between align-items-center">
-            <h6 class="mb-0">🟨 USDT BEP20 (BSC)</h6>
-            <span class="badge" id="bep20Badge" style="background:#f0b90b;color:#000">Đang tải...</span>
-          </div>
-          <form action="/settings/payment-method/bep20" method="post">
-            <div class="card-body">
-              <div class="mb-3 form-check form-switch">
-                <input class="form-check-input" type="checkbox" name="is_enabled" id="bep20Enabled">
-                <label class="form-check-label fw-semibold" for="bep20Enabled">Bật USDT BEP20</label>
-              </div>
-              <div class="mb-3">
-                <label class="form-label">Địa chỉ ví BSC <span class="text-danger">*</span></label>
-                <input type="text" name="wallet_address" id="bep20Wallet" class="form-control font-monospace" placeholder="0x...">
-                <small class="text-muted">Nhận USDT qua mạng BNB Smart Chain (BEP20)</small>
-              </div>
-              <div class="mb-3">
-                <label class="form-label">USDT Contract Address</label>
-                <input type="text" name="usdt_contract" id="bep20Contract" class="form-control font-monospace"
-                       value="0x55d398326f99059fF775485246999027B3197955">
-                <small class="text-muted">Mặc định: USDT BEP20 chính thức</small>
-              </div>
-              <div class="mb-3">
-                <label class="form-label">BSCScan API Key</label>
-                <div class="input-group">
-                  <input type="password" name="bscscan_api_key" id="bscscanKey" class="form-control" placeholder="••••••••">
-                  <button type="button" class="btn btn-outline-secondary" onclick="togglePass('bscscanKey',this)"><i class="bi bi-eye"></i></button>
-                </div>
-                <small class="text-muted">Lấy tại <a href="https://bscscan.com/myapikey" target="_blank">bscscan.com</a> (miễn phí)</small>
-              </div>
-              <div class="mb-3">
-                <label class="form-label">BSC RPC URL (tuỳ chọn)</label>
-                <input type="text" name="bsc_rpc_url" id="bscRpc" class="form-control" value="https://bsc-dataseed.binance.org/">
-              </div>
-              <div class="row g-3">
-                <div class="col-sm-4">
-                  <label class="form-label">Xác nhận cần</label>
-                  <input type="number" name="required_confirmations" class="form-control" value="12" min="1" id="bep20Confs">
-                </div>
-                <div class="col-sm-4">
-                  <label class="form-label">Poll mỗi (giây)</label>
-                  <input type="number" name="poll_interval_seconds" class="form-control" value="30" min="15" id="bep20Poll">
-                </div>
-                <div class="col-sm-4">
-                  <label class="form-label">Hết hạn (phút)</label>
-                  <input type="number" name="timeout_minutes" class="form-control" value="60" min="15" id="bep20Timeout">
-                </div>
-              </div>
-            </div>
-            <div class="card-footer"><button type="submit" class="btn btn-primary">💾 Lưu USDT BEP20</button></div>
-          </form>
+      <!-- Binance Pay -->
+      <div class="card-body border-bottom">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <h6 class="mb-0">Binance Pay</h6>
+          <span class="badge" id="binanceBadge" style="background:#f0b90b;color:#000">Đang tải...</span>
         </div>
+        <form action="/settings/payment-method/binance" method="post" enctype="multipart/form-data">
+          <div class="mb-3 form-check form-switch">
+            <input class="form-check-input" type="checkbox" name="is_enabled" id="binanceEnabled">
+            <label class="form-check-label fw-semibold" for="binanceEnabled">Bật Binance Pay</label>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Binance API Key</label>
+            <div class="input-group">
+              <input type="password" name="api_key" id="binanceApiKey" class="form-control" placeholder="••••••••••••">
+              <button type="button" class="btn btn-outline-secondary" onclick="togglePass('binanceApiKey',this)"><i class="bi bi-eye"></i></button>
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Binance Secret Key</label>
+            <div class="input-group">
+              <input type="password" name="secret_key" id="binanceSecretKey" class="form-control" placeholder="••••••••••••">
+              <button type="button" class="btn btn-outline-secondary" onclick="togglePass('binanceSecretKey',this)"><i class="bi bi-eye"></i></button>
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Binance ID</label>
+            <input type="text" name="receiver_binance_id" id="binanceReceiverId" class="form-control" placeholder="123456789">
+          </div>
+          <div class="mb-3">
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="testBinanceConnection()">🔌 Test connection</button>
+            <span id="binanceTestResult" class="small ms-2"></span>
+          </div>
+          <button type="submit" class="btn btn-primary">💾 Lưu cài đặt Binance Pay</button>
+        </form>
+      </div>
+
+      <!-- USDT BEP20 -->
+      <div class="card-body border-bottom">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <h6 class="mb-0">🟨 USDT BEP20 (BSC)</h6>
+          <span class="badge" id="bep20Badge" style="background:#f0b90b;color:#000">Đang tải...</span>
+        </div>
+        <form action="/settings/payment-method/bep20" method="post">
+          <div class="mb-3 form-check form-switch">
+            <input class="form-check-input" type="checkbox" name="is_enabled" id="bep20Enabled">
+            <label class="form-check-label fw-semibold" for="bep20Enabled">Bật USDT BEP20</label>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Địa chỉ USDT BEP20 <span class="text-danger">*</span></label>
+            <input type="text" name="wallet_address" id="bep20Wallet" class="form-control font-monospace" placeholder="0x...">
+          </div>
+          <input type="hidden" name="usdt_contract" id="bep20Contract" value="0x55d398326f99059fF775485246999027B3197955">
+          <input type="hidden" name="required_confirmations" id="bep20Confs" value="12">
+          <input type="hidden" name="poll_interval_seconds" id="bep20Poll" value="30">
+          <input type="hidden" name="timeout_minutes" id="bep20Timeout" value="60">
+          <button type="submit" class="btn btn-primary">💾 Lưu USDT BEP20</button>
+        </form>
         <div id="bep20CurrentConfig"></div>
-  </div>
+      </div>
 
-  <!-- USDT TRC20 Section -->
-  <div class="mb-3">
-        <div class="card mb-3">
-          <div class="card-header d-flex justify-content-between align-items-center">
-            <h6 class="mb-0">🔴 USDT TRC20 (TRON)</h6>
-            <span class="badge bg-secondary" id="trc20Badge">Đang tải...</span>
-          </div>
-          <form action="/settings/payment-method/trc20" method="post">
-            <div class="card-body">
-              <div class="mb-3 form-check form-switch">
-                <input class="form-check-input" type="checkbox" name="is_enabled" id="trc20Enabled">
-                <label class="form-check-label fw-semibold" for="trc20Enabled">Bật USDT TRC20</label>
-              </div>
-              <div class="mb-3">
-                <label class="form-label">Địa chỉ ví TRON <span class="text-danger">*</span></label>
-                <input type="text" name="wallet_address" id="trc20Wallet" class="form-control font-monospace" placeholder="T...">
-                <small class="text-muted">Địa chỉ TRON bắt đầu bằng T</small>
-              </div>
-              <div class="mb-3">
-                <label class="form-label">USDT Contract Address</label>
-                <input type="text" name="usdt_contract" id="trc20Contract" class="form-control font-monospace"
-                       value="TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t">
-                <small class="text-muted">Mặc định: USDT TRC20 chính thức</small>
-              </div>
-              <div class="mb-3">
-                <label class="form-label">TronGrid API Key</label>
-                <div class="input-group">
-                  <input type="password" name="trongrid_api_key" id="tronGridKey" class="form-control" placeholder="••••••••">
-                  <button type="button" class="btn btn-outline-secondary" onclick="togglePass('tronGridKey',this)"><i class="bi bi-eye"></i></button>
-                </div>
-                <small class="text-muted">Lấy tại <a href="https://www.trongrid.io" target="_blank">trongrid.io</a> (free tier đủ dùng)</small>
-              </div>
-              <div class="row g-3">
-                <div class="col-sm-4">
-                  <label class="form-label">Xác nhận cần</label>
-                  <input type="number" name="required_confirmations" class="form-control" value="20" min="1" id="trc20Confs">
-                </div>
-                <div class="col-sm-4">
-                  <label class="form-label">Poll mỗi (giây)</label>
-                  <input type="number" name="poll_interval_seconds" class="form-control" value="30" min="15" id="trc20Poll">
-                </div>
-                <div class="col-sm-4">
-                  <label class="form-label">Hết hạn (phút)</label>
-                  <input type="number" name="timeout_minutes" class="form-control" value="60" min="15" id="trc20Timeout">
-                </div>
-              </div>
-            </div>
-            <div class="card-footer"><button type="submit" class="btn btn-primary">💾 Lưu USDT TRC20</button></div>
-          </form>
+      <!-- USDT TRC20 -->
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <h6 class="mb-0">🔴 USDT TRC20 (TRON)</h6>
+          <span class="badge bg-secondary" id="trc20Badge">Đang tải...</span>
         </div>
+        <form action="/settings/payment-method/trc20" method="post">
+          <div class="mb-3 form-check form-switch">
+            <input class="form-check-input" type="checkbox" name="is_enabled" id="trc20Enabled">
+            <label class="form-check-label fw-semibold" for="trc20Enabled">Bật USDT TRC20</label>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Địa chỉ USDT TRC20 <span class="text-danger">*</span></label>
+            <input type="text" name="wallet_address" id="trc20Wallet" class="form-control font-monospace" placeholder="T...">
+          </div>
+          <input type="hidden" name="usdt_contract" id="trc20Contract" value="TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t">
+          <input type="hidden" name="required_confirmations" id="trc20Confs" value="20">
+          <input type="hidden" name="poll_interval_seconds" id="trc20Poll" value="30">
+          <input type="hidden" name="timeout_minutes" id="trc20Timeout" value="60">
+          <button type="submit" class="btn btn-primary">💾 Lưu USDT TRC20</button>
+        </form>
         <div id="trc20CurrentConfig"></div>
+      </div>
+    </div>
   </div>
 
   <!-- USDT ERC20 Section -->
