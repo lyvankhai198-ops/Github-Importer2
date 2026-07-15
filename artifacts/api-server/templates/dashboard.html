@@ -20,6 +20,7 @@
       <div class="stat-label">Tổng sản phẩm</div>
     </div>
   </div>
+  {% if request.state.is_owner %}
   <div class="col-6 col-md-3">
     <div class="stat-card">
       <div class="stat-icon text-info"><i class="bi bi-cloud"></i></div>
@@ -34,6 +35,7 @@
       <div class="stat-label">API đang hoạt động</div>
     </div>
   </div>
+  {% endif %}
   <div class="col-6 col-md-3">
     <div class="stat-card">
       <div class="stat-icon text-primary"><i class="bi bi-receipt"></i></div>
