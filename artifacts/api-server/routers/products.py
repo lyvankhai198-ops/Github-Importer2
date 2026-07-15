@@ -194,21 +194,36 @@ async def products_market(
             ap.display_unlimited = False
             ap.last_update = ap.last_sync_at
 
-    # Brand chip counts reflect currently-listed (treo) source items only —
-    # each chip's number is how many of that brand's listings are live.
+    # Brand chips always reflect the tab currently being viewed — on "Đang
+    # treo" they group live listings; on "Chưa treo" they group the raw
+    # supplier catalog, so an admin hunting for e.g. "Adobe" source items to
+    # treo sees an "Adobe" chip even though nothing from that brand is listed
+    # yet. Each chip also carries a representative icon (same keyword-based
+    # auto-icon logic used to assign product icons) so brands are scannable
+    # at a glance instead of being a wall of plain text, matching the bot's
+    # own category picker.
+    from services.normalize import auto_assign_emoji
+    is_listed_state = state != "unlisted"
+    state_products = [ap for ap in api_products if ap.is_listed == is_listed_state]
+
     brand_counts: dict[str, int] = {}
-    for ap in api_products:
-        if not ap.is_listed:
-            continue
+    brand_icons: dict[str, str] = {}
+    brand_names: dict[str, str] = {}
+    for ap in state_products:
         bk = compute_brand_key(ap.display_name)
         if not bk:
             continue
         brand_counts[bk] = brand_counts.get(bk, 0) + 1
-    brands = sorted(brand_counts.items(), key=lambda kv: kv[0])
+        if bk not in brand_icons:
+            brand_icons[bk] = ap.display_icon if ap.is_listed else auto_assign_emoji(ap.display_name)
+            brand_names[bk] = bk.capitalize()
+    brands = sorted(
+        ({"key": bk, "count": c, "icon": brand_icons[bk], "label": brand_names[bk]} for bk, c in brand_counts.items()),
+        key=lambda b: b["key"],
+    )
     total_listed = sum(brand_counts.values())
 
-    is_listed_state = state != "unlisted"
-    products = [ap for ap in api_products if ap.is_listed == is_listed_state]
+    products = state_products
     if brand:
         products = [ap for ap in products if compute_brand_key(ap.display_name) == brand]
 

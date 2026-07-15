@@ -57,11 +57,11 @@
 <!-- Brand picker -->
 <div class="brand-chip-grid">
   <a href="/products/market?state={{ state_filter }}" class="brand-chip {% if not brand_filter %}active{% endif %}">
-    <span>Tất cả</span><span class="chip-count">{{ total_listed }}</span>
+    <span>🗂️ Tất cả</span><span class="chip-count">{{ total_listed }}</span>
   </a>
-  {% for b, count in brands %}
-  <a href="/products/market?brand={{ b }}&state={{ state_filter }}" class="brand-chip {% if brand_filter==b %}active{% endif %}">
-    <span class="text-capitalize">{{ b }}</span><span class="chip-count">{{ count }}</span>
+  {% for b in brands %}
+  <a href="/products/market?brand={{ b.key }}&state={{ state_filter }}" class="brand-chip {% if brand_filter==b.key %}active{% endif %}">
+    <span>{{ b.icon }} {{ b.label }}</span><span class="chip-count">{{ b.count }}</span>
   </a>
   {% endfor %}
 </div>
