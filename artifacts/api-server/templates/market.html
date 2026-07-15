@@ -126,7 +126,7 @@
               <button class="btn btn-sm btn-outline-danger market-unlist-btn me-1" data-id="{{ ap.linked_product.id }}">Lấy xuống treo</button>
               <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editModal{{ ap.linked_product.id }}"><i class="bi bi-pencil"></i></button>
               {% else %}
-              <button class="btn btn-sm btn-outline-success market-list-btn" data-id="{{ ap.id }}">Treo</button>
+              <button class="btn btn-sm btn-outline-success" data-bs-toggle="modal" data-bs-target="#treoModal{{ ap.id }}">Treo</button>
               {% endif %}
             </td>
           </tr>
@@ -170,7 +170,7 @@
       <button class="btn btn-outline-danger btn-card-action market-unlist-btn" data-id="{{ ap.linked_product.id }}">Lấy xuống treo</button>
       <button class="btn btn-outline-primary btn-card-action" data-bs-toggle="modal" data-bs-target="#editModal{{ ap.linked_product.id }}"><i class="bi bi-pencil"></i> Sửa</button>
       {% else %}
-      <button class="btn btn-outline-success btn-card-action market-list-btn" data-id="{{ ap.id }}">Treo</button>
+      <button class="btn btn-outline-success btn-card-action" data-bs-toggle="modal" data-bs-target="#treoModal{{ ap.id }}">Treo</button>
       {% endif %}
     </div>
   </div>
@@ -187,6 +187,45 @@
 {% endif %}
 {% endfor %}
 
+<!-- Per-source-item "Treo" modals — set the listing (sale) price before the
+     source item actually becomes a bot product, instead of silently
+     defaulting to the raw supplier price. -->
+{% for ap in products %}
+{% if not ap.linked_product %}
+<div class="modal fade" id="treoModal{{ ap.id }}" tabindex="-1" aria-modal="true" role="dialog">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">🏷️ Treo lên Chợ</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Đóng"></button>
+      </div>
+      <form action="/products/api-sources/{{ ap.id }}/create-product" method="post">
+        <div class="modal-body">
+          <p class="mb-1">{{ ap.display_icon }} <strong>{{ ap.display_name }}</strong></p>
+          <p class="mb-3 text-muted small">Giá nguồn: {{ "{:,.0f}".format(ap.display_price or 0).replace(",", ".") }}đ</p>
+          <div class="mb-2">
+            <label class="form-label fw-semibold">Giá treo (giá bán cho khách)</label>
+            <input type="number"
+                   name="sale_price"
+                   class="form-control form-control-lg"
+                   value="{{ ap.display_price or 0 }}"
+                   step="1000"
+                   min="0"
+                   inputmode="decimal"
+                   required>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
+          <button type="submit" class="btn btn-success">Treo</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endfor %}
+
 {% endblock %}
 {% block scripts %}
 <script>
@@ -194,13 +233,6 @@ document.querySelectorAll('.market-unlist-btn').forEach(function (btn) {
   btn.addEventListener('click', function () {
     fetch(`/products/${this.dataset.id}/toggle`, { method: 'POST' })
       .then(function (r) { return r.json(); })
-      .then(function () { window.location.reload(); });
-  });
-});
-document.querySelectorAll('.market-list-btn').forEach(function (btn) {
-  btn.addEventListener('click', function () {
-    btn.disabled = true;
-    fetch(`/products/api-sources/${this.dataset.id}/create-product`, { method: 'POST' })
       .then(function () { window.location.reload(); });
   });
 });
