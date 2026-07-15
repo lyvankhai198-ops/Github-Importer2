@@ -207,6 +207,29 @@ def generate_unique_crypto_amount(db, base_amount: float, network: str) -> float
         if amt:
             existing_amounts.add(round(float(amt), 4))
 
+    # Ví chợ ("market wallet") deposits share the exact same owner-controlled
+    # receiving wallet address/network as customer wallet deposits and
+    # crypto orders — must be included in the same collision scan or a
+    # tenant's ví chợ top-up could land on the same amount as an unrelated
+    # customer payment and be matched to the wrong record.
+    from models import MarketWalletDeposit
+    market_deposits = (
+        db.query(MarketWalletDeposit.amount)
+        .filter(
+            MarketWalletDeposit.network == network,
+            MarketWalletDeposit.status.in_([
+                WalletDepositStatus.pending.value,
+                WalletDepositStatus.detected.value,
+                WalletDepositStatus.confirming.value,
+            ]),
+            MarketWalletDeposit.created_at >= cutoff,
+        )
+        .all()
+    )
+    for (amt,) in market_deposits:
+        if amt:
+            existing_amounts.add(round(float(amt), 4))
+
     candidate = round(base_amount, 4)
     offset = 0.0005
     for _ in range(99):

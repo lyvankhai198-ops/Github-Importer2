@@ -101,6 +101,16 @@ class WalletTxType(str, enum.Enum):
     refund = "refund"                # auto-refund after a wallet-paid order failed
     admin_credit = "admin_credit"    # manual admin top-up
     admin_debit = "admin_debit"      # manual admin deduction
+    withdrawal = "withdrawal"        # ví chợ: paid out to a tenant on withdrawal approval
+    platform_fee = "platform_fee"    # ví chợ: 2% platform fee note (combined with purchase debit)
+
+
+class MarketWalletWithdrawalStatus(str, enum.Enum):
+    pending = "pending"      # requested, awaiting owner review
+    approved = "approved"    # owner approved, transfer not yet marked sent
+    paid = "paid"            # owner marked the payout as sent — terminal
+    rejected = "rejected"    # owner rejected — terminal, balance untouched
+    cancelled = "cancelled"  # tenant cancelled before review — terminal
 
 
 class WalletDepositStatus(str, enum.Enum):
@@ -157,6 +167,16 @@ class AdminUser(Base):
     expires_at = Column(DateTime, nullable=True)
     display_name = Column(String(255), nullable=True)  # shown to the owner in the tenant list
     notes = Column(Text, nullable=True)
+    # ── Ví chợ ("market wallet") ────────────────────────────────────────────
+    # Balance a tenant pre-funds so their bot may list/sell chợ-sourced
+    # (source_type=api) products — see services/market_wallet_service.py and
+    # services/market_stock_service.py. The owner's own row uses this same
+    # column to record how much THEY have prepaid to the real upstream
+    # supplier (CanBoSo/Zampto) — auto-fetched via the generic API connection
+    # engine's balance endpoint if the connected supplier exposes one,
+    # otherwise entered/edited by hand from the owner's ví chợ page. Never
+    # written directly — always through market_wallet_service credit/debit.
+    market_wallet_balance = Column(Float, default=0.0, nullable=False)
     created_at = Column(DateTime, default=now)
     updated_at = Column(DateTime, default=now, onupdate=now)
 
@@ -644,6 +664,13 @@ class Order(Base, TenantScopedMixin):
     # buyer's wallet_vnd after a fulfillment failure. Only ever set for orders
     # paid via payment_method == "wallet"; prevents double-refunding.
     refunded_to_wallet = Column(Boolean, default=False, nullable=False)
+    # ── Ví chợ ("market wallet") debit guard ─────────────────────────────────
+    # True once this order's cost + 2% platform fee has been debited from
+    # the selling tenant's ví chợ balance (source_type=api products, non-owner
+    # tenants only). Guards services.market_wallet_service so a retry after a
+    # partial failure can never double-debit — see
+    # services/payment_service.py's completion hook.
+    market_wallet_debited = Column(Boolean, default=False, nullable=False)
     # ── Customer API fields ──────────────────────────────────────────────────
     # Set only for orders placed through the inbound customer REST API
     # (payment_method == "api_key"). client_order_id is the caller-supplied
@@ -697,6 +724,7 @@ class PaymentTransaction(Base, TenantScopedMixin):
     reference_code = Column(String(255), nullable=True)
     matched_order_id = Column(Integer, ForeignKey("orders.id"), nullable=True)
     matched_deposit_id = Column(Integer, ForeignKey("wallet_deposits.id"), nullable=True)
+    matched_market_deposit_id = Column(Integer, ForeignKey("market_wallet_deposits.id"), nullable=True)
     match_status = Column(String(50), nullable=True)
     raw_json = Column(Text, nullable=True)
     created_at = Column(DateTime, default=now)
@@ -729,6 +757,7 @@ class CryptoTransaction(Base, TenantScopedMixin):
     confirmations = Column(Integer, nullable=True, default=0)
     matched_order_id = Column(Integer, ForeignKey("orders.id"), nullable=True)
     matched_deposit_id = Column(Integer, ForeignKey("wallet_deposits.id"), nullable=True)
+    matched_market_deposit_id = Column(Integer, ForeignKey("market_wallet_deposits.id"), nullable=True)
     status = Column(String(30), nullable=True)  # detected|confirming|confirmed|unmatched|duplicate
     raw_json = Column(Text, nullable=True)
     detected_at = Column(DateTime, nullable=True)
@@ -806,6 +835,104 @@ class WalletDeposit(Base, TenantScopedMixin):
     failed_reason = Column(Text, nullable=True)
 
     user = relationship("User", foreign_keys=[telegram_user_id])
+
+
+# ── Ví chợ ("market wallet") — tenant funding of chợ-sourced listings ─────────
+#
+# Deliberately NOT TenantScopedMixin, same reasoning as AdminUser itself:
+# admin_user_id below IS the tenant identity (AdminUser.id), and both the
+# owner's cross-tenant review page and the background crypto monitor (which
+# only ever runs scoped to the owner tenant, see tenancy.py) must be able to
+# see every tenant's rows regardless of whichever tenant_id is current in
+# the contextvar. Filtering these by admin_user_id is always explicit in the
+# routers/services that use them — never implicit via the tenant-scoping
+# event listener.
+
+class MarketWalletDeposit(Base):
+    """
+    A tenant-initiated (or owner's own) ví chợ top-up request. Mirrors
+    WalletDeposit's crypto-matching fields exactly so services/crypto_monitor.py
+    can reuse the same on-chain scanning loops — the money always lands in
+    the OWNER's real wallet address (tenants never configure their own), so
+    matching is purely by unique expected amount, same as customer deposits.
+    """
+    __tablename__ = "market_wallet_deposits"
+    id = Column(Integer, primary_key=True, index=True)
+    admin_user_id = Column(Integer, ForeignKey("admin_users.id"), nullable=False, index=True)
+    # `currency`/`amount` describe the actual on-chain transfer being matched
+    # (always USDT — ví chợ top-ups are crypto-only, see spec). The wallet
+    # balance itself (AdminUser.market_wallet_balance) is VND-denominated —
+    # matching Product.source_price's currency, which the virtual-stock
+    # formula divides it by — so `vnd_credit_amount` is the VND amount
+    # actually credited once this deposit confirms, locked in at the
+    # exchange rate in effect when the request was created.
+    currency = Column(SAEnum(WalletCurrency), nullable=False)
+    amount = Column(Float, nullable=False)
+    vnd_credit_amount = Column(Float, nullable=True)
+    method = Column(String(50), nullable=True)  # binance_pay | usdt_bep20 | usdt_trc20
+    reference_code = Column(String(50), nullable=True, index=True)
+    status = Column(SAEnum(WalletDepositStatus), default=WalletDepositStatus.pending, nullable=False)
+    admin_note = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=now)
+    confirmed_at = Column(DateTime, nullable=True)
+    confirmed_by = Column(String(100), nullable=True)
+    # ── Auto-verification fields (mirrors WalletDeposit) ────────────────────
+    network = Column(String(50), nullable=True)             # BEP20 | TRC20 | BINANCE
+    receiving_address = Column(String(200), nullable=True)
+    external_transaction_id = Column(String(255), nullable=True, index=True)
+    confirmations = Column(Integer, nullable=True, default=0)
+    required_confirmations = Column(Integer, nullable=True)
+    raw_transaction_data = Column(Text, nullable=True)
+    expires_at = Column(DateTime, nullable=True)
+    detected_at = Column(DateTime, nullable=True)
+    verified_at = Column(DateTime, nullable=True)
+    credited_at = Column(DateTime, nullable=True)
+    failed_reason = Column(Text, nullable=True)
+
+    admin_user = relationship("AdminUser", foreign_keys=[admin_user_id])
+
+
+class MarketWalletWithdrawal(Base):
+    """A tenant's request to withdraw unused ví chợ balance back out. Owner
+    approves, then marks paid once the manual transfer is actually sent —
+    the balance is only debited on approval, never on the initial request,
+    so a pending request can be cancelled without any wallet mutation."""
+    __tablename__ = "market_wallet_withdrawals"
+    id = Column(Integer, primary_key=True, index=True)
+    admin_user_id = Column(Integer, ForeignKey("admin_users.id"), nullable=False, index=True)
+    currency = Column(SAEnum(WalletCurrency), nullable=False)
+    amount = Column(Float, nullable=False)
+    account_info = Column(Text, nullable=True)  # bank account / crypto address to pay out to
+    status = Column(SAEnum(MarketWalletWithdrawalStatus), default=MarketWalletWithdrawalStatus.pending, nullable=False)
+    admin_note = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=now)
+    reviewed_at = Column(DateTime, nullable=True)
+    reviewed_by = Column(String(100), nullable=True)
+    paid_at = Column(DateTime, nullable=True)
+
+    admin_user = relationship("AdminUser", foreign_keys=[admin_user_id])
+
+
+class MarketWalletTransaction(Base):
+    """Immutable ledger row for every ví chợ balance change (deposit, sale
+    debit [cost + 2% fee combined], withdrawal, or manual owner credit/debit)."""
+    __tablename__ = "market_wallet_transactions"
+    id = Column(Integer, primary_key=True, index=True)
+    admin_user_id = Column(Integer, ForeignKey("admin_users.id"), nullable=False, index=True)
+    currency = Column(SAEnum(WalletCurrency), nullable=False)
+    tx_type = Column(SAEnum(WalletTxType), nullable=False)
+    amount = Column(Float, nullable=False)  # always positive magnitude
+    balance_before = Column(Float, nullable=False)
+    balance_after = Column(Float, nullable=False)
+    order_id = Column(Integer, ForeignKey("orders.id"), nullable=True)
+    deposit_id = Column(Integer, ForeignKey("market_wallet_deposits.id"), nullable=True)
+    withdrawal_id = Column(Integer, ForeignKey("market_wallet_withdrawals.id"), nullable=True)
+    note = Column(Text, nullable=True)
+    actor = Column(String(100), nullable=True)  # "system" | "owner" | admin username
+    created_at = Column(DateTime, default=now)
+
+    admin_user = relationship("AdminUser", foreign_keys=[admin_user_id])
+    order = relationship("Order", foreign_keys=[order_id])
 
 
 class ApiClient(Base, TenantScopedMixin):

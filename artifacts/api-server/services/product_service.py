@@ -56,6 +56,15 @@ def get_product_stock_status(product_id: int, db: Session) -> dict:
 
     if not any_synced:
         return {"stock": 0, "status": "unavailable"}
+
+    # Ví chợ gating — a non-owner tenant's real supplier availability is
+    # further capped by how many units their prepaid market wallet can still
+    # fund (see services/market_stock_service.py). The owner's own listings
+    # are never capped.
+    from services.market_stock_service import is_gated_by_market_wallet, get_virtual_stock
+    if is_gated_by_market_wallet(db, product):
+        total_stock = min(total_stock, get_virtual_stock(db, product))
+
     if total_stock <= 0:
         return {"stock": 0, "status": "out_of_stock"}
     return {"stock": total_stock, "status": "in_stock"}
@@ -128,6 +137,17 @@ def get_best_source(db: Session, product_id: int):
         ProductSource.product_id == product_id,
         ProductSource.is_active == True
     ).order_by(ProductSource.priority).all()
+
+    # Ví chợ gating — never hand back a source (and therefore never let the
+    # order flow call the real supplier API) once a non-owner tenant's
+    # prepaid wallet budget for this product has run out, even if the real
+    # supplier still has stock. See services/market_stock_service.py.
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if product:
+        from services.market_stock_service import is_gated_by_market_wallet, get_virtual_stock
+        if is_gated_by_market_wallet(db, product) and get_virtual_stock(db, product) <= 0:
+            return None
+
     for src in sources:
         if src.last_stock and src.last_stock > 0:
             return src

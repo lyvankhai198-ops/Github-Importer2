@@ -362,6 +362,73 @@ def _run_migrations():
         "CREATE INDEX IF NOT EXISTS ix_products_tenant ON products (tenant_id)",
         "CREATE INDEX IF NOT EXISTS ix_orders_tenant ON orders (tenant_id)",
         "CREATE INDEX IF NOT EXISTS ix_users_tenant ON users (tenant_id)",
+
+        # ── Ví chợ ("market wallet") — task #4 ──────────────────────────────
+        "ALTER TABLE admin_users ADD COLUMN market_wallet_balance FLOAT DEFAULT 0.0",
+        "ALTER TABLE orders ADD COLUMN market_wallet_debited BOOLEAN DEFAULT 0",
+        """CREATE TABLE IF NOT EXISTS market_wallet_deposits (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            admin_user_id INTEGER NOT NULL,
+            currency VARCHAR(10) NOT NULL,
+            amount FLOAT NOT NULL,
+            vnd_credit_amount FLOAT,
+            method VARCHAR(50),
+            reference_code VARCHAR(50),
+            status VARCHAR(20) NOT NULL DEFAULT 'pending',
+            admin_note TEXT,
+            created_at DATETIME,
+            confirmed_at DATETIME,
+            confirmed_by VARCHAR(100),
+            network VARCHAR(50),
+            receiving_address VARCHAR(200),
+            external_transaction_id VARCHAR(255),
+            confirmations INTEGER DEFAULT 0,
+            required_confirmations INTEGER,
+            raw_transaction_data TEXT,
+            expires_at DATETIME,
+            detected_at DATETIME,
+            verified_at DATETIME,
+            credited_at DATETIME,
+            failed_reason TEXT,
+            FOREIGN KEY(admin_user_id) REFERENCES admin_users(id)
+        )""",
+        "CREATE INDEX IF NOT EXISTS ix_market_wallet_deposits_admin ON market_wallet_deposits (admin_user_id)",
+        "CREATE INDEX IF NOT EXISTS ix_market_wallet_deposits_ref ON market_wallet_deposits (reference_code)",
+        "CREATE INDEX IF NOT EXISTS ix_market_wallet_deposits_extid ON market_wallet_deposits (external_transaction_id)",
+        """CREATE TABLE IF NOT EXISTS market_wallet_withdrawals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            admin_user_id INTEGER NOT NULL,
+            currency VARCHAR(10) NOT NULL,
+            amount FLOAT NOT NULL,
+            account_info TEXT,
+            status VARCHAR(20) NOT NULL DEFAULT 'pending',
+            admin_note TEXT,
+            created_at DATETIME,
+            reviewed_at DATETIME,
+            reviewed_by VARCHAR(100),
+            paid_at DATETIME,
+            FOREIGN KEY(admin_user_id) REFERENCES admin_users(id)
+        )""",
+        "CREATE INDEX IF NOT EXISTS ix_market_wallet_withdrawals_admin ON market_wallet_withdrawals (admin_user_id)",
+        """CREATE TABLE IF NOT EXISTS market_wallet_transactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            admin_user_id INTEGER NOT NULL,
+            currency VARCHAR(10) NOT NULL,
+            tx_type VARCHAR(20) NOT NULL,
+            amount FLOAT NOT NULL,
+            balance_before FLOAT NOT NULL,
+            balance_after FLOAT NOT NULL,
+            order_id INTEGER,
+            deposit_id INTEGER,
+            withdrawal_id INTEGER,
+            note TEXT,
+            actor VARCHAR(100),
+            created_at DATETIME,
+            FOREIGN KEY(admin_user_id) REFERENCES admin_users(id)
+        )""",
+        "CREATE INDEX IF NOT EXISTS ix_market_wallet_transactions_admin ON market_wallet_transactions (admin_user_id)",
+        "ALTER TABLE crypto_transactions ADD COLUMN matched_market_deposit_id INTEGER",
+        "ALTER TABLE payment_transactions ADD COLUMN matched_market_deposit_id INTEGER",
     ]
     with engine.connect() as conn:
         ran_language_selected_migration = False
@@ -903,6 +970,7 @@ from routers import ranks
 from routers import emoji_icons
 from routers import github_webhook
 from routers import tenants  # owner-only tenant account management
+from routers import market_wallet  # ví chợ (nạp/rút) for tenants & owner review
 
 app.include_router(auth.router)
 app.include_router(dashboard.router)
@@ -919,6 +987,7 @@ app.include_router(ranks.router)
 app.include_router(emoji_icons.router)
 app.include_router(github_webhook.router)  # POST /github-webhook — VPS auto-deploy (public, HMAC-signed)
 app.include_router(tenants.router)  # owner-only tenant account management
+app.include_router(market_wallet.router)  # ví chợ (nạp/rút) for tenants & owner review
 
 
 if __name__ == "__main__":

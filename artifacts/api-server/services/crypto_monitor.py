@@ -74,16 +74,17 @@ async def _check_bep20_transfers(cfg: dict, db) -> None:
         .all()
     )
     pending_deposits = _get_pending_deposits(db, "BEP20")
+    pending_market_deposits = _get_pending_market_deposits(db, "BEP20")
     if not wallet or not contract:
         return
-    if not pending and not pending_deposits:
+    if not pending and not pending_deposits and not pending_market_deposits:
         return
 
     # Use BSCScan API to get recent token transfers
     if bscscan_key:
-        await _scan_bep20_via_bscscan(wallet, contract, bscscan_key, required_conf, pending, db, pending_deposits)
+        await _scan_bep20_via_bscscan(wallet, contract, bscscan_key, required_conf, pending, db, pending_deposits, pending_market_deposits)
     else:
-        await _scan_bep20_via_rpc(rpc_url, wallet, contract, required_conf, pending, db, pending_deposits)
+        await _scan_bep20_via_rpc(rpc_url, wallet, contract, required_conf, pending, db, pending_deposits, pending_market_deposits)
 
 
 def _get_pending_deposits(db, network: str) -> list:
@@ -121,6 +122,7 @@ def _get_pending_deposits(db, network: str) -> list:
 async def _scan_bep20_via_bscscan(
     wallet: str, contract: str, api_key: str,
     required_conf: int, pending_orders: list, db, pending_deposits: list = None,
+    pending_market_deposits: list = None,
 ):
     try:
         import httpx
@@ -167,6 +169,11 @@ async def _scan_bep20_via_bscscan(
                 amount=amount, confirmations=confs, required_confirmations=required_conf,
                 pending_deposits=pending_deposits or [],
             )
+            await _process_crypto_tx_for_market_deposits(
+                db=db, network="BEP20", txid=txid, log_index=log_index,
+                amount=amount, confirmations=confs, required_confirmations=required_conf,
+                pending_market_deposits=pending_market_deposits or [],
+            )
     except Exception as e:
         logger.error(f"[bep20] bscscan scan error: {e}")
 
@@ -200,6 +207,7 @@ async def _get_token_decimals(client, rpc_url: str, contract: str) -> int:
 async def _scan_bep20_via_rpc(
     rpc_url: str, wallet: str, contract: str,
     required_conf: int, pending_orders: list, db, pending_deposits: list = None,
+    pending_market_deposits: list = None,
 ):
     """
     Fallback path used when no BSCScan API key is configured: reads
@@ -253,6 +261,12 @@ async def _scan_bep20_via_rpc(
                     required_confirmations=required_conf,
                     pending_deposits=pending_deposits or [],
                 )
+                await _process_crypto_tx_for_market_deposits(
+                    db=db, network="BEP20", txid=txid, log_index=log_index,
+                    amount=amount, confirmations=confirmations,
+                    required_confirmations=required_conf,
+                    pending_market_deposits=pending_market_deposits or [],
+                )
     except Exception as e:
         logger.error(f"[bep20] rpc fallback scan error: {e}")
 
@@ -285,7 +299,8 @@ async def _check_erc20_transfers(cfg: dict, db) -> None:
         .all()
     )
     pending_deposits = _get_pending_deposits(db, "ERC20")
-    if not pending and not pending_deposits:
+    pending_market_deposits = _get_pending_market_deposits(db, "ERC20")
+    if not pending and not pending_deposits and not pending_market_deposits:
         return
 
     try:
@@ -333,6 +348,11 @@ async def _check_erc20_transfers(cfg: dict, db) -> None:
                 amount=amount, confirmations=confs, required_confirmations=required_conf,
                 pending_deposits=pending_deposits,
             )
+            await _process_crypto_tx_for_market_deposits(
+                db=db, network="ERC20", txid=txid, log_index=log_index,
+                amount=amount, confirmations=confs, required_confirmations=required_conf,
+                pending_market_deposits=pending_market_deposits,
+            )
     except Exception as e:
         logger.error(f"[erc20] etherscan scan error: {e}")
 
@@ -365,7 +385,8 @@ async def _check_trc20_transfers(cfg: dict, db) -> None:
         .all()
     )
     pending_deposits = _get_pending_deposits(db, "TRC20")
-    if not pending and not pending_deposits:
+    pending_market_deposits = _get_pending_market_deposits(db, "TRC20")
+    if not pending and not pending_deposits and not pending_market_deposits:
         return
 
     try:
@@ -419,6 +440,11 @@ async def _check_trc20_transfers(cfg: dict, db) -> None:
                 db=db, network="TRC20", txid=txid, log_index=0,
                 amount=amount, confirmations=confs, required_confirmations=required_conf,
                 pending_deposits=pending_deposits,
+            )
+            await _process_crypto_tx_for_market_deposits(
+                db=db, network="TRC20", txid=txid, log_index=0,
+                amount=amount, confirmations=confs, required_confirmations=required_conf,
+                pending_market_deposits=pending_market_deposits,
             )
     except Exception as e:
         logger.error(f"[trc20] scan error: {e}")
@@ -590,6 +616,127 @@ async def _notify_user_detecting(order, db, confirmations: int, required: int):
 # already recorded here can't be re-matched to a different deposit.
 
 _DEPOSIT_AMOUNT_TOLERANCE = 0.0002  # USDT — matches the order-matching tolerance
+
+
+def _get_pending_market_deposits(db, network: str) -> list:
+    """Ví chợ counterpart of _get_pending_deposits — same active+recently-terminal
+    window, against MarketWalletDeposit instead of WalletDeposit. Not
+    tenant-scoped (see models.py comment on MarketWalletDeposit): this
+    background worker only ever runs under the owner's tenant context, but
+    a tenant's own top-up request must still be found here since the money
+    lands in the SAME owner-controlled wallet address."""
+    from models import MarketWalletDeposit, WalletDepositStatus
+    cutoff = datetime.utcnow() - timedelta(hours=48)
+    return (
+        db.query(MarketWalletDeposit)
+        .filter(
+            MarketWalletDeposit.network == network,
+            MarketWalletDeposit.status.in_([
+                WalletDepositStatus.pending.value,
+                WalletDepositStatus.detected.value,
+                WalletDepositStatus.confirming.value,
+                WalletDepositStatus.expired.value,
+                WalletDepositStatus.failed.value,
+                WalletDepositStatus.cancelled.value,
+            ]),
+            MarketWalletDeposit.created_at >= cutoff,
+        )
+        .all()
+    )
+
+
+async def _process_crypto_tx_for_market_deposits(
+    db, network: str, txid: str, log_index: int, amount: float,
+    confirmations: int, required_confirmations: int, pending_market_deposits: list,
+):
+    """Ví chợ counterpart of _process_crypto_tx_for_deposits. Shares the same
+    CryptoTransaction dedup row (matched_market_deposit_id, distinct from
+    matched_order_id/matched_deposit_id) so a single on-chain transfer can
+    never double-fund both a customer wallet deposit and a tenant's ví chợ
+    top-up."""
+    if not txid or not pending_market_deposits:
+        return
+
+    from models import CryptoTransaction, WalletDepositStatus
+
+    candidates = [
+        dep for dep in pending_market_deposits
+        if dep.amount and abs(float(dep.amount) - amount) < _DEPOSIT_AMOUNT_TOLERANCE
+    ]
+    if not candidates:
+        return
+
+    active = {WalletDepositStatus.pending, WalletDepositStatus.detected, WalletDepositStatus.confirming}
+    matched = sorted(candidates, key=lambda d: (0 if d.status in active else 1, d.created_at or datetime.min))[0]
+
+    existing = db.query(CryptoTransaction).filter_by(
+        network=network, txid=txid, log_index=log_index
+    ).first()
+    if not existing:
+        return
+    if existing.matched_order_id or existing.matched_deposit_id:
+        # Already claimed by an order or a customer wallet deposit.
+        return
+    if existing.matched_market_deposit_id and existing.matched_market_deposit_id != matched.id:
+        return
+
+    existing.matched_market_deposit_id = matched.id
+    existing.confirmations = max(existing.confirmations or 0, confirmations)
+    db.commit()
+
+    if matched.status in (WalletDepositStatus.expired, WalletDepositStatus.failed,
+                           WalletDepositStatus.cancelled):
+        if matched.status != WalletDepositStatus.manual_review:
+            matched.status = WalletDepositStatus.manual_review
+            matched.external_transaction_id = txid
+            matched.failed_reason = "Giao dịch on-chain khớp số tiền đến sau khi yêu cầu đã đóng — cần admin kiểm tra."
+            db.commit()
+            logger.warning(f"[market_wallet] deposit {matched.id} late-matched by txid={txid} — escalated to manual_review")
+        return
+
+    if confirmations >= required_confirmations:
+        await _finalize_market_wallet_deposit_crypto(db, matched, existing)
+    elif confirmations > 0:
+        was_pending = matched.status == WalletDepositStatus.pending
+        matched.status = WalletDepositStatus.detected if was_pending else WalletDepositStatus.confirming
+        if was_pending:
+            matched.detected_at = datetime.utcnow()
+        matched.confirmations = confirmations
+        matched.required_confirmations = required_confirmations
+        db.commit()
+
+
+async def _finalize_market_wallet_deposit_crypto(db, deposit, ctx):
+    from models import WalletDepositStatus, WalletCurrency, WalletTxType
+    from services import market_wallet_service
+    from services.wallet_service import AlreadyProcessedError
+
+    if deposit.status == WalletDepositStatus.credited:
+        return
+
+    now_iso = datetime.utcnow().isoformat(sep=" ")
+    vnd_amount = deposit.vnd_credit_amount or deposit.amount
+    try:
+        market_wallet_service.credit_market_wallet(
+            db, deposit.admin_user_id, WalletCurrency.VND, vnd_amount,
+            WalletTxType.deposit, deposit_id=deposit.id,
+            note=f"Nạp ví chợ on-chain ({ctx.network} txid={ctx.txid}, {deposit.amount} {deposit.currency.value})",
+            actor="system",
+            extra_updates=[(
+                "UPDATE market_wallet_deposits SET status='credited', confirmations=?, "
+                "external_transaction_id=?, verified_at=?, credited_at=?, raw_transaction_data=? "
+                "WHERE id=? AND status NOT IN ('credited','failed','expired','cancelled')",
+                (ctx.confirmations, ctx.txid, now_iso, now_iso, ctx.raw_json, deposit.id),
+            )],
+        )
+    except AlreadyProcessedError:
+        return
+
+    ctx.status = "confirmed"
+    ctx.confirmed_at = datetime.utcnow()
+    db.commit()
+    db.refresh(deposit)
+    logger.info(f"[{ctx.network}] market wallet deposit {deposit.id} (admin={deposit.admin_user_id}) credited via txid={ctx.txid}")
 
 
 def _rank_deposit_candidates(candidates: list) -> list:
@@ -773,6 +920,41 @@ async def _notify_deposit_credited(deposit, db):
         logger.error(f"[wallet] _notify_deposit_credited error: {e}")
 
 
+async def _expire_market_wallet_deposits(db, now):
+    """
+    Ví chợ counterpart of the WalletDeposit expiry sweep below — every
+    payment method (including Binance Pay, which has no dedicated expiry
+    handling of its own) relies on THIS loop as the fallback that guarantees
+    a market-wallet deposit can never get stuck forever: pending-with-
+    nothing-received expires outright, and detected/confirming-but-not-yet-
+    finished escalates to manual_review, which the owner's
+    /market-wallet/admin page already surfaces for manual action. No bot
+    notification here (ví chợ is web-admin-facing, not bot-chat-facing).
+    """
+    from models import MarketWalletDeposit, WalletDepositStatus
+    stale = (
+        db.query(MarketWalletDeposit)
+        .filter(
+            MarketWalletDeposit.status.in_([
+                WalletDepositStatus.pending.value,
+                WalletDepositStatus.detected.value,
+                WalletDepositStatus.confirming.value,
+            ]),
+            MarketWalletDeposit.expires_at.isnot(None),
+            MarketWalletDeposit.expires_at < now,
+        )
+        .all()
+    )
+    for dep in stale:
+        if dep.status == WalletDepositStatus.pending:
+            dep.status = WalletDepositStatus.expired
+        else:
+            dep.status = WalletDepositStatus.manual_review
+            logger.warning(f"[market_wallet] deposit {dep.id} escalated to manual_review (window closed mid-confirmation)")
+    if stale:
+        db.commit()
+
+
 async def expire_wallet_deposits_loop():
     """
     Background loop: mark USDT/VND wallet deposits as expired once their
@@ -787,6 +969,10 @@ async def expire_wallet_deposits_loop():
             db = SessionLocal()
             try:
                 now = datetime.utcnow()
+                try:
+                    await _expire_market_wallet_deposits(db, now)
+                except Exception as e:
+                    logger.error(f"[market_wallet] expiry sweep error: {e}")
                 stale = (
                     db.query(WalletDeposit)
                     .filter(
@@ -1180,6 +1366,128 @@ async def _sweep_binance_deposits(db, cfg: dict, pending_deposits: list):
         await _notify_deposit_credited(matched, db)
 
 
+async def _sweep_binance_market_deposits(db, cfg: dict, pending_market_deposits: list):
+    """Ví chợ counterpart of _sweep_binance_deposits — Binance Pay has no
+    per-transaction webhook we can piggyback on for on-chain-style matching,
+    so this mirrors the same Pay History scan against MarketWalletDeposit
+    instead of WalletDeposit. Dedup reuses the same PaymentTransaction table
+    (provider="binance_pay", external_transaction_id) as the customer-wallet
+    sweep — a txid claimed there can't be claimed here again."""
+    from models import PaymentTransaction, WalletDepositStatus, WalletCurrency, WalletTxType
+    from services import market_wallet_service
+    from services.wallet_service import AlreadyProcessedError
+    from sqlalchemy.exc import IntegrityError
+
+    if not cfg.get("api_key") or not cfg.get("secret_key") or not cfg.get("receiver_binance_id"):
+        return
+
+    result = await _get_binance_transactions_cached(cfg)
+    if not result.get("success"):
+        return
+
+    expected_receiver = str(cfg.get("receiver_binance_id") or "")
+    coin = cfg.get("default_coin") or "USDT"
+    tolerance = _decimal(cfg.get("amount_tolerance")) or Decimal("0")
+    expiry_minutes = int(cfg.get("order_expiry_minutes") or 30)
+
+    for tx in result.get("transactions") or []:
+        order_type = (tx.get("orderType") or "").upper()
+        if order_type and order_type not in ("PAY", "C2C", "PAYMENT"):
+            continue
+        receiver_info = tx.get("receiverInfo") or {}
+        receiver_id = str(receiver_info.get("binanceId") or tx.get("receiverId") or "")
+        if not receiver_id or receiver_id != expected_receiver:
+            continue
+        amount = _extract_binance_coin_amount(tx, coin)
+        if amount is None:
+            continue
+        txid = str(tx.get("transactionId") or tx.get("orderId") or tx.get("tranId") or "")
+        if not txid:
+            continue
+
+        amount_candidates = [
+            dep for dep in pending_market_deposits
+            if _decimal(dep.amount) is not None and abs(amount - _decimal(dep.amount)) <= tolerance
+        ]
+        if not amount_candidates:
+            continue
+
+        tx_time_raw = tx.get("transactionTime") or tx.get("createTime") or 0
+        try:
+            tx_time = datetime.utcfromtimestamp(int(tx_time_raw) / 1000)
+        except Exception:
+            continue
+
+        dup = db.query(PaymentTransaction).filter(
+            PaymentTransaction.provider == "binance_pay",
+            PaymentTransaction.external_transaction_id == txid,
+        ).first()
+
+        matched = None
+        grace = timedelta(minutes=10)
+        active = {WalletDepositStatus.pending, WalletDepositStatus.detected, WalletDepositStatus.confirming}
+        ranked = sorted(amount_candidates, key=lambda d: (0 if d.status in active else 1, d.created_at or datetime.min))
+        for dep in ranked:
+            if dup and (dup.matched_order_id or dup.matched_deposit_id or
+                        (dup.matched_market_deposit_id and dup.matched_market_deposit_id != dep.id)):
+                continue  # this txid already paid an order or a different deposit
+            window_end = dep.expires_at or (dep.created_at + timedelta(minutes=expiry_minutes))
+            if tx_time < (dep.created_at - timedelta(minutes=2)) or tx_time > (window_end + grace):
+                continue
+            matched = dep
+            break
+        if not matched:
+            continue
+
+        if not dup:
+            ptx = PaymentTransaction(
+                provider="binance_pay",
+                external_transaction_id=txid,
+                gateway="binance_pay",
+                transaction_date=tx_time,
+                amount_in=float(amount),
+                matched_market_deposit_id=matched.id,
+                match_status="market_deposit_matched",
+                raw_json=json.dumps(tx, ensure_ascii=False)[:5000],
+            )
+            try:
+                db.add(ptx)
+                db.commit()
+            except IntegrityError:
+                db.rollback()
+                continue
+
+        if matched.status in (WalletDepositStatus.expired, WalletDepositStatus.failed,
+                               WalletDepositStatus.cancelled):
+            if matched.status != WalletDepositStatus.manual_review:
+                matched.status = WalletDepositStatus.manual_review
+                matched.external_transaction_id = txid
+                matched.failed_reason = "Binance Pay khớp số tiền đến sau khi yêu cầu đã đóng — cần admin kiểm tra."
+                db.commit()
+                logger.warning(f"[market_wallet] deposit {matched.id} late-matched by Binance txid={txid} — escalated to manual_review")
+            continue
+
+        now_iso = datetime.utcnow().isoformat(sep=" ")
+        vnd_amount = matched.vnd_credit_amount or matched.amount
+        try:
+            market_wallet_service.credit_market_wallet(
+                db, matched.admin_user_id, WalletCurrency.VND, vnd_amount,
+                WalletTxType.deposit, deposit_id=matched.id,
+                note=f"Nạp ví chợ Binance Pay (txid={txid}, {matched.amount} {matched.currency.value})",
+                actor="system",
+                extra_updates=[(
+                    "UPDATE market_wallet_deposits SET status='credited', confirmations=?, "
+                    "external_transaction_id=?, verified_at=?, credited_at=? "
+                    "WHERE id=? AND status NOT IN ('credited','failed','expired','cancelled')",
+                    (matched.required_confirmations or 1, txid, now_iso, now_iso, matched.id),
+                )],
+            )
+        except AlreadyProcessedError:
+            continue
+        db.refresh(matched)
+        logger.info(f"[binance_pay] market wallet deposit {matched.id} (admin={matched.admin_user_id}) credited via txid={txid}")
+
+
 # ── Manual TXID verification (shopper-submitted) ───────────────────────────────
 
 async def _fetch_single_tx(network: str, txid: str, cfg: dict, wallet: str, contract: str) -> dict | None:
@@ -1525,6 +1833,13 @@ async def binance_pay_loop():
                             await _sweep_binance_deposits(db, cfg, pending_deposits)
                         except Exception as e:
                             logger.error(f"[binance_pay] deposit sweep error: {e}")
+
+                    pending_market_deposits = _get_pending_market_deposits(db, "BINANCE")
+                    if pending_market_deposits:
+                        try:
+                            await _sweep_binance_market_deposits(db, cfg, pending_market_deposits)
+                        except Exception as e:
+                            logger.error(f"[binance_pay] market wallet deposit sweep error: {e}")
 
                     interval = max(60, int(cfg.get("min_check_interval_seconds") or 60))
                 else:

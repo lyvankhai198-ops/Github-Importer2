@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+{% block title %}Ví chợ - AI Center{% endblock %}
+{% block page_title %}🏦 Ví chợ — Nạp / Rút{% endblock %}
+{% block content %}
+
+<div class="row g-3 mb-3">
+  <div class="col-md-4">
+    <div class="card h-100">
+      <div class="card-body">
+        <div class="text-muted small">Số dư ví chợ</div>
+        <div class="fs-3 fw-bold">{{ "{:,.0f}".format(balance).replace(",", ".") }}đ</div>
+        <div class="text-muted small mt-2">Đang chờ rút: {{ "{:,.0f}".format(pending_withdraw).replace(",", ".") }}đ</div>
+        <div class="text-muted small">Khả dụng để rút: <span class="fw-semibold">{{ "{:,.0f}".format(available).replace(",", ".") }}đ</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card h-100">
+      <div class="card-body">
+        <div class="text-muted small">Sản phẩm nguồn chợ đang gắn</div>
+        <div class="fs-3 fw-bold">{{ n_attached }}</div>
+        <div class="text-muted small mt-2">Số dư ví chợ được chia đều cho các sản phẩm này để tính số lượng hàng hiển thị trên bot.</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card h-100">
+      <div class="card-body">
+        <div class="text-muted small">Tỷ giá hiện tại</div>
+        <div class="fs-3 fw-bold">1 USDT = {{ "{:,.0f}".format(rate).replace(",", ".") }}đ</div>
+        <div class="text-muted small mt-2">Mỗi đơn bán thành công từ nguồn chợ sẽ tự động trừ vốn + phí nền tảng 2% từ ví chợ.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-md-6">
+    <div class="card h-100">
+      <div class="card-header fw-semibold">💰 Nạp ví chợ</div>
+      <div class="card-body">
+        <form action="/market-wallet/deposit" method="post">
+          <div class="mb-2">
+            <label class="form-label">Số tiền (VND)</label>
+            <input type="number" name="vnd_amount" class="form-control" min="10000" step="1000" required>
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Phương thức</label>
+            <select name="method" class="form-select">
+              <option value="usdt_bep20">USDT (BEP20)</option>
+              <option value="usdt_trc20">USDT (TRC20)</option>
+              <option value="binance_pay">Binance Pay</option>
+            </select>
+          </div>
+          <button type="submit" class="btn btn-primary">Tạo yêu cầu nạp</button>
+        </form>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="card h-100">
+      <div class="card-header fw-semibold">📤 Rút ví chợ</div>
+      <div class="card-body">
+        <form action="/market-wallet/withdraw" method="post">
+          <div class="mb-2">
+            <label class="form-label">Số tiền (VND)</label>
+            <input type="number" name="amount" class="form-control" min="1000" step="1000" max="{{ available }}" required>
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Thông tin nhận tiền (STK / địa chỉ crypto)</label>
+            <textarea name="account_info" class="form-control" rows="2" required></textarea>
+          </div>
+          <button type="submit" class="btn btn-outline-primary">Gửi yêu cầu rút</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card mb-3">
+  <div class="card-header fw-semibold">Yêu cầu nạp gần đây</div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm mb-0 align-middle">
+        <thead><tr><th>Mã</th><th>Số tiền</th><th>PT/Network</th><th>Trạng thái</th><th>Ngày tạo</th></tr></thead>
+        <tbody>
+          {% for d in deposits %}
+          {% set st = d.status.value if d.status.value is defined else d.status %}
+          <tr>
+            <td><code>{{ d.reference_code }}</code></td>
+            <td>{{ "%.4f"|format(d.amount) }} {{ d.currency.value }} (≈{{ "{:,.0f}".format(d.vnd_credit_amount or 0).replace(",", ".") }}đ)</td>
+            <td>{{ d.method }}<div class="text-muted small">{{ d.network }} → {{ d.receiving_address }}</div></td>
+            <td>
+              {% if st == "credited" %}<span class="badge bg-success">Đã cộng ví</span>
+              {% elif st == "manual_review" %}<span class="badge bg-warning text-dark">Chờ admin duyệt</span>
+              {% elif st in ("pending","detected","confirming") %}<span class="badge bg-info text-dark">Đang xử lý ({{ d.confirmations or 0 }}/{{ d.required_confirmations or '?' }})</span>
+              {% elif st == "expired" %}<span class="badge bg-dark">Hết hạn</span>
+              {% else %}<span class="badge bg-danger">Thất bại</span>{% endif %}
+            </td>
+            <td><small>{{ d.created_at.strftime('%d/%m/%Y %H:%M') }}</small></td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5" class="text-center text-muted py-3">Chưa có yêu cầu nạp nào</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="card mb-3">
+  <div class="card-header fw-semibold">Yêu cầu rút gần đây</div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm mb-0 align-middle">
+        <thead><tr><th>Số tiền</th><th>Thông tin nhận</th><th>Trạng thái</th><th>Ngày tạo</th><th></th></tr></thead>
+        <tbody>
+          {% for w in withdrawals %}
+          {% set st = w.status.value if w.status.value is defined else w.status %}
+          <tr>
+            <td>{{ "{:,.0f}".format(w.amount).replace(",", ".") }}đ</td>
+            <td><small>{{ w.account_info }}</small></td>
+            <td>
+              {% if st == "pending" %}<span class="badge bg-secondary">Chờ duyệt</span>
+              {% elif st == "approved" %}<span class="badge bg-info text-dark">Đã duyệt — chờ chuyển</span>
+              {% elif st == "paid" %}<span class="badge bg-success">Đã trả</span>
+              {% elif st == "rejected" %}<span class="badge bg-danger">Bị từ chối</span>
+              {% else %}<span class="badge bg-dark">Đã hủy</span>{% endif %}
+            </td>
+            <td><small>{{ w.created_at.strftime('%d/%m/%Y %H:%M') }}</small></td>
+            <td>
+              {% if st == "pending" %}
+              <form action="/market-wallet/withdraw/{{ w.id }}/cancel" method="post" onsubmit="return confirm('Hủy yêu cầu rút này?')">
+                <button class="btn btn-sm btn-outline-secondary">Hủy</button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5" class="text-center text-muted py-3">Chưa có yêu cầu rút nào</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header fw-semibold">Lịch sử biến động ví chợ</div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm mb-0 align-middle">
+        <thead><tr><th>Loại</th><th>Số tiền</th><th>Số dư sau</th><th>Ghi chú</th><th>Ngày</th></tr></thead>
+        <tbody>
+          {% for tx in transactions %}
+          {% set tt = tx.tx_type.value if tx.tx_type.value is defined else tx.tx_type %}
+          <tr>
+            <td>
+              {% if tt == "deposit" %}<span class="badge bg-success">Nạp</span>
+              {% elif tt == "purchase" %}<span class="badge bg-danger">Bán hàng (trừ vốn+phí)</span>
+              {% elif tt == "withdrawal" %}<span class="badge bg-secondary">Rút</span>
+              {% elif tt == "refund" %}<span class="badge bg-info text-dark">Hoàn</span>
+              {% else %}<span class="badge bg-dark">{{ tt }}</span>{% endif %}
+            </td>
+            <td>{{ "{:,.0f}".format(tx.amount).replace(",", ".") }}đ</td>
+            <td>{{ "{:,.0f}".format(tx.balance_after).replace(",", ".") }}đ</td>
+            <td><small class="text-muted">{{ tx.note }}</small></td>
+            <td><small>{{ tx.created_at.strftime('%d/%m/%Y %H:%M') }}</small></td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5" class="text-center text-muted py-3">Chưa có giao dịch nào</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

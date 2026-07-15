@@ -28,8 +28,9 @@ from sqlalchemy.orm import Session
 from services.normalize import format_vnd
 from models import (
     Order, OrderStatus, PaymentStatus, PaymentTransaction,
-    SepayConfig, TelegramBotConfig, User,
+    SepayConfig, TelegramBotConfig, User, SourceType, AdminUser,
 )
+from services.wallet_service import InsufficientBalanceError, AlreadyProcessedError
 
 logger = logging.getLogger(__name__)
 
@@ -793,6 +794,9 @@ async def process_paid_order(order_id: int):
             product.sold_count = (product.sold_count or 0) + order.quantity
             db.commit()
 
+        if order.status == OrderStatus.completed:
+            await _debit_market_wallet_for_sale(order, product, db)
+
         if order.status == OrderStatus.pending_seller_fulfillment:
             await _notify_pending_seller_fulfillment(order, db)
             return
@@ -907,6 +911,51 @@ async def _notify_paid_waiting_stock(order: Order, db: Session):
             )
     except Exception as e:
         logger.error(f"[payment] _notify_paid_waiting_stock error: {e}")
+
+
+async def _debit_market_wallet_for_sale(order: Order, product, db: Session):
+    """
+    Ví chợ bookkeeping for a successfully completed chợ-sourced sale: debits
+    cost-of-goods + the 2% platform fee from the selling tenant's market
+    wallet, atomically and exactly once per order (guarded by
+    orders.market_wallet_debited). No-op for the owner's own sales and for
+    non-chợ (source_type != api) products — see services/market_stock_service.py
+    for which products are gated in the first place.
+
+    The pre-purchase gate in services/product_service.get_best_source already
+    stops a new order from reaching this point once the wallet budget is
+    exhausted, so InsufficientBalanceError here should only ever happen from a
+    genuine race between two orders draining the last of the budget
+    concurrently — logged as a critical alert for the owner to reconcile
+    manually rather than silently swallowed or allowed to go negative.
+    """
+    try:
+        if not product or product.source_type != SourceType.api:
+            return
+        if order.market_wallet_debited:
+            return
+        admin = db.query(AdminUser).filter(AdminUser.id == order.tenant_id).first()
+        if not admin or admin.is_owner:
+            return
+
+        cost = (order.source_unit_price or product.source_price or 0.0) * (order.quantity or 1)
+        fee = round((order.total_price or 0.0) * 0.02)
+        if cost <= 0 and fee <= 0:
+            return
+
+        from services.market_wallet_service import debit_for_sale
+        debit_for_sale(db, admin.id, order.id, cost, fee)
+        logger.info(f"[market_wallet] debited order={order.order_code} tenant={admin.id} cost={cost} fee={fee}")
+    except AlreadyProcessedError:
+        pass
+    except InsufficientBalanceError as e:
+        logger.error(
+            f"[market_wallet] INSUFFICIENT BALANCE debiting order={order.order_code} "
+            f"tenant_id={order.tenant_id} — {e}. Sale already delivered; balance NOT taken negative. "
+            "Owner should reconcile via /market-wallet/admin."
+        )
+    except Exception as e:
+        logger.exception(f"[market_wallet] unexpected error debiting order={order.order_code}: {e}")
 
 
 async def _notify_pending_seller_fulfillment(order: Order, db: Session):
