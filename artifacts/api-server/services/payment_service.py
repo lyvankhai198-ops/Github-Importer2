@@ -853,6 +853,40 @@ async def process_paid_order(order_id: int):
             src_api_product = resolve_api_product(db, source)
             src_connection = resolve_api_connection(db, src_api_product)
             adapter = api_manager.get_adapter(src_connection)
+
+            # ── Pre-purchase market wallet balance check ──────────────────────
+            # For tenant (non-owner) orders on chợ-sourced products: verify
+            # the tenant's ví chợ has enough balance to cover supplier cost +
+            # platform fee BEFORE we ever call the supplier API.
+            # get_virtual_stock() gates availability at listing time, but a
+            # concurrent order could drain the wallet between listing and
+            # fulfillment — this check catches that race explicitly so we
+            # never call the API when we know the debit will fail.
+            from services.market_stock_service import is_gated_by_market_wallet
+            if product and is_gated_by_market_wallet(db, product):
+                _mw_admin = (
+                    db.query(AdminUser)
+                    .execution_options(skip_tenant_filter=True)
+                    .filter(AdminUser.id == order.tenant_id)
+                    .first()
+                )
+                if _mw_admin:
+                    _mw_cost = (src_api_product.external_price or product.source_price or 0.0) * (order.quantity or 1)
+                    from services.market_pricing import get_platform_fee_percent as _get_fee_pct
+                    _mw_fee = round((order.total_price or 0.0) * (_get_fee_pct(db) / 100.0))
+                    _mw_required = _mw_cost + _mw_fee
+                    _mw_balance = _mw_admin.market_wallet_balance or 0.0
+                    if _mw_balance < _mw_required:
+                        logger.warning(
+                            f"[market_wallet] INSUFFICIENT before API call — "
+                            f"order={order.order_code} tenant={order.tenant_id} "
+                            f"balance={_mw_balance} required={_mw_required}"
+                        )
+                        order.status = OrderStatus.paid_waiting_stock
+                        db.commit()
+                        await _notify_insufficient_market_wallet(order, db, _mw_balance, _mw_required)
+                        return
+
             # AI Center Buyer (and any other email-requiring supplier) needs
             # a buyer email on every purchase; the bot doesn't
             # collect one from shoppers, so a deterministic per-user
@@ -1072,6 +1106,48 @@ async def _notify_paid_api_failed(order: Order, db: Session, reason: str = ""):
             await notify_admin_api_failed_after_payment(bot, order, admin_id, reason)
     except Exception as e:
         logger.error(f"[payment] _notify_paid_api_failed error: {e}")
+
+
+async def _notify_insufficient_market_wallet(order: Order, db: Session, balance: float, required: float):
+    """Payment received but tenant's ví chợ balance is insufficient to call supplier API."""
+    try:
+        from services.bot_service import bot_manager
+        if not bot_manager.is_running():
+            return
+        from bot.i18n import t, get_user_lang
+        cfg = db.query(TelegramBotConfig).first()
+        admin_id = cfg.admin_telegram_id if cfg else ""
+        bot = bot_manager._application.bot
+        lang = get_user_lang(db, order.telegram_user_id)
+        chat_id = order.payment_chat_id or order.telegram_user_id
+        await cleanup_payment_qr(bot, order, db)
+        # Notify buyer: order received, waiting for stock (same UX as out-of-stock)
+        await bot.send_message(
+            chat_id=int(chat_id),
+            text=t(lang, "paid_waiting_stock_user"),
+            parse_mode="HTML",
+        )
+        # Notify admin: ví chợ không đủ số dư — cần nạp thêm
+        if admin_id:
+            import html
+            product_name = order.product.name if order.product else str(order.product_id)
+            await bot.send_message(
+                chat_id=int(admin_id),
+                text=(
+                    f"⚠️ <b>ĐÃ NHẬN TIỀN — VÍ CHỢ KHÔNG ĐỦ SỐ DƯ!</b>\n\n"
+                    f"📋 Đơn: <code>{order.order_code}</code>\n"
+                    f"📦 Sản phẩm: {html.escape(product_name)}\n"
+                    f"👤 User: <code>{order.telegram_user_id}</code>\n"
+                    f"💰 Đã nhận: {format_vnd(order.paid_amount or 0)}đ\n\n"
+                    f"💼 <b>Số dư ví chợ hiện tại:</b> {format_vnd(balance)}đ\n"
+                    f"💸 <b>Cần để mua hàng:</b> {format_vnd(required)}đ\n\n"
+                    "❌ Hệ thống không thể gọi API nguồn vì ví chợ không đủ.\n"
+                    "👉 Vui lòng nạp thêm vào ví chợ rồi xử lý đơn thủ công."
+                ),
+                parse_mode="HTML",
+            )
+    except Exception as e:
+        logger.error(f"[payment] _notify_insufficient_market_wallet error: {e}")
 
 
 async def _notify_paid_waiting_stock(order: Order, db: Session):

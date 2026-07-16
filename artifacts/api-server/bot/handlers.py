@@ -275,6 +275,16 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                  language=lang_display,
                  total_orders=total_orders,
                  status=t(lang, status_key))
+        # Admin: append market wallet (ví chợ) balance so the bot balance
+        # is always in sync with what the web admin panel shows.
+        if is_admin:
+            from models import AdminUser
+            from services.market_wallet_service import get_balance as _mw_get_balance
+            from services.normalize import format_vnd as _fmt_vnd
+            _cfg_admin = db.query(AdminUser).execution_options(skip_tenant_filter=True).first()
+            if _cfg_admin:
+                _mw_bal = _mw_get_balance(_cfg_admin)
+                text += "\n" + t(lang, "admin_market_wallet_balance", amount=_fmt_vnd(_mw_bal))
         await update.message.reply_text(
             text, parse_mode="HTML",
             reply_markup=main_menu_keyboard(lang=lang, is_admin=is_admin),
