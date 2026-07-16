@@ -5,11 +5,18 @@ description: Background asyncio tasks have no HTTP request context so the tenant
 
 ## Rule
 
-Any background asyncio task (crypto monitors, payment processor, etc.) that looks up an `Order` (or other TenantScopedMixin row) by a known id **must** use `skip_tenant_filter=True` for that lookup, then call `set_current_tenant(order.tenant_id)` immediately after so all subsequent queries in the same call are scoped to the correct tenant.
+**Any code that looks up a TenantScopedMixin row by a known id without an HTTP request context must use `skip_tenant_filter=True`, then call `set_current_tenant(order.tenant_id)` for subsequent queries.**
 
-## Why
+This applies to:
+1. Background asyncio tasks (crypto monitors, `process_paid_order`, etc.)
+2. Webhook endpoints that receive data for ALL tenants (SePay, payment webhooks)
+3. FastAPI BackgroundTask helpers spawned from a webhook request
 
-`process_paid_order` opens its own `SessionLocal()` with no HTTP request context. `get_current_tenant()` falls back to `get_owner_tenant_id()`. The tenant filter injects `WHERE tenant_id == owner_id`, which silently excludes a non-owner tenant's order. `order` comes back `None` → early return → customer never delivered, ví chợ debited, admin must manually fulfill.
+## Why: two separate root causes fixed
+
+**Background tasks** (`process_paid_order`): opens its own `SessionLocal()` with no HTTP request context. `get_current_tenant()` falls back to `get_owner_tenant_id()`. Tenant filter injects `WHERE tenant_id == owner_id`, silently hiding non-owner tenant orders → `order` is `None` → early return → customer never delivered, ví chợ debited, admin must manually fulfill.
+
+**Webhook handler** (`process_webhook_transaction` + background helpers): SePay delivers all bank-transfer webhooks to a **single shared endpoint** backed by the owner's bank account. The HTTP request has no admin session cookie → ambient tenant = owner → tenant orders invisible in the order-by-payment-code lookup → webhook returns "unmatched" → `process_paid_order` never called → payment confirmed but nothing delivered. Same problem hit `PaymentTransaction` dedup check, `WalletDeposit` reference-code matching, and all three background notification helpers (`_bg_notify_partial`, `_bg_notify_payment_received`, `_bg_notify_late_payment`).
 
 ## How to apply
 

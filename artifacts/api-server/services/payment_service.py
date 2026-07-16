@@ -334,10 +334,18 @@ def _try_credit_vnd_deposit(db: Session, tx_id: str, amount_in: float, content: 
     ref = _find_deposit_reference(content)
     if not ref:
         return None
-    deposit = db.query(WalletDeposit).filter(
-        WalletDeposit.reference_code == ref,
-        WalletDeposit.currency == WalletCurrency.VND,
-    ).first()
+    # WalletDeposit is TenantScopedMixin; the deposit could belong to any tenant
+    # (all tenants share the owner's bank account + SePay webhook endpoint), so
+    # the lookup must bypass the ambient tenant filter.
+    deposit = (
+        db.query(WalletDeposit)
+        .execution_options(skip_tenant_filter=True)
+        .filter(
+            WalletDeposit.reference_code == ref,
+            WalletDeposit.currency == WalletCurrency.VND,
+        )
+        .first()
+    )
     if not deposit:
         return None
 
@@ -558,7 +566,19 @@ def process_webhook_transaction(db: Session, raw: dict) -> dict:
     """
     Save and match a SePay webhook event.
     Idempotent: duplicate tx_id → ignored via unique constraint check.
+
+    IMPORTANT — skip_tenant_filter throughout:
+    SePay delivers all bank-transfer webhooks (from every tenant's customer)
+    to a single shared endpoint backed by the owner's bank account. The HTTP
+    request arrives with no admin session cookie, so the ambient tenant
+    defaults to the owner via get_owner_tenant_id(). Any Order or
+    PaymentTransaction that belongs to a NON-OWNER tenant would therefore be
+    invisible to a plain db.query(). All lookups in this function must bypass
+    the tenant filter so that tenant orders are matched and processed.
+    After the order is found its tenant_id is set as the ambient tenant so
+    new rows (PaymentTransaction) are created in the correct tenant namespace.
     """
+    from tenancy import set_current_tenant, reset_current_tenant
     tx_data = _normalize_sepay_transaction(raw)
     tx_id = tx_data["transaction_id"]
     if not tx_id:
@@ -568,9 +588,15 @@ def process_webhook_transaction(db: Session, raw: dict) -> dict:
     if amount_in <= 0:
         return {"success": True, "action": "ignored_outgoing"}
 
-    existing = db.query(PaymentTransaction).filter_by(
-        provider="sepay", external_transaction_id=tx_id
-    ).first()
+    # Dedup check must be cross-tenant: PaymentTransaction is TenantScopedMixin,
+    # so without skip the filter hides transactions from non-owner tenants and
+    # the same SePay event can be double-processed.
+    existing = (
+        db.query(PaymentTransaction)
+        .execution_options(skip_tenant_filter=True)
+        .filter_by(provider="sepay", external_transaction_id=tx_id)
+        .first()
+    )
     if existing:
         return {"success": True, "action": "duplicate_ignored"}
 
@@ -590,13 +616,29 @@ def process_webhook_transaction(db: Session, raw: dict) -> dict:
         raw_json=json.dumps(raw, ensure_ascii=False)[:10000],
     )
 
+    # SepayConfig belongs to the owner tenant; the webhook always runs under
+    # owner scope (no session cookie), so a normal query finds it correctly.
     sepay_cfg = get_sepay_config(db)
     prefix = (sepay_cfg.payment_prefix or "AIC") if sepay_cfg else "AIC"
     payment_code = _find_payment_code(tx_data["transfer_content"], prefix)
 
     order = None
     if payment_code:
-        order = db.query(Order).filter(Order.payment_code == payment_code).first()
+        # Cross-tenant lookup: the payment code may belong to any tenant's order
+        # (all tenants share the owner's bank account + SePay webhook endpoint).
+        order = (
+            db.query(Order)
+            .execution_options(skip_tenant_filter=True)
+            .filter(Order.payment_code == payment_code)
+            .first()
+        )
+
+    # Once the order is identified, switch the ambient tenant so the
+    # PaymentTransaction row is stored in the correct tenant's namespace and
+    # subsequent operations (order.updated_at flush, etc.) are properly scoped.
+    _tenant_token = None
+    if order and order.tenant_id:
+        _tenant_token = set_current_tenant(order.tenant_id)
 
     if not order:
         deposit_result = _try_credit_vnd_deposit(
@@ -672,6 +714,11 @@ def process_webhook_transaction(db: Session, raw: dict) -> dict:
     db.add(tx)
     db.commit()
     db.refresh(order)
+
+    # Restore the original ambient tenant before returning to the caller
+    # (the webhook handler may commit additional work under its own scope).
+    if _tenant_token is not None:
+        reset_current_tenant(_tenant_token)
 
     return {
         "success": True,

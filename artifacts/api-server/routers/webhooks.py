@@ -91,17 +91,44 @@ async def sepay_webhook(
 
 # ── Background notification helpers ───────────────────────────────────────────
 
+def _get_order_and_tenant_cfg(db, order_id: int):
+    """
+    Helper shared by the background notification tasks below.
+
+    Looks up the order cross-tenant (skip_tenant_filter) because SePay
+    webhooks arrive with no session cookie → ambient tenant defaults to the
+    owner → a non-owner tenant's order would be invisible to a plain query.
+    After the order is found, sets the ambient tenant to order.tenant_id so
+    that the TelegramBotConfig query and bot_manager proxy both resolve to
+    the correct tenant's config and bot.
+
+    Returns (order, cfg, tenant_token) — caller must call
+    reset_current_tenant(tenant_token) in its finally block.
+    """
+    from models import Order, TelegramBotConfig
+    from tenancy import set_current_tenant
+    order = (
+        db.query(Order)
+        .execution_options(skip_tenant_filter=True)
+        .filter(Order.id == order_id)
+        .first()
+    )
+    if not order:
+        return None, None, None
+    token = set_current_tenant(order.tenant_id) if order.tenant_id else None
+    cfg = db.query(TelegramBotConfig).first()
+    return order, cfg, token
+
+
 async def _bg_notify_partial(order_id: int, paid: float, expected: float):
     from database import SessionLocal
+    from tenancy import reset_current_tenant
     db = SessionLocal()
+    token = None
     try:
-        from models import Order, TelegramBotConfig
         from services.bot_service import bot_manager
-        if not bot_manager.is_running():
-            return
-        order = db.query(Order).filter(Order.id == order_id).first()
-        cfg = db.query(TelegramBotConfig).first()
-        if not order or not cfg:
+        order, cfg, token = _get_order_and_tenant_cfg(db, order_id)
+        if not order or not cfg or not bot_manager.is_running():
             return
         bot = bot_manager._application.bot
         from bot.notifier import notify_user_payment_partial, notify_admin_payment_partial
@@ -111,20 +138,20 @@ async def _bg_notify_partial(order_id: int, paid: float, expected: float):
     except Exception as e:
         logger.error(f"[webhook/sepay] _bg_notify_partial error: {e}")
     finally:
+        if token is not None:
+            reset_current_tenant(token)
         db.close()
 
 
 async def _bg_notify_payment_received(order_id: int, action: str):
     from database import SessionLocal
+    from tenancy import reset_current_tenant
     db = SessionLocal()
+    token = None
     try:
-        from models import Order, TelegramBotConfig
         from services.bot_service import bot_manager
-        if not bot_manager.is_running():
-            return
-        order = db.query(Order).filter(Order.id == order_id).first()
-        cfg = db.query(TelegramBotConfig).first()
-        if not order or not cfg or not cfg.admin_telegram_id:
+        order, cfg, token = _get_order_and_tenant_cfg(db, order_id)
+        if not order or not cfg or not cfg.admin_telegram_id or not bot_manager.is_running():
             return
         bot = bot_manager._application.bot
         from bot.notifier import notify_admin_payment_received, notify_admin_payment_overpaid
@@ -135,20 +162,20 @@ async def _bg_notify_payment_received(order_id: int, action: str):
     except Exception as e:
         logger.error(f"[webhook/sepay] _bg_notify_payment_received error: {e}")
     finally:
+        if token is not None:
+            reset_current_tenant(token)
         db.close()
 
 
 async def _bg_notify_late_payment(order_id: int):
     from database import SessionLocal
+    from tenancy import reset_current_tenant
     db = SessionLocal()
+    token = None
     try:
-        from models import Order, TelegramBotConfig
         from services.bot_service import bot_manager
-        if not bot_manager.is_running():
-            return
-        order = db.query(Order).filter(Order.id == order_id).first()
-        cfg = db.query(TelegramBotConfig).first()
-        if not order or not cfg:
+        order, cfg, token = _get_order_and_tenant_cfg(db, order_id)
+        if not order or not cfg or not bot_manager.is_running():
             return
         bot = bot_manager._application.bot
         from bot.notifier import notify_user_late_payment, notify_admin_late_payment
@@ -158,4 +185,6 @@ async def _bg_notify_late_payment(order_id: int):
     except Exception as e:
         logger.error(f"[webhook/sepay] _bg_notify_late_payment error: {e}")
     finally:
+        if token is not None:
+            reset_current_tenant(token)
         db.close()
