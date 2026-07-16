@@ -1,0 +1,443 @@
+CHỈ NÂNG CẤP PHẦN MÔ TẢ SẢN PHẨM VÀ DỊCH NGÔN NGỮ TRÊN AI CENTER.
+
+Không tạo project mới.
+Không reset database.
+Không xóa sản phẩm, tài khoản kho, đơn hàng, người dùng hoặc kết nối API.
+Không sửa giá, thanh toán, giao hàng hay luồng mua.
+Phải chỉnh trực tiếp project hiện tại và giữ tương thích dữ liệu cũ.
+
+==================================================
+1. MỤC TIÊU
+==================================================
+
+Phần mô tả sản phẩm trên Telegram phải:
+
+- Nổi bật và dễ đọc như ảnh mẫu.
+- Hiển thị đồng nhất theo ngôn ngữ người dùng đã chọn.
+- Không được pha trộn tiếng Việt và tiếng Anh.
+- Tên sản phẩm, mô tả, tiêu đề, nút và thông báo phải cùng một ngôn ngữ.
+- Tự động dịch mô tả khi sản phẩm được tạo, sửa hoặc đồng bộ từ API.
+- Lưu bản dịch vào database để không phải dịch lại mỗi lần khách mở sản phẩm.
+
+==================================================
+2. GIAO DIỆN MÔ TẢ TRÊN TELEGRAM
+==================================================
+
+Dùng parse_mode="HTML".
+
+Giao diện tiếng Việt:
+
+{product_emoji} <b>{product_name_vi}</b>
+💵 <b>Giá:</b> {formatted_vnd_price}
+➕ <b>Tồn kho:</b> {stock} tài khoản
+📊 <b>Đã bán:</b> {sold_count} tài khoản
+
+📖 <b>THÔNG TIN SẢN PHẨM</b>
+
+⚠️ <b>VUI LÒNG ĐỌC KỸ TRƯỚC KHI MUA</b>
+
+{formatted_description_vi}
+
+Giao diện tiếng Anh:
+
+{product_emoji} <b>{product_name_en}</b>
+💵 <b>Price:</b> {formatted_usd_price}
+➕ <b>Stock:</b> {stock} accounts
+📊 <b>Sold:</b> {sold_count} accounts
+
+📖 <b>PRODUCT INFORMATION</b>
+
+⚠️ <b>PLEASE READ CAREFULLY BEFORE BUYING</b>
+
+{formatted_description_en}
+
+Không hiển thị dòng “Mô tả:” hoặc “Description:” đơn giản như hiện tại.
+
+Phải dùng tiêu đề lớn, in đậm và cách dòng rõ ràng.
+
+==================================================
+3. TỰ ĐỘNG ĐỊNH DẠNG MÔ TẢ
+==================================================
+
+Trước khi hiển thị, chuẩn hóa mô tả:
+
+- Xóa dòng trống thừa.
+- Xóa dấu ":" đứng một mình.
+- Giữ nguyên xuống dòng hợp lý.
+- Mỗi quy định phải thành một bullet.
+- Các dòng bắt đầu bằng "-", "•", "*", số thứ tự hoặc dấu chấm phải được chuẩn hóa thành "•".
+- Không ghép toàn bộ mô tả thành một đoạn dài.
+- Không được làm mất email, URL, số ngày, số tháng, mã sản phẩm hoặc ký hiệu kỹ thuật.
+- Escape HTML trước khi gửi Telegram.
+
+Ví dụ dữ liệu nguồn:
+
+tk/mk
+không bảo hành nếu đổi mail
+được đổi pass
+không bật 2fa
+
+Hiển thị tiếng Việt:
+
+• Định dạng: Tài khoản/Mật khẩu.
+• Không bảo hành nếu thay đổi email.
+• Được phép thay đổi mật khẩu.
+• Không được bật xác thực hai lớp (2FA).
+
+Hiển thị tiếng Anh:
+
+• Format: Account/Password.
+• Warranty is void if the email address is changed.
+• Password changes are allowed.
+• Do not enable two-factor authentication (2FA).
+
+==================================================
+4. TUYỆT ĐỐI KHÔNG PHA TRỘN NGÔN NGỮ
+==================================================
+
+Nếu người dùng chọn tiếng Việt:
+
+- Chỉ dùng product_name_vi.
+- Chỉ dùng description_vi.
+- Tất cả tiêu đề, trạng thái và nút phải là tiếng Việt.
+- Không được còn các từ như Price, Stock, Sold, Description, Buy now.
+
+Nếu người dùng chọn tiếng Anh:
+
+- Chỉ dùng product_name_en.
+- Chỉ dùng description_en.
+- Tất cả tiêu đề, trạng thái và nút phải là tiếng Anh.
+- Không được còn các câu tiếng Việt như “bảo hành”, “đổi mail”, “tài khoản”, “mật khẩu”.
+
+Không được lấy bản dịch chưa hoàn chỉnh để ghép với bản gốc.
+
+Nếu bản dịch thất bại:
+- không hiển thị bản dịch nửa Việt nửa Anh;
+- dùng bản dịch đã lưu gần nhất;
+- nếu chưa có bản dịch, dịch lại trước khi gửi;
+- nếu vẫn thất bại, hiển thị thông báo ngắn đúng ngôn ngữ và ghi log cho admin.
+
+==================================================
+5. DỊCH TỰ ĐỘNG BẰNG LIBRETRANSLATE
+==================================================
+
+Tích hợp một translation service riêng, không viết logic dịch rải rác trong bot handler.
+
+Tạo service ví dụ:
+
+services/translation_service.py
+
+Hỗ trợ provider:
+
+LibreTranslate
+
+Không hard-code máy chủ công cộng trong source.
+
+Thêm cấu hình trên web hoặc environment:
+
+TRANSLATION_PROVIDER=libretranslate
+LIBRETRANSLATE_URL=
+LIBRETRANSLATE_API_KEY=
+TRANSLATION_TIMEOUT_SECONDS=15
+
+Request dịch:
+
+POST {LIBRETRANSLATE_URL}/translate
+
+JSON:
+
+{
+  "q": "nội dung cần dịch",
+  "source": "vi",
+  "target": "en",
+  "format": "text",
+  "api_key": "nếu có"
+}
+
+Phải hỗ trợ cả:
+
+vi → en
+en → vi
+
+Nếu API key để trống thì không gửi api_key hoặc gửi theo yêu cầu của server đang cấu hình.
+
+Không làm bot bị treo khi dịch vụ dịch bị lỗi.
+
+Có timeout, retry tối đa 2 lần và ghi log lỗi rõ ràng.
+
+==================================================
+6. PHÁT HIỆN NGÔN NGỮ VÀ DỊCH TOÀN BỘ
+==================================================
+
+Khi admin tạo hoặc sửa sản phẩm:
+
+- Nếu nhập tên/mô tả tiếng Việt:
+  - lưu bản gốc vào name_vi và description_vi;
+  - tự dịch toàn bộ sang name_en và description_en.
+
+- Nếu nhập tên/mô tả tiếng Anh:
+  - lưu bản gốc vào name_en và description_en;
+  - tự dịch toàn bộ sang name_vi và description_vi.
+
+- Nếu admin nhập cả hai ngôn ngữ:
+  - giữ nguyên nội dung admin đã nhập;
+  - không ghi đè trừ khi admin bấm “Dịch lại”.
+
+Thêm nút trên form:
+
+🌐 Dịch lại sang tiếng Anh
+🌐 Dịch lại sang tiếng Việt
+
+Khi bấm dịch lại:
+- dịch toàn bộ tên và mô tả;
+- hiển thị preview;
+- admin kiểm tra rồi mới lưu.
+
+==================================================
+7. SẢN PHẨM ĐỒNG BỘ TỪ API
+==================================================
+
+Khi API nguồn tạo sản phẩm mới hoặc thay đổi tên/mô tả:
+
+1. Lưu nội dung gốc.
+2. Phát hiện ngôn ngữ nguồn.
+3. Tạo bản dịch ngôn ngữ còn lại.
+4. Lưu cả hai bản vào database.
+5. Không dịch lại nếu nội dung gốc không thay đổi.
+6. Nếu nội dung nguồn thay đổi thì đánh dấu bản dịch cũ là stale và dịch lại.
+7. Không để quá trình dịch làm thất bại toàn bộ lần sync sản phẩm.
+
+Nếu dịch lỗi:
+- sản phẩm vẫn phải được đồng bộ;
+- đưa tác vụ dịch vào hàng chờ retry;
+- thông báo lỗi cho admin;
+- không gửi bản mô tả pha trộn cho khách.
+
+==================================================
+8. DATABASE VÀ CACHE BẢN DỊCH
+==================================================
+
+Kiểm tra model Product hiện tại.
+
+Dùng lại các trường có sẵn nếu đã tồn tại.
+
+Nếu thiếu, bổ sung an toàn:
+
+- name_vi
+- name_en
+- description_vi
+- description_en
+- source_language
+- translation_status
+- translation_source_hash
+- translated_at
+- translation_error
+
+translation_status:
+
+- pending
+- translated
+- failed
+- stale
+- manual
+
+translation_source_hash dùng để kiểm tra nội dung nguồn có thay đổi hay không.
+
+Không dịch lại nếu hash không đổi và đã có bản dịch hoàn chỉnh.
+
+Migration phải an toàn:
+
+- không drop bảng;
+- không xóa dữ liệu cũ;
+- không reset sản phẩm;
+- dữ liệu hiện có phải được chuyển vào trường ngôn ngữ phù hợp.
+
+==================================================
+9. KHÔNG DỊCH SAI DỮ LIỆU KỸ THUẬT
+==================================================
+
+Phải bảo vệ các chuỗi sau trước khi dịch:
+
+- URL
+- email
+- mã sản phẩm
+- API key
+- username
+- chuỗi tài khoản/mật khẩu mẫu
+- số ngày/tháng/năm
+- 2FA
+- OTP
+- KBH
+- BHF
+- định dạng tk/mk
+- tên thương hiệu như Grok, ChatGPT, Gemini, Canva, CapCut
+
+Sau khi dịch phải khôi phục chính xác các chuỗi được bảo vệ.
+
+Không được dịch sai tên thương hiệu.
+
+Có dictionary riêng:
+
+BHF → Full warranty
+KBH → No warranty
+TK/MK → Account/Password
+Đổi pass → Change password
+Đổi mail → Change email
+Bảo hành → Warranty
+
+Dictionary chỉ hỗ trợ chuẩn hóa; không được ghép câu cứng làm mất nghĩa.
+
+==================================================
+10. DỊCH NÚT VÀ GIAO DIỆN
+==================================================
+
+Dùng hệ thống i18n hiện tại hoặc tạo dictionary tập trung.
+
+Tiếng Việt:
+
+🛒 Mua ngay
+🏠 Trang chủ
+⬅️ Quay lại
+❌ Hủy
+📦 Sản phẩm
+💬 Hỗ trợ
+👛 Ví của tôi
+🔗 API
+🔢 Vui lòng nhập số lượng muốn mua
+
+Tiếng Anh:
+
+🛒 Buy now
+🏠 Home
+⬅️ Back
+❌ Cancel
+📦 Products
+💬 Support
+👛 My wallet
+🔗 API
+🔢 Enter the quantity you want to buy
+
+Không hard-code hai ngôn ngữ rải rác trong handler.
+
+==================================================
+11. GIÁ THEO NGÔN NGỮ
+==================================================
+
+Người dùng tiếng Việt:
+
+💵 Giá: 750.000đ
+
+Người dùng tiếng Anh:
+
+💵 Price: $28.57
+
+Dùng tỷ giá và trường giá hiện có của hệ thống.
+
+Không đổi dữ liệu giá gốc.
+
+Không hiển thị đồng thời cả VND và USD trong cùng giao diện trừ khi admin bật cài đặt riêng.
+
+==================================================
+12. TỐI ƯU TỐC ĐỘ
+==================================================
+
+Không gọi dịch trực tiếp mỗi lần khách mở sản phẩm.
+
+Luồng đúng:
+
+- Dịch khi tạo/sửa/sync sản phẩm.
+- Lưu bản dịch vào database.
+- Khi khách xem sản phẩm chỉ đọc bản dịch đã lưu.
+- Có cache theo product_id + language + source_hash.
+- Xóa cache khi admin sửa mô tả hoặc bản dịch thay đổi.
+
+Bot phải mở sản phẩm nhanh, không chờ API dịch.
+
+==================================================
+13. THÔNG BÁO ADMIN KHI DỊCH LỖI
+==================================================
+
+Chỉ gửi admin:
+
+⚠️ DỊCH SẢN PHẨM THẤT BẠI
+
+📦 Sản phẩm: {product_name}
+🌐 Chiều dịch: {source_language} → {target_language}
+❌ Lỗi: {short_error}
+
+Không gửi lỗi dịch cho khách.
+
+Không làm spam admin:
+- gom lỗi trùng;
+- mỗi sản phẩm/provider chỉ cảnh báo một lần trong một khoảng thời gian.
+
+==================================================
+14. TEST BẮT BUỘC
+==================================================
+
+Test 1:
+- Sản phẩm có mô tả tiếng Việt.
+- User tiếng Việt thấy hoàn toàn tiếng Việt.
+
+Test 2:
+- Cùng sản phẩm đó.
+- User tiếng Anh thấy tên, mô tả, nút, giá và thông báo hoàn toàn tiếng Anh.
+
+Test 3:
+- Mô tả chứa Grok, 2FA, email, URL, 8–10 ngày.
+- Bản dịch giữ nguyên chính xác dữ liệu kỹ thuật.
+
+Test 4:
+- Admin sửa mô tả tiếng Việt.
+- Bản tiếng Anh được đánh dấu stale và dịch lại.
+
+Test 5:
+- API nguồn thêm sản phẩm mới.
+- Sản phẩm được sync và tạo đủ hai ngôn ngữ.
+
+Test 6:
+- LibreTranslate timeout.
+- Bot không treo.
+- Sản phẩm vẫn sync.
+- Hệ thống retry và báo admin.
+
+Test 7:
+- Mở sản phẩm nhiều lần.
+- Không gọi API dịch lại khi nội dung không đổi.
+
+Test 8:
+- Không còn dấu ":" đứng một mình.
+- Không còn tiêu đề “Mô tả:” nhỏ và khó nhìn.
+- Bullet và xuống dòng hiển thị đẹp trên Telegram iPhone.
+
+Test 9:
+- Nội dung tiếng Anh không còn bất kỳ câu tiếng Việt nào.
+- Nội dung tiếng Việt không còn label tiếng Anh.
+
+==================================================
+15. HOÀN THÀNH
+==================================================
+
+Sau khi sửa:
+
+- chạy migration an toàn nếu cần;
+- dịch thử các sản phẩm hiện tại còn thiếu bản dịch;
+- không ghi đè bản dịch admin đã chỉnh thủ công;
+- test Telegram tiếng Việt và tiếng Anh;
+- restart app;
+- commit;
+- push GitHub.
+
+Commit message:
+
+feat: improve product descriptions and automatic translations
+
+Báo lại:
+
+- file đã sửa;
+- migration đã chạy;
+- translation provider đã cấu hình;
+- sản phẩm đã được backfill bản dịch;
+- test đã pass;
+- commit hash;
+- push thành công.

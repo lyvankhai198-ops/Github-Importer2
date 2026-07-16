@@ -1,0 +1,438 @@
+CHỈ THIẾT KẾ LẠI GIAO DIỆN WEB ADMIN CHO ĐIỆN THOẠI.
+
+Không tạo project mới.
+Không reset database.
+Không xóa dữ liệu.
+Không sửa logic API, bot, thanh toán, đơn hàng hoặc kho ngoài phần giao diện cần thiết.
+Phải giữ toàn bộ chức năng hiện tại.
+
+==================================================
+1. YÊU CẦU CHUNG MOBILE-FIRST
+==================================================
+
+Thiết kế lại toàn bộ web admin theo hướng mobile-first.
+
+Yêu cầu:
+
+- Không bị tràn ngang toàn trang.
+- Không bắt người dùng zoom.
+- Không phải kéo ngang để xem bảng.
+- Tương thích tốt với Safari trên iPhone.
+- Font input tối thiểu 16px để iPhone không tự zoom.
+- Nút bấm cao tối thiểu 44px.
+- Khoảng cách giữa các nút đủ rộng, không bấm nhầm.
+- Tên sản phẩm dài phải tự xuống dòng.
+- Modal trên điện thoại mở gần toàn màn hình.
+- Nút Lưu và Hủy phải sticky ở cuối màn hình.
+- Sidebar chuyển thành menu drawer.
+- Header gọn, không chiếm quá nhiều chiều cao.
+- Các form chia thành từng nhóm rõ ràng.
+- Desktop vẫn giữ giao diện bảng hiện tại nếu phù hợp.
+
+Breakpoint chính:
+
+- mobile: dưới 768px
+- tablet: 768–1024px
+- desktop: trên 1024px
+
+==================================================
+2. TRANG SẢN PHẨM
+==================================================
+
+Trên mobile không hiển thị bảng ngang.
+
+Mỗi sản phẩm hiển thị thành một card riêng.
+
+Mẫu card:
+
+{emoji} {product_name}
+
+💰 Giá bán: {sale_price}
+🤝 Giá CTV: {reseller_price}
+💵 Giá USDT: {price_usdt}
+📦 Tồn kho: {stock}
+🔗 Nguồn: {source_name}
+📌 Trạng thái: {status}
+
+Nếu sản phẩm hết hàng:
+- badge đỏ “Hết hàng”
+
+Nếu còn hàng:
+- badge xanh “Còn hàng”
+
+Nếu bị ẩn:
+- badge xám “Đã ẩn”
+
+Các nút thao tác:
+
+👁 Xem
+✏️ Sửa
+➕ Thêm tài khoản
+⋯ Thêm
+
+Trong menu ⋯:
+
+- Khuyến mãi
+- Ẩn/Hiện
+- Xem kho
+- Ngừng bán
+- Xóa
+
+Yêu cầu:
+
+- Card bo góc.
+- Không để quá nhiều nút trên một hàng.
+- Nút chính hiển thị rõ.
+- Nút phụ đưa vào menu ⋯.
+- Tồn kho và giá phải nhìn thấy ngay.
+- Có khoảng cách giữa các card.
+- Có skeleton/loading khi tải.
+
+==================================================
+3. BỘ LỌC TRANG SẢN PHẨM
+==================================================
+
+Trên mobile, bộ lọc phải gọn.
+
+Có:
+
+- Ô tìm theo tên.
+- Lọc thương hiệu.
+- Lọc nguồn.
+- Lọc còn hàng/hết hàng.
+- Lọc sản phẩm thủ công/API.
+- Lọc đang bán/đã ẩn.
+
+Không hiển thị tất cả filter trên một hàng.
+
+Dùng:
+
+- nút “Bộ lọc”
+- mở bottom sheet hoặc modal
+- có nút “Áp dụng”
+- có nút “Đặt lại”
+
+==================================================
+4. FORM THÊM/SỬA SẢN PHẨM
+==================================================
+
+Thiết kế lại form theo từng nhóm hoặc accordion.
+
+Nhóm 1: Thông tin cơ bản
+
+- Tên sản phẩm
+- Tên tiếng Anh
+- Emoji
+- Thương hiệu
+- Mô tả
+- Mô tả tiếng Anh
+- Trạng thái
+
+Nhóm 2: Giá
+
+- Giá nhập
+- Giá bán
+- Giá CTV
+- Giá USDT
+- Tỷ giá
+
+Nhóm 3: Kho và giao hàng
+
+- Loại sản phẩm
+- Tồn kho
+- Số lượng tối thiểu
+- Số lượng tối đa
+- Giao tự động
+- Cho phép đặt trước
+- Cho phép mua khi hết hàng
+
+Nhóm 4: Hiển thị bot
+
+- Emoji Telegram
+- Thứ tự hiển thị
+- Hiện/ẩn trên bot
+- Thông báo sản phẩm mới
+- Thông báo nhập thêm hàng
+
+Yêu cầu form:
+
+- Mỗi input chiếm toàn bộ chiều ngang trên mobile.
+- Label nằm trên input.
+- Không đặt hai input nhỏ cạnh nhau nếu gây chật.
+- Textarea đủ lớn.
+- Nút đóng modal luôn nhìn thấy.
+- Có nút sticky:
+
+Hủy
+Lưu sản phẩm
+
+- Khi có lỗi validation:
+  - cuộn tới trường lỗi
+  - hiển thị lỗi ngay dưới input
+  - không làm mất dữ liệu đã nhập
+
+==================================================
+5. FORM THÊM TÀI KHOẢN
+==================================================
+
+Thiết kế lại form thêm tài khoản cho mobile.
+
+Hiển thị:
+
+- Tên sản phẩm.
+- Giá nhập.
+- Loại phân tách dữ liệu.
+- Ô nhập tài khoản lớn.
+- Checkbox giữ nguyên dòng.
+- Checkbox gửi thông báo nhập kho.
+
+Ô dữ liệu phải hỗ trợ:
+
+email|password
+
+email|password|note
+
+email[TAB]password
+
+chuỗi tự do một dòng
+
+Mỗi dòng là một tài khoản.
+
+Có phần Preview trước khi lưu:
+
+📄 Tổng dòng: X
+✅ Hợp lệ: Y
+♻️ Trùng: Z
+❌ Lỗi: N
+
+Nếu có dòng lỗi:
+- hiển thị số dòng
+- cho xem nguyên nhân
+- không xóa toàn bộ dữ liệu đã nhập
+
+Nút cuối:
+
+Hủy
+Thêm tài khoản
+
+Sau khi thêm xong hiển thị:
+
+✅ Đã thêm: X
+♻️ Trùng: Y
+❌ Lỗi: Z
+📦 Tồn kho mới: N
+
+==================================================
+6. TRANG ĐƠN HÀNG
+==================================================
+
+Trên mobile không dùng bảng ngang.
+
+Mỗi đơn hàng hiển thị dạng card.
+
+Mẫu:
+
+🧾 {order_code}
+📦 {product_name}
+
+👤 Khách: {username_or_name}
+🆔 Telegram ID: {chat_id}
+🔢 Số lượng: {quantity}
+💰 Tổng tiền: {total_amount}
+💳 Thanh toán: {payment_method}
+📌 Trạng thái: {status}
+🕒 Thời gian: {created_at}
+
+Nếu đã giao:
+
+🎁 Đã giao: {delivered_count} tài khoản
+
+Nếu lỗi:
+
+⚠️ Có lỗi giao hàng/API
+
+Các nút:
+
+👁 Xem chi tiết
+📦 Xem tài khoản
+📋 Sao chép mã đơn
+⋯ Thêm
+
+Menu ⋯:
+
+- Đổi trạng thái
+- Gửi lại tài khoản
+- Giao thủ công
+- Hoàn tiền
+- Hủy đơn
+- Ghi chú admin
+
+==================================================
+7. MÀU TRẠNG THÁI ĐƠN
+==================================================
+
+Dùng badge rõ ràng:
+
+- Đã giao: xanh lá
+- Chờ xử lý: vàng
+- Đang xử lý: xanh dương
+- Đặt trước: cam
+- Lỗi: đỏ
+- Đã hủy: xám
+- Chờ admin: tím
+- Đã hoàn tiền: xanh ngọc
+
+Không chỉ dùng màu, phải có cả chữ.
+
+==================================================
+8. BỘ LỌC ĐƠN HÀNG
+==================================================
+
+Có:
+
+- Mã đơn.
+- Tên sản phẩm.
+- Khách hàng.
+- Telegram ID.
+- Email/tài khoản đã giao.
+- Trạng thái.
+- Phương thức thanh toán.
+- Loại đơn.
+- Nguồn API.
+- Khoảng ngày.
+- Có lỗi/không lỗi.
+- Đã giao/chưa giao.
+
+Trên mobile:
+
+- dùng nút Bộ lọc
+- mở modal/bottom sheet
+- có nút Áp dụng
+- có nút Đặt lại
+- hiển thị số lượng filter đang bật
+
+==================================================
+9. CHI TIẾT ĐƠN HÀNG
+==================================================
+
+Khi bấm Xem chi tiết:
+
+Mở modal full màn hình trên mobile.
+
+Hiển thị theo section:
+
+A. Thông tin đơn
+
+- Mã đơn
+- Sản phẩm
+- Nguồn
+- Người mua
+- Telegram ID
+- Số lượng
+- Giá đơn vị
+- Tổng tiền
+
+B. Thanh toán
+
+- Phương thức
+- Trạng thái
+- Thời gian thanh toán
+
+C. Giao hàng
+
+- Trạng thái giao
+- Thời gian giao
+- Tài khoản đã giao
+- Lỗi API nếu có
+
+D. Quản trị
+
+- Ghi chú admin
+- Lịch sử thay đổi
+- Refund
+- Người xử lý
+
+Các nút hành động sticky cuối:
+
+Đóng
+Cập nhật
+Thao tác khác
+
+==================================================
+10. KỸ THUẬT TRIỂN KHAI
+==================================================
+
+Không viết lại toàn bộ frontend nếu không cần.
+
+Ưu tiên:
+
+- dùng CSS media query
+- dùng component/card hiện có
+- tái sử dụng route và dữ liệu hiện tại
+- chỉ thay đổi template/component và style
+- không đổi API response nếu frontend không bắt buộc
+
+Nếu project dùng Jinja/HTML:
+
+- tạo class mobile-card
+- giữ table desktop
+- mobile ẩn table và hiện card
+
+Nếu dùng React/Vue:
+
+- tạo responsive component riêng
+- dùng cùng data source
+- không gọi API trùng lặp
+
+Không render đồng thời quá nhiều DOM nếu danh sách lớn.
+
+Có phân trang hoặc lazy load.
+
+==================================================
+11. TEST BẮT BUỘC
+==================================================
+
+Test trên iPhone Safari hoặc viewport tương đương:
+
+- 375 × 812
+- 390 × 844
+- 430 × 932
+
+Kiểm tra:
+
+1. Trang Sản phẩm không kéo ngang.
+2. Card sản phẩm hiển thị đủ thông tin.
+3. Nút Sửa và Thêm tài khoản bấm dễ.
+4. Form thêm sản phẩm không bị tràn.
+5. Bàn phím iPhone không che nút Lưu.
+6. Form thêm tài khoản paste dữ liệu dài được.
+7. Preview hiển thị đúng.
+8. Trang Đơn hàng không kéo ngang.
+9. Card đơn hàng rõ ràng.
+10. Modal chi tiết đơn không bị tràn.
+11. Bộ lọc dễ sử dụng.
+12. Desktop không bị hỏng.
+
+==================================================
+12. SAU KHI HOÀN THÀNH
+==================================================
+
+- Test responsive.
+- Test Safari iPhone.
+- Test desktop.
+- Không thay đổi dữ liệu.
+- Không tạo migration nếu chỉ sửa giao diện.
+- Commit.
+- Push GitHub.
+
+Commit message:
+
+feat: redesign products and orders for mobile admin
+
+Báo lại:
+
+- file đã sửa
+- ảnh chụp giao diện mobile
+- viewport đã test
+- commit hash
+- push successful

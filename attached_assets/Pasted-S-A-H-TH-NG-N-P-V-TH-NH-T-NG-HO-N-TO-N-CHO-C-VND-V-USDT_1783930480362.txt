@@ -1,0 +1,451 @@
+SỬA HỆ THỐNG NẠP VÍ THÀNH TỰ ĐỘNG HOÀN TOÀN CHO CẢ VND VÀ USDT.
+
+Không tạo project mới.
+Không xóa database, người dùng, ví, đơn hàng, cấu hình SePay, Binance hoặc địa chỉ ví hiện có.
+Không dùng admin xác nhận thủ công làm luồng mặc định.
+
+MỤC TIÊU:
+
+1. SePay nhận chuyển khoản thành công → tự cộng balance_vnd.
+2. Binance Pay được xác minh thành công → tự cộng balance_usdt.
+3. USDT BEP20 được xác minh on-chain → tự cộng balance_usdt.
+4. USDT TRC20 được xác minh on-chain → tự cộng balance_usdt.
+5. Một giao dịch chỉ được cộng ví đúng một lần.
+6. Chỉ chuyển sang chờ admin khi không thể xác minh tự động.
+
+==================================================
+1. SỬA TIN NHẮN NẠP VÍ
+==================================================
+
+Xóa các câu:
+
+- “Sau khi admin xác nhận, số dư ví của bạn sẽ được cộng.”
+- “Vui lòng kiểm tra và xác nhận trên trang quản trị.”
+- mọi nội dung khiến khách hiểu rằng admin phải duyệt thủ công.
+
+Thay bằng:
+
+✅ YÊU CẦU NẠP TIỀN ĐÃ TẠO
+
+🔑 Mã tham chiếu: {deposit_code}
+💰 Số tiền: {amount}
+💳 Phương thức: {payment_method}
+
+⚠️ Vui lòng thanh toán đúng số tiền và đúng nội dung.
+Hệ thống sẽ tự động xác minh và cộng số dư vào ví sau khi nhận được giao dịch.
+
+English:
+
+⚠️ Please send the exact amount using the correct payment details.
+Your wallet will be credited automatically after the transaction is verified.
+
+==================================================
+2. TRẠNG THÁI YÊU CẦU NẠP
+==================================================
+
+Tạo hoặc cập nhật bảng wallet_deposits:
+
+- id
+- deposit_code
+- user_id
+- chat_id
+- currency
+- network
+- payment_method
+- expected_amount
+- receiving_address
+- payment_content
+- payment_status
+- external_transaction_id
+- confirmations
+- raw_transaction_data
+- created_at
+- expires_at
+- detected_at
+- verified_at
+- credited_at
+- failed_reason
+
+Trạng thái:
+
+pending
+detected
+confirming
+verified
+credited
+expired
+failed
+manual_review
+
+==================================================
+3. SEPAY TỰ ĐỘNG CỘNG VND
+==================================================
+
+Khi webhook SePay gửi giao dịch tiền vào:
+
+1. Xác thực API Key/HMAC webhook.
+2. Kiểm tra loại giao dịch là tiền vào.
+3. Lấy nội dung chuyển khoản.
+4. Tìm deposit_code tương ứng.
+5. Kiểm tra đúng số tiền.
+6. Kiểm tra đúng tài khoản ngân hàng nhận.
+7. Kiểm tra giao dịch chưa từng xử lý.
+8. Khóa wallet_deposit và ví người dùng.
+9. Đánh dấu deposit verified.
+10. Cộng balance_vnd.
+11. Tạo wallet_transaction type = deposit.
+12. Đánh dấu deposit credited.
+13. Gửi thông báo cho khách.
+
+Không cần admin xác nhận.
+
+==================================================
+4. USDT BEP20 TỰ ĐỘNG
+==================================================
+
+Khi khách chọn USDT BEP20:
+
+- tạo wallet_deposit currency = USDT
+- network = BEP20
+- hiển thị đúng địa chỉ BNB Smart Chain
+- hiển thị đúng số USDT phải gửi
+- tạo QR chứa địa chỉ ví
+- yêu cầu khách nhập TXID sau khi chuyển, hoặc tự quét địa chỉ nhận theo lịch
+
+Hệ thống phải xác minh:
+
+- transaction tồn tại
+- transaction thành công
+- mạng đúng BNB Smart Chain
+- token contract đúng USDT được cấu hình
+- địa chỉ nhận đúng địa chỉ ví của shop
+- số tiền nhận đúng expected_amount
+- transaction chưa dùng cho deposit khác
+- block confirmations đạt mức cấu hình
+- thời gian giao dịch hợp lệ
+
+Mặc định confirmations:
+
+BEP20 = 12
+
+Cho phép admin thay đổi trên web.
+
+==================================================
+5. USDT TRC20 TỰ ĐỘNG
+==================================================
+
+Khi khách chọn USDT TRC20:
+
+- tạo wallet_deposit currency = USDT
+- network = TRC20
+- hiển thị đúng địa chỉ TRON
+- hiển thị đúng số USDT
+- tạo QR đúng địa chỉ
+- cho khách gửi TXID hoặc hệ thống tự quét giao dịch đến ví
+
+Xác minh:
+
+- transaction tồn tại
+- transaction thành công
+- token contract đúng USDT TRC20
+- địa chỉ nhận đúng
+- số tiền đúng
+- TXID chưa được dùng
+- đủ confirmations
+- transaction nằm trong thời gian của yêu cầu nạp
+
+Mặc định confirmations:
+
+TRC20 = 20
+
+Cho phép admin thay đổi.
+
+==================================================
+6. BINANCE PAY TỰ ĐỘNG
+==================================================
+
+Khi khách chọn Binance Pay:
+
+- tạo deposit code
+- hiển thị Binance ID/QR Pay
+- hiển thị chính xác số USDT
+- khách có thể nhập Transaction ID
+
+Xác minh bằng Binance API Management:
+
+- transactionId đúng
+- currency = USDT
+- amount đúng
+- receiver Binance ID đúng
+- giao dịch thành công
+- giao dịch chưa dùng
+- thời gian giao dịch hợp lệ
+
+Khi khớp hoàn toàn:
+
+- cộng balance_usdt
+- đánh dấu credited
+- gửi thông báo tự động
+
+Nếu API Binance không có quyền đọc lịch sử Pay:
+- chuyển manual_review
+- không tự cộng
+- không giả vờ xác minh thành công
+
+==================================================
+7. XỬ LÝ SỐ TIỀN USDT
+==================================================
+
+Dùng Decimal, không dùng float.
+
+Ví dụ:
+
+expected_amount = Decimal("10.37")
+received_amount = Decimal("10.37")
+
+Mặc định phải khớp chính xác.
+
+Cho phép cấu hình tolerance_usdt, mặc định:
+
+0
+
+Không tự trừ phí mạng vào số tiền khách được cộng.
+Ví được cộng theo số USDT thực tế shop nhận và khớp với yêu cầu.
+
+==================================================
+8. PHÂN BIỆT NHIỀU YÊU CẦU NẠP
+==================================================
+
+Nếu nhiều khách dùng chung một địa chỉ ví, phải tránh nhầm giao dịch.
+
+Ưu tiên một trong hai phương án:
+
+A. Mỗi yêu cầu có số tiền USDT riêng biệt:
+- khách nhập 10 USDT
+- hệ thống tạo số phải chuyển như 10.0137 USDT
+- phần lẻ dùng để nhận diện deposit
+- sau khi nhận, ví khách vẫn được cộng số tiền nạp theo quy tắc cấu hình
+
+Hoặc:
+
+B. Mỗi user/deposit có địa chỉ nhận riêng từ HD wallet hoặc nhà cung cấp payment gateway.
+
+Nếu chưa hỗ trợ địa chỉ riêng, triển khai phương án A.
+
+Không được có hai deposit pending cùng:
+- network
+- receiving_address
+- expected_amount
+
+==================================================
+9. CHỐNG CỘNG TRÙNG
+==================================================
+
+Tạo unique index:
+
+provider + network + external_transaction_id
+
+Một TXID chỉ được liên kết với một wallet_deposit.
+
+Webhook, scheduler hoặc khách bấm kiểm tra nhiều lần:
+
+- không cộng lại
+- trả trạng thái hiện tại
+- không tạo thêm wallet_transaction
+
+Quá trình credit phải idempotent:
+
+credit_wallet_deposit(deposit_id)
+
+Nếu credited_at đã có:
+- return existing result
+- không thay đổi số dư
+
+==================================================
+10. SCHEDULER TỰ KIỂM TRA
+==================================================
+
+Tạo background worker chạy định kỳ:
+
+- SePay dựa vào webhook, có job đối soát dự phòng.
+- Binance Pay kiểm tra deposit pending có Transaction ID.
+- BEP20 quét token transfers đến địa chỉ nhận.
+- TRC20 quét TRC20 transfers đến địa chỉ nhận.
+
+Không quét mỗi giây.
+
+Chu kỳ mặc định:
+
+- pending có TXID: 15–30 giây
+- pending chưa có TXID: 60 giây
+- hết hạn: ngừng quét thường xuyên
+
+Phải có rate limit và cache.
+
+==================================================
+11. THÔNG BÁO CHO KHÁCH
+==================================================
+
+Khi phát hiện nhưng chưa đủ xác nhận:
+
+🟡 Đã phát hiện giao dịch.
+
+Mạng: BEP20
+Số tiền: 10.37 USDT
+Xác nhận: 5/12
+
+Hệ thống sẽ tự động cộng ví khi đủ xác nhận.
+
+Khi thành công:
+
+✅ NẠP VÍ THÀNH CÔNG
+
+Phương thức: USDT BEP20
+Số tiền: 10.37 USDT
+TXID: {masked_txid}
+Số dư mới: 18.81 USDT
+
+Khi sai mạng/sai tiền:
+
+❌ Không thể xác minh giao dịch.
+
+Lý do: Số tiền hoặc mạng không khớp với yêu cầu nạp.
+Vui lòng liên hệ hỗ trợ.
+
+==================================================
+12. XÓA QR SAU KHI THÀNH CÔNG
+==================================================
+
+Chỉ xóa hoặc chỉnh sửa tin nhắn QR khi deposit đã credited.
+
+Nếu:
+
+- chưa nhận tiền
+- chưa đủ confirmations
+- API tạm lỗi
+- TXID sai
+
+thì giữ nguyên QR và thông tin thanh toán.
+
+Sau khi credited:
+
+- xóa QR cũ hoặc edit caption thành “✅ Đã thanh toán”
+- không xóa tin nhắn thông báo cộng ví
+
+==================================================
+13. WEB CÀI ĐẶT THANH TOÁN USDT
+==================================================
+
+Thêm mục:
+
+USDT Auto Deposit
+
+Các trường:
+
+- Bật BEP20
+- Địa chỉ nhận BEP20
+- USDT contract BEP20
+- Explorer/API provider
+- API key
+- Số confirmations
+- Bật TRC20
+- Địa chỉ nhận TRC20
+- USDT contract TRC20
+- TronGrid API key
+- Số confirmations
+- Thời gian hết hạn deposit
+- Tolerance USDT
+- Tạo số tiền nhận diện tự động
+- Chu kỳ kiểm tra
+- Nút kiểm tra kết nối
+
+Không hiển thị API Key đầy đủ sau khi lưu.
+
+==================================================
+14. TRANG QUẢN LÝ NẠP VÍ
+==================================================
+
+Web hiển thị:
+
+- Mã nạp
+- Người dùng
+- Phương thức
+- Mạng
+- Số tiền yêu cầu
+- Số tiền nhận
+- TXID
+- Confirmations
+- Trạng thái
+- Thời gian tạo
+- Thời gian cộng ví
+
+Chỉ cho admin cộng thủ công khi deposit đang manual_review.
+
+Nếu admin cộng thủ công:
+- bắt buộc ghi chú
+- ghi admin thực hiện
+- vẫn chống cộng trùng
+- tạo audit log
+
+==================================================
+15. AN TOÀN
+==================================================
+
+- Không lưu private key ví trong source code.
+- Không đưa seed phrase/private key lên GitHub.
+- Chỉ cần API đọc blockchain để xác minh nạp tiền.
+- Không bật chức năng tự chuyển/rút USDT.
+- API keys lưu trong Secrets/environment.
+- Không log toàn bộ secret.
+- Validate contract token theo từng network.
+- Không tin dữ liệu TXID do khách cung cấp nếu chưa kiểm tra on-chain.
+
+==================================================
+16. TEST BẮT BUỘC
+==================================================
+
+1. SePay đúng số tiền/nội dung:
+- tự cộng VND
+- không cần admin
+
+2. SePay webhook gửi lại:
+- không cộng lần hai
+
+3. BEP20 đúng địa chỉ, token, số tiền:
+- detected
+- đủ confirmations
+- tự cộng USDT
+
+4. BEP20 sai token hoặc sai mạng:
+- không cộng
+
+5. TRC20 đúng:
+- tự cộng USDT
+
+6. TRC20 sai số tiền:
+- không cộng
+
+7. TXID dùng lại:
+- từ chối
+
+8. Hai deposit giống số tiền:
+- hệ thống phải tạo số nhận diện khác nhau
+
+9. Restart:
+- worker tiếp tục xử lý pending deposit
+
+10. Sau khi hoàn tất:
+- bỏ toàn bộ câu “admin xác nhận”
+- test thật với số tiền nhỏ
+- commit
+- push GitHub
+
+Commit message:
+
+feat: automate VND and USDT wallet deposits
+
+Không commit:
+- private key
+- seed phrase
+- API key
+- .env

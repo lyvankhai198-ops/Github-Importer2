@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="vi" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}AI Center Bot Manager{% endblock %}</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+  <!-- /static/* is intentionally excluded from the app's no-cache middleware (see main.py),
+       so browsers can cache this file indefinitely. Bump ?v= whenever style.css changes,
+       or edits won't be visible to real users until they clear their cache. -->
+  <link rel="stylesheet" href="/static/css/style.css?v=2">
+</head>
+<body>
+{% block body %}
+<div class="wrapper">
+  <!-- Sidebar overlay for mobile -->
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+  <!-- Sidebar -->
+  <nav class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <span class="sidebar-logo">🤖</span>
+      <span class="sidebar-title">AI Center</span>
+      <button class="btn-close-sidebar d-md-none" id="closeSidebar"><i class="bi bi-x-lg"></i></button>
+    </div>
+    <ul class="sidebar-nav">
+      <li><a href="/" class="sidebar-link {% if request.url.path == '/' %}active{% endif %}"><i class="bi bi-speedometer2"></i> Tổng quan</a></li>
+      <li><a href="/products" class="sidebar-link {% if '/products' in request.url.path and '/products/market' not in request.url.path %}active{% endif %}"><i class="bi bi-box-seam"></i> Sản phẩm</a></li>
+      <li><a href="/products/market" class="sidebar-link {% if '/products/market' in request.url.path %}active{% endif %}"><i class="bi bi-shop"></i> Chợ</a></li>
+      <li><a href="/orders" class="sidebar-link {% if '/orders' in request.url.path %}active{% endif %}"><i class="bi bi-receipt"></i> Đơn hàng</a></li>
+      {% if request.state.is_owner %}
+      <li><a href="/api-connections" class="sidebar-link {% if '/api-connections' in request.url.path %}active{% endif %}"><i class="bi bi-plug"></i> Kết nối API</a></li>
+      {% endif %}
+      <li><a href="/users" class="sidebar-link {% if '/users' in request.url.path %}active{% endif %}"><i class="bi bi-people"></i> Người dùng</a></li>
+      <li><a href="/wallet" class="sidebar-link {% if '/wallet' in request.url.path %}active{% endif %}"><i class="bi bi-wallet2"></i> Ví khách hàng</a></li>
+      <li><a href="/market-wallet" class="sidebar-link {% if request.url.path == '/market-wallet' %}active{% endif %}"><i class="bi bi-bank"></i> Ví chợ</a></li>
+      <li><a href="/ranks" class="sidebar-link {% if '/ranks' in request.url.path %}active{% endif %}"><i class="bi bi-award"></i> Cấp bậc</a></li>
+      <li><a href="/emoji-icons" class="sidebar-link {% if '/emoji-icons' in request.url.path %}active{% endif %}"><i class="bi bi-emoji-smile"></i> Kho icon</a></li>
+      <li><a href="/api-clients" class="sidebar-link {% if '/api-clients' in request.url.path %}active{% endif %}"><i class="bi bi-key"></i> API Clients</a></li>
+      <li><a href="/broadcast" class="sidebar-link {% if '/broadcast' in request.url.path %}active{% endif %}"><i class="bi bi-megaphone"></i> Thông báo Bot</a></li>
+      <li><a href="/settings" class="sidebar-link {% if '/settings' in request.url.path %}active{% endif %}"><i class="bi bi-gear"></i> Cấu hình</a></li>
+      {% if request.state.is_owner %}
+      <li><a href="/tenants" class="sidebar-link {% if '/tenants' in request.url.path %}active{% endif %}"><i class="bi bi-building"></i> Quản lý khách thuê</a></li>
+      <li><a href="/market-wallet/admin" class="sidebar-link {% if '/market-wallet/admin' in request.url.path %}active{% endif %}"><i class="bi bi-safe2"></i> Duyệt ví chợ</a></li>
+      {% endif %}
+    </ul>
+    <div class="sidebar-footer">
+      <button class="theme-toggle" id="themeToggle" title="Toggle dark/light mode"><i class="bi bi-moon-fill"></i></button>
+      <form action="/logout" method="post" style="display:inline">
+        <button type="submit" class="btn btn-sm btn-outline-danger ms-2"><i class="bi bi-box-arrow-right"></i> Đăng xuất</button>
+      </form>
+    </div>
+  </nav>
+
+  <!-- Main content -->
+  <div class="main-content">
+    <header class="topbar">
+      <button class="hamburger d-md-none" id="sidebarToggle"><i class="bi bi-list"></i></button>
+      <span class="topbar-title">{% block page_title %}Dashboard{% endblock %}</span>
+      <div class="topbar-right">
+        <span class="bot-status-badge" id="botStatusBadge">Bot: ...</span>
+      </div>
+    </header>
+
+    {% if flash %}
+    <div class="flash-container">
+      <div class="alert alert-{{ 'success' if flash.type == 'success' else 'danger' }} alert-dismissible fade show flash-msg" role="alert">
+        {{ flash.msg }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="content-area">
+      {% block content %}{% endblock %}
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="/static/js/main.js"></script>
+<script src="/static/js/vnd-input.js?v=1"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,430 @@
+Cập nhật project AI Center Web Bot Manager hiện tại để tích hợp thanh toán tự động bằng SePay.
+
+Không tạo project mới.
+Không xóa database hoặc các kết nối API nguồn hiện có.
+
+MỤC TIÊU:
+
+Khách phải thanh toán thành công cho shop trước.
+Chỉ sau khi hệ thống xác nhận đủ tiền mới được gọi API nguồn để mua và giao tài khoản.
+
+Luồng bắt buộc:
+
+Khách xác nhận đơn
+→ tạo đơn chờ thanh toán
+→ tạo nội dung chuyển khoản riêng
+→ hiển thị QR thanh toán
+→ SePay gửi webhook giao dịch
+→ hệ thống đối chiếu đúng mã đơn và đủ tiền
+→ đánh dấu đã thanh toán
+→ gọi API nguồn /buy
+→ nhận tài khoản
+→ bot giao cho khách
+
+==================================================
+1. CẤU HÌNH SEPAY TRÊN WEB
+==================================================
+
+Trong Cài đặt thêm mục:
+
+💳 Thanh toán SePay
+
+Các trường:
+
+- Bật/tắt SePay
+- Tên ngân hàng
+- Số tài khoản
+- Tên chủ tài khoản
+- Mã ngân hàng BIN
+- SePay API Token
+- Webhook Secret
+- Tiền tố nội dung chuyển khoản
+- Thời gian hết hạn thanh toán
+- Cho phép thanh toán thừa
+- Tự động hoàn đơn thiếu tiền hay không
+
+Ví dụ tiền tố:
+
+AIC
+
+Token và webhook secret phải mã hóa trước khi lưu.
+
+Sau khi lưu chỉ hiển thị dạng che.
+
+==================================================
+2. DATABASE
+==================================================
+
+Bổ sung vào bảng orders:
+
+- payment_status
+- payment_method
+- payment_code
+- expected_amount
+- paid_amount
+- payment_expires_at
+- paid_at
+- payment_transaction_id
+- payment_raw_data
+
+payment_status:
+
+pending
+partial
+paid
+overpaid
+expired
+failed
+
+Tạo bảng payment_transactions:
+
+- id
+- provider
+- external_transaction_id
+- gateway
+- transaction_date
+- account_number
+- transfer_content
+- amount_in
+- amount_out
+- reference_code
+- matched_order_id
+- match_status
+- raw_json
+- created_at
+
+Tạo unique index cho:
+
+provider + external_transaction_id
+
+để webhook gửi lặp không cộng tiền hoặc xử lý đơn hai lần.
+
+==================================================
+3. TẠO ĐƠN CHỜ THANH TOÁN
+==================================================
+
+Khi khách xác nhận mua:
+
+- Không gọi API nguồn ngay.
+- Không giao hàng.
+- Tạo order status = pending_payment.
+- Tạo payment_status = pending.
+- Tạo payment_code duy nhất.
+
+Format:
+
+AIC + mã ngắn của đơn
+
+Ví dụ:
+
+AICCF4B8D1A
+
+Nội dung chuyển khoản phải chỉ chứa mã này hoặc format rõ ràng:
+
+AICCF4B8D1A
+
+Không dùng chung một nội dung cho nhiều đơn.
+
+==================================================
+4. TẠO QR VIETQR
+==================================================
+
+Sau khi tạo đơn, bot gửi:
+
+💳 THANH TOÁN ĐƠN HÀNG
+
+Mã đơn: ORD-CF4B8D1A
+Sản phẩm: Canva Edu 1 Năm
+Số lượng: 1
+Số tiền: 40.000đ
+
+Ngân hàng:
+MB Bank
+
+Số tài khoản:
+xxxxxxxxxxxx
+
+Chủ tài khoản:
+NGUYEN VAN A
+
+Nội dung:
+AICCF4B8D1A
+
+Vui lòng chuyển đúng số tiền và đúng nội dung.
+
+Bot gửi kèm ảnh QR VietQR.
+
+QR phải chứa:
+
+- bank BIN
+- account number
+- amount
+- payment code
+- account owner nếu hỗ trợ
+
+Nút:
+
+🔄 Kiểm tra thanh toán
+❌ Hủy đơn
+💬 Hỗ trợ
+
+==================================================
+5. WEBHOOK SEPAY
+==================================================
+
+Tạo endpoint public:
+
+POST /webhooks/sepay
+
+Endpoint không yêu cầu session đăng nhập.
+
+Phải:
+
+1. Xác thực webhook bằng cơ chế secret/signature theo cấu hình SePay đang dùng.
+2. Parse JSON giao dịch.
+3. Lưu raw transaction.
+4. Dùng external transaction ID để chống xử lý trùng.
+5. Chỉ xử lý tiền vào.
+6. Đọc transfer content.
+7. Tìm payment_code trong nội dung.
+8. Đối chiếu số tiền.
+9. Trả HTTP 200 nhanh chóng.
+
+Không gọi API nguồn trực tiếp quá lâu bên trong request webhook.
+
+Sau khi lưu và xác nhận thanh toán:
+- tạo background task xử lý giao hàng.
+
+Response thành công phải rõ ràng, ví dụ:
+
+{
+  "success": true
+}
+
+==================================================
+6. ĐỐI CHIẾU GIAO DỊCH
+==================================================
+
+Chuẩn hóa webhook thành:
+
+- transaction_id
+- gateway
+- transaction_date
+- account_number
+- transfer_content
+- amount_in
+- amount_out
+- reference_code
+
+Tìm đơn bằng payment_code.
+
+Quy tắc:
+
+Nếu amount_in < expected_amount:
+- payment_status = partial
+- cộng vào paid_amount
+- chưa gọi API nguồn
+- báo khách còn thiếu bao nhiêu
+
+Nếu paid_amount == expected_amount:
+- payment_status = paid
+- paid_at = now
+- bắt đầu mua hàng từ nguồn
+
+Nếu paid_amount > expected_amount:
+- payment_status = overpaid
+- vẫn có thể xử lý đơn nếu setting cho phép
+- lưu số tiền thừa
+- báo admin
+
+Phải hỗ trợ một đơn được thanh toán bởi nhiều giao dịch nhỏ.
+
+==================================================
+7. XỬ LÝ SAU KHI ĐÃ THANH TOÁN
+==================================================
+
+Tạo service:
+
+process_paid_order(order_id)
+
+Dùng khóa database để bảo đảm chỉ chạy một lần.
+
+Kiểm tra:
+
+- payment_status là paid hoặc overpaid
+- order chưa được giao
+- chưa có supplier purchase thành công
+- chưa có job xử lý khác
+
+Sau đó:
+
+1. status = processing_api
+2. chọn API nguồn
+3. gọi POST /buy
+4. lưu mã đơn nguồn
+5. parse accounts
+6. giao tài khoản cho khách
+7. status = completed
+
+Nếu API nguồn lỗi:
+
+- tuyệt đối không mất trạng thái thanh toán
+- order chuyển api_failed
+- thông báo admin
+- báo khách:
+
+✅ Hệ thống đã nhận thanh toán.
+
+⚠️ Nguồn hàng đang gặp lỗi, đơn của bạn đang được xử lý thủ công.
+Admin sẽ gửi hàng sớm nhất.
+
+Không được nói “chưa thanh toán”.
+
+==================================================
+8. BOT KIỂM TRA THANH TOÁN
+==================================================
+
+Nút:
+
+🔄 Kiểm tra thanh toán
+
+Khi bấm:
+
+- đọc payment_status từ database
+- không dựa vào nội dung người dùng tự gửi
+
+Nếu pending:
+
+⏳ Chưa nhận được thanh toán.
+
+Nếu partial:
+
+⚠️ Đã nhận Xđ.
+Còn thiếu Yđ.
+
+Nếu paid:
+
+✅ Thanh toán thành công.
+Đơn đang được lấy hàng tự động.
+
+Nếu completed:
+
+✅ Đơn đã hoàn thành.
+
+==================================================
+9. HẾT HẠN THANH TOÁN
+==================================================
+
+Mặc định đơn hết hạn sau 15 phút.
+
+Dùng background scheduler:
+
+- tìm đơn pending quá hạn
+- status = payment_expired
+- payment_status = expired
+
+Nếu khách chuyển tiền sau khi đơn hết hạn:
+
+- không tự động gọi API nguồn
+- đánh dấu late_payment
+- báo admin xử lý
+- báo khách liên hệ hỗ trợ
+
+==================================================
+10. TRANG THANH TOÁN TRÊN WEB
+==================================================
+
+Trong chi tiết đơn hiển thị:
+
+- Trạng thái thanh toán
+- Mã thanh toán
+- Số tiền cần trả
+- Số tiền đã nhận
+- Còn thiếu
+- Giao dịch SePay
+- Thời gian thanh toán
+- Nội dung chuyển khoản
+- Raw webhook thu gọn
+
+Có bộ lọc đơn:
+
+Chờ thanh toán
+Thanh toán thiếu
+Đã thanh toán
+Thanh toán thừa
+Hết hạn
+Đã giao
+API lỗi sau thanh toán
+
+==================================================
+11. TRANG CẤU HÌNH WEBHOOK
+==================================================
+
+Hiển thị URL webhook:
+
+https://<domain-cua-web>/webhooks/sepay
+
+Có nút:
+
+📋 Sao chép URL
+🔍 Kiểm tra endpoint
+🧪 Tạo giao dịch thử
+📜 Xem log webhook
+
+Không hiển thị webhook secret đầy đủ.
+
+==================================================
+12. THÔNG BÁO ADMIN
+==================================================
+
+Admin nhận Telegram khi:
+
+- Có đơn mới chờ thanh toán
+- Thanh toán thiếu
+- Thanh toán đủ
+- Thanh toán thừa
+- Thanh toán trễ
+- Đã nhận tiền nhưng API nguồn lỗi
+- Giao hàng thành công
+
+==================================================
+13. BẢO MẬT VÀ CHỐNG GIAO TRÙNG
+==================================================
+
+- Không tin callback “Tôi đã thanh toán”.
+- Chỉ webhook hoặc giao dịch SePay hợp lệ mới đánh dấu paid.
+- Webhook phải chống replay.
+- external transaction ID phải unique.
+- process_paid_order phải idempotent.
+- POST /buy chỉ gọi một lần cho một đơn.
+- Bấm nhiều lần “Kiểm tra thanh toán” không được mua lại.
+- Không ghi SePay token vào log.
+- Không ghi API key nguồn vào log.
+- Không giao tài khoản trước khi paid.
+- Không dùng ảnh bill làm bằng chứng tự động.
+
+==================================================
+14. TEST MODE
+==================================================
+
+Thêm chế độ:
+
+SEPAY_TEST_MODE
+
+Khi bật:
+- cho phép tạo webhook giả từ admin web
+- không dùng trong production
+
+Test các trường hợp:
+
+1. Tạo đơn 40.000đ.
+2. Chưa trả tiền → không gọi API nguồn.
+3. Webhook 20.000đ → partial.
+4. Webhook thêm 20.000đ → paid.
+5. Chỉ gọi /buy một lần.
+6. Bot giao tài khoản.
+7. Webhook gửi lặp → không giao lần hai.
+8. Trả thừa → overpaid.
+9. Trả sau hết hạn → late_payment.
+10. Đã nhận tiền nhưng API lỗi → chuyển xử lý thủ công.
+11. Nút kiểm tra thanh toán không tự đánh dấu paid.

@@ -1,0 +1,940 @@
+{% extends "base.html" %}
+{% block title %}Cấu hình - AI Center{% endblock %}
+{% block page_title %}⚙️ Cấu hình{% endblock %}
+
+{% block extra_head %}
+<style>
+.nav-tabs .nav-link { font-size: 0.9rem; }
+.masked-field { font-family: monospace; letter-spacing: 2px; color: var(--bs-secondary-color); }
+</style>
+{% endblock %}
+
+{% block content %}
+<ul class="nav nav-tabs mb-4 flex-wrap" id="settingsTabs">
+  <li class="nav-item"><button class="nav-link {% if active_tab == 'config' or not active_tab %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#tabConfig">🤖 Cấu hình bot</button></li>
+  <li class="nav-item"><button class="nav-link {% if active_tab == 'guide' %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#tabGuide">📖 Hướng dẫn</button></li>
+</ul>
+
+<div class="tab-content">
+
+<!-- ══════════════════════════════ Cấu hình bot (all settings in one page) ══════════════════════════════ -->
+<div class="tab-pane fade {% if active_tab == 'config' or not active_tab %}show active{% endif %}" id="tabConfig">
+
+  <!-- Bot Section -->
+  <div class="mb-3">
+    <div class="row g-3">
+      <div class="col-12 col-lg-7">
+        <div class="card mb-3">
+          <div class="card-header"><h6 class="mb-0">Cấu hình Bot Telegram</h6></div>
+          <form action="/settings/bot" method="post">
+            <div class="card-body">
+              <div class="mb-3">
+                <label class="form-label">Bot Token</label>
+                <div class="input-group">
+                  <input type="password" name="bot_token" id="botTokenInput" class="form-control" placeholder="{{ masked_token or 'Nhập bot token...' }}">
+                  <button type="button" class="btn btn-outline-secondary" id="toggleBotToken"><i class="bi bi-eye"></i></button>
+                </div>
+                <small class="text-muted">Token hiện tại: {{ masked_token or 'Chưa cấu hình' }}</small>
+              </div>
+              <div class="mb-3"><label class="form-label">Admin Telegram ID</label><input type="text" name="admin_telegram_id" class="form-control" value="{{ cfg.admin_telegram_id or '' }}" placeholder="123456789"></div>
+              <div class="mb-3"><label class="form-label">Tên cửa hàng</label><input type="text" name="shop_name" class="form-control" value="{{ cfg.shop_name or '' }}" placeholder="AI Center Shop"></div>
+              <div class="mb-3"><label class="form-label">Lời chào mừng</label><textarea name="welcome_message" class="form-control" rows="3">{{ cfg.welcome_message or '' }}</textarea></div>
+              <div class="mb-3"><label class="form-label">Username hỗ trợ</label>
+                <div class="input-group"><span class="input-group-text">@</span>
+                <input type="text" name="support_username" class="form-control" value="{{ cfg.support_username or '' }}"></div>
+              </div>
+              <hr class="my-3">
+              <h6 class="text-muted mb-3">⚙️ Cài đặt danh sách sản phẩm</h6>
+              <div class="row g-3">
+                <div class="col-sm-6">
+                  <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" name="show_out_of_stock" id="showOos" {{ 'checked' if cfg.show_out_of_stock is not false else '' }}>
+                    <label class="form-check-label" for="showOos">Hiển thị sản phẩm hết hàng</label>
+                  </div>
+                </div>
+                <div class="col-sm-6">
+                  <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" name="allow_manual_order_when_out_of_stock" id="allowManual" {{ 'checked' if cfg.allow_manual_order_when_out_of_stock else '' }}>
+                    <label class="form-check-label" for="allowManual">Nhận đặt hàng khi hết hàng</label>
+                  </div>
+                </div>
+                <div class="col-sm-6">
+                  <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" name="notify_users_when_restocked" id="notifyRestock" {{ 'checked' if cfg.notify_users_when_restocked else '' }}>
+                    <label class="form-check-label" for="notifyRestock">Báo khách khi kho có hàng trở lại (chỉ khách đang chờ)</label>
+                  </div>
+                </div>
+                <div class="col-sm-6">
+                  <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" name="allow_partial_delivery" id="allowPartial" {{ 'checked' if cfg.allow_partial_delivery else '' }}>
+                    <label class="form-check-label" for="allowPartial">Cho phép giao một phần khi thiếu hàng (kho tài khoản)</label>
+                  </div>
+                </div>
+                <div class="col-sm-4">
+                  <label class="form-label">Sản phẩm mỗi trang</label>
+                  <input type="number" name="products_per_page" class="form-control" value="{{ cfg.products_per_page or 15 }}" min="5" max="50">
+                </div>
+                <div class="col-sm-4">
+                  <label class="form-label">Icon mặc định</label>
+                  <input type="text" name="default_product_icon" class="form-control" value="{{ cfg.default_product_icon or '📦' }}" placeholder="📦">
+                </div>
+                <div class="col-sm-4">
+                  <label class="form-label">Ngôn ngữ mặc định</label>
+                  <select name="default_language" class="form-select">
+                    <option value="vi" {{ 'selected' if not cfg.default_language or cfg.default_language == 'vi' else '' }}>🇻🇳 Tiếng Việt</option>
+                    <option value="en" {{ 'selected' if cfg.default_language == 'en' else '' }}>🇬🇧 English</option>
+                  </select>
+                </div>
+              </div>
+              <hr class="my-3">
+              <h6 class="text-muted mb-3">📢 Thông báo tự động sản phẩm mới / bổ sung hàng</h6>
+              <div class="row g-3">
+                <div class="col-sm-6">
+                  <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" name="notify_new_products" id="notifyNewProducts" {{ 'checked' if cfg.notify_new_products is not false else '' }}>
+                    <label class="form-check-label" for="notifyNewProducts">Báo tất cả khách khi có sản phẩm mới</label>
+                  </div>
+                </div>
+                <div class="col-sm-6">
+                  <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" name="notify_restock" id="notifyRestockAll" {{ 'checked' if cfg.notify_restock is not false else '' }}>
+                    <label class="form-check-label" for="notifyRestockAll">Báo tất cả khách khi có hàng bổ sung</label>
+                  </div>
+                </div>
+                <div class="col-sm-6">
+                  <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" name="notify_admin_on_price_change" id="notifyAdminOnPriceChange" {{ 'checked' if cfg.notify_admin_on_price_change is not false else '' }}>
+                    <label class="form-check-label" for="notifyAdminOnPriceChange">Báo cho Admin khi giá nguồn thay đổi</label>
+                  </div>
+                  <div class="form-text">Chỉ gửi cho Admin qua Telegram. Khách hàng không bao giờ được thông báo khi giá thay đổi.</div>
+                </div>
+                <div class="col-sm-6">
+                  <label class="form-label">Số tin nhắn mỗi đợt gửi</label>
+                  <input type="number" name="broadcast_batch_size" class="form-control" value="{{ cfg.broadcast_batch_size or 25 }}" min="1" max="100">
+                  <div class="form-text">Giới hạn tốc độ gửi để tránh bị Telegram chặn.</div>
+                </div>
+                <div class="col-sm-6">
+                  <label class="form-label">Độ trễ giữa các đợt (ms)</label>
+                  <input type="number" name="broadcast_delay_ms" class="form-control" value="{{ cfg.broadcast_delay_ms if cfg.broadcast_delay_ms is not none else 300 }}" min="0" max="10000">
+                </div>
+              </div>
+            </div>
+            <div class="card-footer d-flex gap-2 flex-wrap">
+              <button type="submit" class="btn btn-primary">💾 Lưu cài đặt</button>
+              <button type="button" class="btn btn-outline-info" id="verifyBotBtn">✅ Xác minh token</button>
+            </div>
+          </form>
+        </div>
+      </div>
+      <div class="col-12 col-lg-5">
+        <div class="card mb-3">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <h6 class="mb-0">Trạng thái Bot</h6>
+            <span class="status-badge status-{{ bot_status.status }}" id="botStatusText">{{ bot_status.status }}</span>
+          </div>
+          <div class="card-body">
+            {% if cfg.bot_name %}<div><strong>Tên:</strong> {{ cfg.bot_name }}</div>{% endif %}
+            {% if cfg.bot_username %}<div><strong>Username:</strong> @{{ cfg.bot_username }}</div>{% endif %}
+            <div id="botInfoSection"></div>
+          </div>
+          <div class="card-footer d-flex gap-2 flex-wrap">
+            <button class="btn btn-success" id="startBotBtn" onclick="botAction('start')"><i class="bi bi-play-fill"></i> Start</button>
+            <button class="btn btn-danger" id="stopBotBtn" onclick="botAction('stop')"><i class="bi bi-stop-fill"></i> Stop</button>
+            <button class="btn btn-warning" id="restartBotBtn" onclick="botAction('restart')"><i class="bi bi-arrow-repeat"></i> Restart</button>
+            <button class="btn btn-outline-info" onclick="botAction('test-message')"><i class="bi bi-chat"></i> Test Msg</button>
+          </div>
+        </div>
+        <div id="botActionResult" class="alert d-none"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SePay Section -->
+  <div class="mb-3">
+    <div class="row g-3">
+      <!-- Config card -->
+      <div class="col-12 col-lg-7">
+        <div class="card mb-3">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <h6 class="mb-0">💳 Thanh toán SePay</h6>
+            {% if sepay.is_enabled %}
+              <span class="badge bg-success">Đang bật</span>
+            {% else %}
+              <span class="badge bg-secondary">Đang tắt</span>
+            {% endif %}
+          </div>
+          <form action="/settings/sepay" method="post">
+            <div class="card-body">
+              <div class="mb-3 form-check form-switch">
+                <input class="form-check-input" type="checkbox" name="is_enabled" id="sepayEnabled" {{ 'checked' if sepay.is_enabled else '' }}>
+                <label class="form-check-label fw-semibold" for="sepayEnabled">Bật thanh toán SePay</label>
+              </div>
+              <div class="row g-3">
+                <div class="col-sm-6">
+                  <label class="form-label">Tên ngân hàng</label>
+                  <input type="text" name="bank_name" class="form-control" value="{{ sepay.bank_name or '' }}" placeholder="MB Bank">
+                </div>
+                <div class="col-sm-6">
+                  <label class="form-label">Mã BIN ngân hàng</label>
+                  <input type="text" name="bank_bin" class="form-control" value="{{ sepay.bank_bin or '' }}" placeholder="970422">
+                  <small class="text-muted">Dùng để tạo QR VietQR</small>
+                </div>
+                <div class="col-sm-6">
+                  <label class="form-label">Số tài khoản</label>
+                  <input type="text" name="account_number" class="form-control" value="{{ sepay.account_number or '' }}" placeholder="0123456789">
+                </div>
+                <div class="col-sm-6">
+                  <label class="form-label">Tên chủ tài khoản</label>
+                  <input type="text" name="account_name" class="form-control" value="{{ sepay.account_name or '' }}" placeholder="NGUYEN VAN A">
+                </div>
+                <div class="col-12">
+                  <label class="form-label">SePay API Token <span class="text-danger">*</span></label>
+                  <div class="input-group">
+                    <input type="password" name="api_token" id="sepayTokenInput" class="form-control"
+                           placeholder="{{ masked_sepay_token or 'Nhập API token (bắt buộc để bật SePay)...' }}">
+                    <button type="button" class="btn btn-outline-secondary" onclick="togglePass('sepayTokenInput', this)"><i class="bi bi-eye"></i></button>
+                  </div>
+                  {% if masked_sepay_token %}
+                    <small class="text-success"><i class="bi bi-check-circle-fill"></i> Đã cấu hình: <span class="masked-field">{{ masked_sepay_token }}</span></small>
+                  {% else %}
+                    <small class="text-danger"><i class="bi bi-exclamation-triangle-fill"></i> Chưa có token — SePay sẽ không thể bật cho đến khi nhập token hợp lệ.</small>
+                  {% endif %}
+                </div>
+                <div class="col-12">
+                  <label class="form-label">Webhook Secret <span class="text-danger">*</span></label>
+                  <div class="input-group">
+                    <input type="password" name="webhook_secret" id="sepaySecretInput" class="form-control"
+                           placeholder="{{ masked_webhook_secret or 'Nhập webhook secret (bắt buộc để bật SePay)...' }}">
+                    <button type="button" class="btn btn-outline-secondary" onclick="togglePass('sepaySecretInput', this)"><i class="bi bi-eye"></i></button>
+                  </div>
+                  {% if masked_webhook_secret %}
+                    <small class="text-success"><i class="bi bi-check-circle-fill"></i> Đã cấu hình: <span class="masked-field">{{ masked_webhook_secret }}</span></small>
+                  {% else %}
+                    <small class="text-danger"><i class="bi bi-exclamation-triangle-fill"></i> Chưa có — SePay không thể bật khi thiếu Webhook Secret.</small>
+                  {% endif %}
+                  <small class="text-muted d-block mt-1">SePay gửi header: <code>Authorization: Apikey {WEBHOOK_SECRET}</code></small>
+                </div>
+                <div class="col-sm-6">
+                  <label class="form-label">Tiền tố nội dung</label>
+                  <input type="text" name="payment_prefix" class="form-control" value="{{ sepay.payment_prefix or 'AIC' }}" maxlength="10">
+                  <small class="text-muted">VD: AIC → mã TT: AICCF4B8D1A</small>
+                </div>
+                <div class="col-sm-6">
+                  <label class="form-label">Thời gian hết hạn (phút)</label>
+                  <input type="number" name="payment_timeout_minutes" class="form-control" value="{{ sepay.payment_timeout_minutes or 15 }}" min="1" max="1440">
+                </div>
+                <div class="col-12">
+                  <div class="form-check form-switch mb-2">
+                    <input class="form-check-input" type="checkbox" name="allow_overpay" id="allowOverpay" {{ 'checked' if sepay.allow_overpay else '' }}>
+                    <label class="form-check-label" for="allowOverpay">Cho phép thanh toán thừa (vẫn xử lý đơn)</label>
+                  </div>
+                  <div class="form-check form-switch mb-2">
+                    <input class="form-check-input" type="checkbox" name="auto_refund_partial" id="autoRefund" {{ 'checked' if sepay.auto_refund_partial else '' }}>
+                    <label class="form-check-label" for="autoRefund">Tự động hoàn đơn thiếu tiền</label>
+                  </div>
+                  <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" name="test_mode" id="testMode" {{ 'checked' if sepay.test_mode else '' }}>
+                    <label class="form-check-label text-warning fw-semibold" for="testMode">🧪 Test Mode (chỉ dùng khi phát triển)</label>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="card-footer">
+              <button type="submit" class="btn btn-primary">💾 Lưu cài đặt SePay</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Webhook info card -->
+      <div class="col-12 col-lg-5">
+        <div class="card mb-3">
+          <div class="card-header"><h6 class="mb-0">🌐 Cấu hình Webhook</h6></div>
+          <div class="card-body">
+            <label class="form-label small text-muted">URL Webhook (điền vào SePay Dashboard)</label>
+            <div class="input-group mb-3">
+              <input type="text" id="webhookUrl" class="form-control form-control-sm font-monospace"
+                     value="{{ webhook_url }}" readonly>
+              <button class="btn btn-outline-secondary btn-sm" onclick="copyWebhook()">
+                <i class="bi bi-clipboard"></i>
+              </button>
+            </div>
+            <div class="d-grid gap-2">
+              <button class="btn btn-outline-info btn-sm" onclick="checkEndpoint()">
+                🔍 Kiểm tra endpoint
+              </button>
+              <button class="btn btn-outline-warning btn-sm" onclick="viewLogs()">
+                📜 Xem log webhook
+              </button>
+            </div>
+            <div id="endpointResult" class="mt-2"></div>
+          </div>
+        </div>
+
+        <!-- Test mode -->
+        <div class="card mb-3" id="testCard" style="{{ '' if sepay.test_mode else 'display:none' }}">
+          <div class="card-header"><h6 class="mb-0">🧪 Tạo giao dịch thử</h6></div>
+          <div class="card-body">
+            <div class="mb-2">
+              <label class="form-label small">Mã thanh toán (payment_code)</label>
+              <input type="text" id="testCode" class="form-control form-control-sm" placeholder="AICCF4B8D1A">
+            </div>
+            <div class="mb-2">
+              <label class="form-label small">Số tiền (đ)</label>
+              <input type="number" id="testAmount" class="form-control form-control-sm" placeholder="40000">
+            </div>
+            <button class="btn btn-warning btn-sm w-100" onclick="sendTestWebhook()">
+              🚀 Gửi giao dịch thử
+            </button>
+            <div id="testResult" class="mt-2"></div>
+          </div>
+        </div>
+
+        <!-- Webhook logs -->
+        <div class="card d-none" id="logsCard">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <h6 class="mb-0">📜 Log webhook gần đây</h6>
+            <button class="btn btn-xs btn-outline-secondary btn-sm" onclick="viewLogs()">🔄</button>
+          </div>
+          <div class="card-body p-0">
+            <div class="table-responsive">
+              <table class="table table-sm table-hover mb-0 small">
+                <thead><tr><th>TX ID</th><th>Số tiền</th><th>Trạng thái</th><th>Thời gian</th></tr></thead>
+                <tbody id="logsBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Binance Pay + USDT BEP20 + USDT TRC20 — combined into one section -->
+  <div class="mb-3">
+    <div class="card">
+      <div class="card-header"><h6 class="mb-0">🟡 Binance Pay / USDT</h6></div>
+
+      <!-- Binance Pay -->
+      <div class="card-body border-bottom">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <h6 class="mb-0">Binance Pay</h6>
+          <span class="badge" id="binanceBadge" style="background:#f0b90b;color:#000">Đang tải...</span>
+        </div>
+        <form action="/settings/payment-method/binance" method="post" enctype="multipart/form-data">
+          <div class="mb-3 form-check form-switch">
+            <input class="form-check-input" type="checkbox" name="is_enabled" id="binanceEnabled">
+            <label class="form-check-label fw-semibold" for="binanceEnabled">Bật Binance Pay</label>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Binance API Key</label>
+            <div class="input-group">
+              <input type="password" name="api_key" id="binanceApiKey" class="form-control" placeholder="••••••••••••">
+              <button type="button" class="btn btn-outline-secondary" onclick="togglePass('binanceApiKey',this)"><i class="bi bi-eye"></i></button>
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Binance Secret Key</label>
+            <div class="input-group">
+              <input type="password" name="secret_key" id="binanceSecretKey" class="form-control" placeholder="••••••••••••">
+              <button type="button" class="btn btn-outline-secondary" onclick="togglePass('binanceSecretKey',this)"><i class="bi bi-eye"></i></button>
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Binance ID</label>
+            <input type="text" name="receiver_binance_id" id="binanceReceiverId" class="form-control" placeholder="123456789">
+          </div>
+          <div class="mb-3">
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="testBinanceConnection()">🔌 Test connection</button>
+            <span id="binanceTestResult" class="small ms-2"></span>
+          </div>
+          <button type="submit" class="btn btn-primary">💾 Lưu cài đặt Binance Pay</button>
+        </form>
+      </div>
+
+      <!-- USDT BEP20 -->
+      <div class="card-body border-bottom">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <h6 class="mb-0">🟨 USDT BEP20 (BSC)</h6>
+          <span class="badge" id="bep20Badge" style="background:#f0b90b;color:#000">Đang tải...</span>
+        </div>
+        <form action="/settings/payment-method/bep20" method="post">
+          <div class="mb-3 form-check form-switch">
+            <input class="form-check-input" type="checkbox" name="is_enabled" id="bep20Enabled">
+            <label class="form-check-label fw-semibold" for="bep20Enabled">Bật USDT BEP20</label>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Địa chỉ USDT BEP20 <span class="text-danger">*</span></label>
+            <input type="text" name="wallet_address" id="bep20Wallet" class="form-control font-monospace" placeholder="0x...">
+          </div>
+          <input type="hidden" name="usdt_contract" id="bep20Contract" value="0x55d398326f99059fF775485246999027B3197955">
+          <input type="hidden" name="required_confirmations" id="bep20Confs" value="12">
+          <input type="hidden" name="poll_interval_seconds" id="bep20Poll" value="30">
+          <input type="hidden" name="timeout_minutes" id="bep20Timeout" value="60">
+          <button type="submit" class="btn btn-primary">💾 Lưu USDT BEP20</button>
+        </form>
+        <div id="bep20CurrentConfig"></div>
+      </div>
+
+      <!-- USDT TRC20 -->
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <h6 class="mb-0">🔴 USDT TRC20 (TRON)</h6>
+          <span class="badge bg-secondary" id="trc20Badge">Đang tải...</span>
+        </div>
+        <form action="/settings/payment-method/trc20" method="post">
+          <div class="mb-3 form-check form-switch">
+            <input class="form-check-input" type="checkbox" name="is_enabled" id="trc20Enabled">
+            <label class="form-check-label fw-semibold" for="trc20Enabled">Bật USDT TRC20</label>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Địa chỉ USDT TRC20 <span class="text-danger">*</span></label>
+            <input type="text" name="wallet_address" id="trc20Wallet" class="form-control font-monospace" placeholder="T...">
+          </div>
+          <input type="hidden" name="usdt_contract" id="trc20Contract" value="TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t">
+          <input type="hidden" name="required_confirmations" id="trc20Confs" value="20">
+          <input type="hidden" name="poll_interval_seconds" id="trc20Poll" value="30">
+          <input type="hidden" name="timeout_minutes" id="trc20Timeout" value="60">
+          <button type="submit" class="btn btn-primary">💾 Lưu USDT TRC20</button>
+        </form>
+        <div id="trc20CurrentConfig"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- USDT ERC20 Section -->
+  <div class="mb-3">
+        <div class="card mb-3">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <h6 class="mb-0">🔵 USDT ERC20 (Ethereum)</h6>
+            <span class="badge bg-secondary" id="erc20Badge">Đang tải...</span>
+          </div>
+          <form action="/settings/payment-method/erc20" method="post">
+            <div class="card-body">
+              <div class="mb-3 form-check form-switch">
+                <input class="form-check-input" type="checkbox" name="is_enabled" id="erc20Enabled">
+                <label class="form-check-label fw-semibold" for="erc20Enabled">Bật USDT ERC20</label>
+              </div>
+              <div class="mb-3">
+                <label class="form-label">Địa chỉ ví Ethereum <span class="text-danger">*</span></label>
+                <input type="text" name="wallet_address" id="erc20Wallet" class="form-control font-monospace" placeholder="0x...">
+                <small class="text-muted">Nhận USDT qua mạng Ethereum (ERC20)</small>
+              </div>
+              <div class="mb-3">
+                <label class="form-label">USDT Contract Address</label>
+                <input type="text" name="usdt_contract" id="erc20Contract" class="form-control font-monospace"
+                       value="0xdAC17F958D2ee523a2206206994597C13D831ec7">
+                <small class="text-muted">Mặc định: USDT ERC20 chính thức</small>
+              </div>
+              <div class="mb-3">
+                <label class="form-label">Etherscan API Key</label>
+                <div class="input-group">
+                  <input type="password" name="etherscan_api_key" id="etherscanKey" class="form-control" placeholder="••••••••">
+                  <button type="button" class="btn btn-outline-secondary" onclick="togglePass('etherscanKey',this)"><i class="bi bi-eye"></i></button>
+                </div>
+                <small class="text-muted">Lấy tại <a href="https://etherscan.io/myapikey" target="_blank">etherscan.io</a> (miễn phí)</small>
+              </div>
+              <div class="row g-3">
+                <div class="col-sm-4">
+                  <label class="form-label">Xác nhận cần</label>
+                  <input type="number" name="required_confirmations" class="form-control" value="12" min="1" id="erc20Confs">
+                </div>
+                <div class="col-sm-4">
+                  <label class="form-label">Poll mỗi (giây)</label>
+                  <input type="number" name="poll_interval_seconds" class="form-control" value="30" min="15" id="erc20Poll">
+                </div>
+                <div class="col-sm-4">
+                  <label class="form-label">Hết hạn (phút)</label>
+                  <input type="number" name="timeout_minutes" class="form-control" value="60" min="15" id="erc20Timeout">
+                </div>
+              </div>
+            </div>
+            <div class="card-footer"><button type="submit" class="btn btn-primary">💾 Lưu USDT ERC20</button></div>
+          </form>
+        </div>
+        <div id="erc20CurrentConfig"></div>
+  </div>
+
+  <!-- Exchange Rate Section -->
+  <div class="mb-3">
+    <div class="row g-3">
+      <div class="col-12 col-lg-7">
+        <div class="card mb-3">
+          <div class="card-header"><h6 class="mb-0">💱 Cài đặt tỉ giá VND/USDT</h6></div>
+          <form action="/settings/exchange-rate" method="post">
+            <div class="card-body">
+              <div class="mb-3">
+                <label class="form-label fw-semibold">Chế độ tỉ giá</label>
+                <div class="d-flex flex-column gap-2">
+                  <div class="form-check">
+                    <input class="form-check-input" type="radio" name="rate_mode" value="fixed" id="rateFixed" checked onchange="toggleRateMode()">
+                    <label class="form-check-label" for="rateFixed">Cố định (nhập tay)</label>
+                  </div>
+                  <div class="form-check">
+                    <input class="form-check-input" type="radio" name="rate_mode" value="auto_binance" id="rateAutoBinance" onchange="toggleRateMode()">
+                    <label class="form-check-label" for="rateAutoBinance">Tự động (Binance P2P)</label>
+                  </div>
+                  <div class="form-check">
+                    <input class="form-check-input" type="radio" name="rate_mode" value="auto_coingecko" id="rateAutoCoingecko" onchange="toggleRateMode()">
+                    <label class="form-check-label" for="rateAutoCoingecko">Tự động (CoinGecko)</label>
+                  </div>
+                </div>
+              </div>
+              <div id="fixedRateField" class="mb-3">
+                <label class="form-label">Tỉ giá cố định (VND / 1 USDT)</label>
+                <div class="input-group" style="max-width:260px">
+                  <input type="number" name="fixed_rate" id="fixedRateInput" class="form-control" value="25500" min="1000" step="100">
+                  <span class="input-group-text">VND/USDT</span>
+                </div>
+              </div>
+              <div class="mb-3">
+                <label class="form-label">Markup % (cộng thêm)</label>
+                <div class="input-group" style="max-width:180px">
+                  <input type="number" name="markup_percent" class="form-control" value="2" min="0" max="50" step="0.1">
+                  <span class="input-group-text">%</span>
+                </div>
+                <small class="text-muted">VD: tỉ giá 25.500 + 2% = 26.010 VND/USDT</small>
+              </div>
+            </div>
+            <div class="card-footer d-flex gap-2">
+              <button type="submit" class="btn btn-primary">💾 Lưu tỉ giá</button>
+              <button type="button" class="btn btn-outline-info" onclick="previewRate()">🔍 Xem tỉ giá hiện tại</button>
+            </div>
+          </form>
+        </div>
+      </div>
+      <div class="col-12 col-lg-5">
+        <div class="card">
+          <div class="card-header"><h6 class="mb-0">📊 Tỉ giá hiện tại</h6></div>
+          <div class="card-body">
+            <div id="ratePreview" class="text-center py-3">
+              <button class="btn btn-outline-primary" onclick="previewRate()">Xem tỉ giá</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {% if request.state.is_owner %}
+  <!-- Market ("Chợ") default markup & platform fee -->
+  <div class="mb-3">
+    <div class="card">
+      <div class="card-header"><h6 class="mb-0">🏪 Markup mặc định & phí Chợ</h6></div>
+      <form action="/settings/market-pricing" method="post">
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-sm-6">
+              <label class="form-label">Markup mặc định khi lấy hàng từ API (%)</label>
+              <div class="input-group" style="max-width:200px">
+                <input type="number" name="default_markup_percent" class="form-control" value="{{ market_pricing.default_markup_percent }}" min="0" max="200" step="0.1">
+                <span class="input-group-text">%</span>
+              </div>
+              <small class="text-muted">VD: giá nguồn 100.000đ + 10% = 110.000đ bán ra. Chỉ áp dụng khi tenant không tự nhập giá bán; giá đã đặt vẫn được giữ chênh lệch cố định như cũ khi giá nguồn thay đổi.</small>
+            </div>
+            <div class="col-sm-6">
+              <label class="form-label">Phí Chợ khi tenant bán hàng nguồn chợ (%)</label>
+              <div class="input-group" style="max-width:200px">
+                <input type="number" name="platform_fee_percent" class="form-control" value="{{ market_pricing.platform_fee_percent }}" min="0" max="50" step="0.1">
+                <span class="input-group-text">%</span>
+              </div>
+              <small class="text-muted">Trừ vào Ví chợ của tenant, tính trên giá bán mỗi đơn — tách biệt với markup ở trên.</small>
+            </div>
+          </div>
+        </div>
+        <div class="card-footer"><button type="submit" class="btn btn-primary">💾 Lưu markup & phí Chợ</button></div>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Order Section -->
+  <div class="mb-3">
+    <div class="card">
+      <div class="card-header"><h6 class="mb-0">📦 Cài đặt đơn hàng</h6></div>
+      <form action="/settings/order" method="post">
+        <div class="card-body">
+          <div class="mb-3">
+            <div class="form-check form-switch"><input class="form-check-input" type="checkbox" checked><label class="form-check-label">Thông báo admin khi có đơn mới</label></div>
+          </div>
+          <div class="mb-3"><label class="form-label">Auto-cancel sau (giờ)</label><input type="number" class="form-control" value="24" min="1"></div>
+        </div>
+        <div class="card-footer"><button type="submit" class="btn btn-primary">Lưu</button></div>
+      </form>
+    </div>
+  </div>
+
+  <!-- API Section -->
+  <div class="mb-3">
+    <div class="card">
+      <div class="card-header"><h6 class="mb-0">🔗 Cài đặt API</h6></div>
+      <form action="/settings/api" method="post">
+        <div class="card-body">
+          <div class="mb-3"><label class="form-label">Timeout (giây)</label><input type="number" name="api_timeout" class="form-control" value="30" min="5"></div>
+          <div class="mb-3"><label class="form-label">Max Retries</label><input type="number" name="api_max_retries" class="form-control" value="3" min="1"></div>
+        </div>
+        <div class="card-footer"><button type="submit" class="btn btn-primary">Lưu</button></div>
+      </form>
+    </div>
+  </div>
+
+</div>
+
+<!-- ══════════════════════════════ Hướng dẫn ══════════════════════════════ -->
+<div class="tab-pane fade {% if active_tab == 'guide' %}show active{% endif %}" id="tabGuide">
+
+  <div class="card mb-3">
+    <div class="card-header"><h6 class="mb-0">🤖 Tạo bot với BotFather</h6></div>
+    <div class="card-body">
+      <p class="small">Tạo bot Telegram, lấy token do BotFather cấp và dán đúng vào ô <strong>Bot Token</strong> ở tab Cấu hình bot.</p>
+      <div class="d-flex gap-2 flex-wrap mb-3">
+        <a href="https://t.me/BotFather" target="_blank" class="btn btn-sm btn-outline-primary">Mở @BotFather</a>
+        <a href="https://fptshop.com.vn/tin-tuc/thu-thuat/bot-telegram-la-gi-162528" target="_blank" class="btn btn-sm btn-outline-primary">Xem hướng dẫn tạo bot</a>
+      </div>
+      <div class="alert alert-success small py-2 mb-3">
+        <strong>Lưu ý bảo mật:</strong> Token do BotFather cấp là khóa điều khiển bot. Không gửi token này cho người khác hoặc đăng trong group.
+      </div>
+      <ol class="small ps-3 mb-0">
+        <li>Mở Telegram và nhắn cho @BotFather.</li>
+        <li>Gõ <code>/newbot</code>.</li>
+        <li>Nhập tên bot hiển thị, ví dụ <code>AI Center Bot</code>.</li>
+        <li>Nhập username bot, phải kết thúc bằng <code>bot</code>, ví dụ <code>aicenter_demo_bot</code>.</li>
+        <li>BotFather sẽ trả về một chuỗi token dạng <code>123456789:AA....</code> Hãy sao chép token này.</li>
+        <li>Quay lại trang này và dán token vào ô <strong>Bot Token</strong> trong tab Cấu hình bot.</li>
+      </ol>
+    </div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-header"><h6 class="mb-0">🏦 SePay</h6></div>
+    <div class="card-body">
+      <p class="small">Đăng ký SePay, liên kết ngân hàng, tạo webhook và dùng đúng giá trị cho ô <strong>API Key Sepay</strong> / <strong>Webhook Secret</strong> trên tab Cấu hình bot.</p>
+      <div class="d-flex gap-2 flex-wrap mb-3">
+        <a href="https://my.sepay.vn/" target="_blank" class="btn btn-sm btn-outline-primary">Mở SePay</a>
+        <a href="https://docs.sepay.vn/" target="_blank" class="btn btn-sm btn-outline-primary">Hướng dẫn thêm ngân hàng</a>
+        <a href="https://docs.sepay.vn/tich-hop-webhooks.html" target="_blank" class="btn btn-sm btn-outline-primary">Tài liệu webhook SePay</a>
+      </div>
+      <div class="alert alert-info small py-2 mb-3">
+        <strong>Điền trên web:</strong> Ô <strong>API Key Sepay</strong> phải là đúng chuỗi bí mật bạn tự đặt ở bước chọn chứng thực API Key của webhook SePay.<br>
+        Header SePay sẽ gửi sang hệ thống theo dạng <code>Authorization: Apikey &lt;CHUOI_BAN_TU_DAT&gt;</code>.
+      </div>
+      <ol class="small ps-3 mb-0">
+        <li>Đăng ký hoặc đăng nhập tại my.sepay.vn.</li>
+        <li>Vào menu Ngân hàng → Kết nối tài khoản để liên kết ngân hàng.</li>
+        <li>Vào menu WebHooks → + Thêm webhooks.</li>
+        <li>Chọn sự kiện nhận tiền vào, chọn đúng tài khoản ngân hàng cần theo dõi và bật tùy chọn webhook xác thực thanh toán nếu bạn dùng để đối soát đơn.</li>
+        <li>Dán đúng URL callback (mục "Cấu hình Webhook" ở tab Cấu hình bot) vào ô Gọi đến URL.</li>
+        <li>Ở phần chứng thực, chọn API Key, sau đó tự đặt một chuỗi bí mật và nhập lại đúng chuỗi đó vào ô API Key Sepay trên web này.</li>
+        <li>Lưu webhook và chuyển thử một giao dịch nhỏ để kiểm tra log webhook trong SePay.</li>
+      </ol>
+    </div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-header"><h6 class="mb-0">🟡 Binance API Key</h6></div>
+    <div class="card-body">
+      <p class="small">Hướng dẫn lấy Binance API Key và Secret Key để dán vào ô <strong>API Key</strong> / <strong>Secret Key</strong> của mục Binance Pay trên tab Cấu hình bot.</p>
+      <div class="d-flex gap-2 flex-wrap mb-3">
+        <a href="https://www.binance.com/en/my/settings/api-management" target="_blank" class="btn btn-sm btn-outline-primary">Mở API Management</a>
+        <a href="https://www.binance.com/en/academy/articles/binance-ai-agent-skills-how-to-install-and-use-them" target="_blank" class="btn btn-sm btn-outline-primary">Hướng dẫn chính thức</a>
+        <a href="https://www.binance.com/en/academy/articles/what-are-api-keys-and-security-types" target="_blank" class="btn btn-sm btn-outline-primary">Quyền API</a>
+      </div>
+      <div class="alert alert-warning small py-2 mb-3">
+        Hệ thống hiện kiểm tra khóa Binance bằng cách đọc số dư tài khoản, nên bật <strong>Enable Reading</strong> là đủ để test an toàn.<br>
+        Không bật <strong>Enable withdrawals</strong>. Nếu sau này bạn muốn dùng các chức năng giao dịch, Binance yêu cầu whitelist IP trước khi bật quyền giao dịch Spot hoặc Margin.
+      </div>
+      <ol class="small ps-3 mb-0">
+        <li>Đăng nhập Binance và vào Profile → API Management.</li>
+        <li>Chọn Create API rồi chọn kiểu System generated.</li>
+        <li>Hoàn tất bước xác minh bảo mật của Binance.</li>
+        <li>Sao chép API Key và Secret Key, sau đó dán vào mục Binance Pay trên tab Cấu hình bot.</li>
+        <li>Bật tối thiểu quyền Enable reading để hệ thống đọc số dư kiểm tra cấu hình.</li>
+      </ol>
+    </div>
+  </div>
+
+</div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ── Token toggle ──────────────────────────────────────────────────────────────
+document.getElementById('toggleBotToken')?.addEventListener('click', function() {
+  const inp = document.getElementById('botTokenInput');
+  const icon = this.querySelector('i');
+  inp.type = inp.type === 'password' ? 'text' : 'password';
+  icon.className = inp.type === 'password' ? 'bi bi-eye' : 'bi bi-eye-slash';
+});
+
+function togglePass(inputId, btn) {
+  const inp = document.getElementById(inputId);
+  const icon = btn.querySelector('i');
+  inp.type = inp.type === 'password' ? 'text' : 'password';
+  icon.className = inp.type === 'password' ? 'bi bi-eye' : 'bi bi-eye-slash';
+}
+
+// ── Bot verify ────────────────────────────────────────────────────────────────
+document.getElementById('verifyBotBtn')?.addEventListener('click', async function() {
+  this.disabled = true; this.textContent = 'Đang xác minh...';
+  const token = document.getElementById('botTokenInput').value;
+  const fd = new FormData();
+  if (token) fd.append('token', token);
+  try {
+    const r = await fetch('/settings/bot/verify', {method:'POST', body:fd});
+    const d = await r.json();
+    const section = document.getElementById('botInfoSection');
+    if (d.success) {
+      section.innerHTML = `<div class="alert alert-success mt-2">✅ Bot: <strong>${d.bot_name}</strong> (@${d.bot_username})<br>ID: ${d.bot_id}</div>`;
+    } else {
+      section.innerHTML = `<div class="alert alert-danger mt-2">❌ ${d.message}</div>`;
+    }
+  } catch(e) {
+    document.getElementById('botInfoSection').innerHTML = `<div class="alert alert-danger mt-2">Lỗi: ${e}</div>`;
+  }
+  this.disabled = false; this.textContent = '✅ Xác minh token';
+});
+
+// ── Bot action ────────────────────────────────────────────────────────────────
+async function botAction(action) {
+  ['startBotBtn','stopBotBtn','restartBotBtn'].forEach(id => { const el = document.getElementById(id); if(el) el.disabled = true; });
+  const resultDiv = document.getElementById('botActionResult');
+  try {
+    const r = await fetch(`/settings/bot/${action}`, {method:'POST'});
+    const d = await r.json();
+    resultDiv.className = 'alert ' + (d.success ? 'alert-success' : 'alert-danger');
+    resultDiv.textContent = d.message;
+    resultDiv.classList.remove('d-none');
+    setTimeout(() => resultDiv.classList.add('d-none'), 4000);
+  } catch(e) {
+    resultDiv.className = 'alert alert-danger';
+    resultDiv.textContent = 'Lỗi: ' + e;
+    resultDiv.classList.remove('d-none');
+  }
+  ['startBotBtn','stopBotBtn','restartBotBtn'].forEach(id => { const el = document.getElementById(id); if(el) el.disabled = false; });
+}
+
+// ── Test mode toggle ──────────────────────────────────────────────────────────
+document.getElementById('testMode')?.addEventListener('change', function() {
+  document.getElementById('testCard').style.display = this.checked ? '' : 'none';
+});
+
+// ── Webhook helpers ───────────────────────────────────────────────────────────
+function copyWebhook() {
+  const url = document.getElementById('webhookUrl').value;
+  navigator.clipboard.writeText(url).then(() => {
+    const btn = event.target.closest('button');
+    const orig = btn.innerHTML;
+    btn.innerHTML = '<i class="bi bi-check"></i>';
+    setTimeout(() => btn.innerHTML = orig, 1500);
+  });
+}
+
+async function checkEndpoint() {
+  const div = document.getElementById('endpointResult');
+  div.innerHTML = '<span class="text-muted small">Đang kiểm tra...</span>';
+  try {
+    const r = await fetch('/settings/sepay/check-endpoint');
+    const d = await r.json();
+    div.innerHTML = `<div class="alert alert-${d.success ? 'success' : 'danger'} py-1 px-2 small mt-1">${d.message}</div>`;
+  } catch(e) {
+    div.innerHTML = `<div class="alert alert-danger py-1 px-2 small mt-1">Lỗi: ${e}</div>`;
+  }
+}
+
+async function viewLogs() {
+  const card = document.getElementById('logsCard');
+  card.classList.remove('d-none');
+  const tbody = document.getElementById('logsBody');
+  tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">Đang tải...</td></tr>';
+  try {
+    const r = await fetch('/settings/sepay/logs');
+    const logs = await r.json();
+    if (!logs.length) {
+      tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">Chưa có log nào</td></tr>';
+      return;
+    }
+    tbody.innerHTML = logs.map(l => `
+      <tr>
+        <td><code class="small">${l.tx_id.slice(0,12)}</code></td>
+        <td>${Number(l.amount_in).toLocaleString('vi-VN')}đ</td>
+        <td><span class="badge ${l.match_status === 'matched' ? 'bg-success' : l.match_status === 'partial' ? 'bg-warning text-dark' : l.match_status === 'unmatched' ? 'bg-secondary' : 'bg-danger'}">${l.match_status}</span></td>
+        <td class="small">${l.created_at}</td>
+      </tr>
+    `).join('');
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="4" class="text-danger small">${e}</td></tr>`;
+  }
+}
+
+async function sendTestWebhook() {
+  const code = document.getElementById('testCode').value.trim();
+  const amount = parseFloat(document.getElementById('testAmount').value);
+  const div = document.getElementById('testResult');
+  if (!code || !amount) { div.innerHTML = '<div class="alert alert-warning small py-1">Điền đầy đủ thông tin.</div>'; return; }
+  const fd = new FormData();
+  fd.append('payment_code', code);
+  fd.append('amount', amount);
+  div.innerHTML = '<span class="text-muted small">Đang gửi...</span>';
+  try {
+    const r = await fetch('/settings/sepay/test-webhook', {method:'POST', body:fd});
+    const d = await r.json();
+    const action = d.result?.action || '—';
+    div.innerHTML = `<div class="alert alert-${d.success ? 'success' : 'danger'} py-1 px-2 small">action: <b>${action}</b></div>`;
+  } catch(e) {
+    div.innerHTML = `<div class="alert alert-danger py-1 small">${e}</div>`;
+  }
+}
+
+// ── Binance Pay ────────────────────────────────────────────────────────────────
+function _applyBinanceConfig(d) {
+  if (!d) return;
+  const badge = document.getElementById('binanceBadge');
+  if (badge) {
+    badge.textContent = d.is_active ? 'Đang bật' : 'Đang tắt';
+    badge.style.background = d.is_active ? '#198754' : '#6c757d';
+    badge.style.color = '#fff';
+  }
+  const enabledEl = document.getElementById('binanceEnabled');
+  if (enabledEl) enabledEl.checked = d.is_active;
+  const cfg = d.config || {};
+  if (cfg.receiver_binance_id) document.getElementById('binanceReceiverId').value = cfg.receiver_binance_id;
+  if (cfg.api_key) document.getElementById('binanceApiKey').value = cfg.api_key;
+  if (cfg.secret_key) document.getElementById('binanceSecretKey').value = cfg.secret_key;
+}
+
+async function testBinanceConnection() {
+  const resultEl = document.getElementById('binanceTestResult');
+  resultEl.textContent = 'Đang kiểm tra...';
+  resultEl.className = 'small ms-2 text-muted';
+  try {
+    const fd = new FormData();
+    fd.append('api_key', document.getElementById('binanceApiKey').value);
+    fd.append('secret_key', document.getElementById('binanceSecretKey').value);
+    const r = await fetch('/settings/payment-method/binance/test-connection', {method: 'POST', body: fd});
+    const d = await r.json();
+    resultEl.textContent = d.message || (d.success ? 'OK' : 'Lỗi');
+    resultEl.className = `small ms-2 ${d.success ? 'text-success' : 'text-danger'}`;
+  } catch (e) {
+    resultEl.textContent = String(e);
+    resultEl.className = 'small ms-2 text-danger';
+  }
+}
+
+async function loadPaymentMethodConfig(code) {
+  try {
+    const r = await fetch(`/settings/payment-method/${code}/config`);
+    const d = await r.json();
+    if (!d.success) return null;
+    return d;
+  } catch(e) { return null; }
+}
+
+// Load Binance config on page ready (all sections are now on one page)
+async function loadBinanceSection() {
+  const d = await loadPaymentMethodConfig('binance_pay');
+  _applyBinanceConfig(d);
+}
+
+async function loadBep20Section() {
+  const d = await loadPaymentMethodConfig('usdt_bep20');
+  if (!d) return;
+  const badge = document.getElementById('bep20Badge');
+  badge.textContent = d.is_active ? 'Đang bật' : 'Đang tắt';
+  badge.style.background = d.is_active ? '#198754' : '#6c757d';
+  badge.style.color = '#fff';
+  document.getElementById('bep20Enabled').checked = d.is_active;
+  const cfg = d.config || {};
+  if (cfg.wallet_address) document.getElementById('bep20Wallet').value = cfg.wallet_address;
+  if (cfg.usdt_contract) document.getElementById('bep20Contract').value = cfg.usdt_contract;
+  if (cfg.bsc_rpc_url) document.getElementById('bscRpc').value = cfg.bsc_rpc_url;
+  if (cfg.required_confirmations) document.getElementById('bep20Confs').value = cfg.required_confirmations;
+  if (cfg.poll_interval_seconds) document.getElementById('bep20Poll').value = cfg.poll_interval_seconds;
+  if (cfg.timeout_minutes) document.getElementById('bep20Timeout').value = cfg.timeout_minutes;
+}
+
+async function loadTrc20Section() {
+  const d = await loadPaymentMethodConfig('usdt_trc20');
+  if (!d) return;
+  const badge = document.getElementById('trc20Badge');
+  badge.textContent = d.is_active ? 'Đang bật' : 'Đang tắt';
+  badge.className = `badge ${d.is_active ? 'bg-success' : 'bg-secondary'}`;
+  document.getElementById('trc20Enabled').checked = d.is_active;
+  const cfg = d.config || {};
+  if (cfg.wallet_address) document.getElementById('trc20Wallet').value = cfg.wallet_address;
+  if (cfg.usdt_contract) document.getElementById('trc20Contract').value = cfg.usdt_contract;
+  if (cfg.required_confirmations) document.getElementById('trc20Confs').value = cfg.required_confirmations;
+  if (cfg.poll_interval_seconds) document.getElementById('trc20Poll').value = cfg.poll_interval_seconds;
+  if (cfg.timeout_minutes) document.getElementById('trc20Timeout').value = cfg.timeout_minutes;
+}
+
+async function loadErc20Section() {
+  const d = await loadPaymentMethodConfig('usdt_erc20');
+  if (!d) return;
+  const badge = document.getElementById('erc20Badge');
+  badge.textContent = d.is_active ? 'Đang bật' : 'Đang tắt';
+  badge.className = `badge ${d.is_active ? 'bg-success' : 'bg-secondary'}`;
+  document.getElementById('erc20Enabled').checked = d.is_active;
+  const cfg = d.config || {};
+  if (cfg.wallet_address) document.getElementById('erc20Wallet').value = cfg.wallet_address;
+  if (cfg.usdt_contract) document.getElementById('erc20Contract').value = cfg.usdt_contract;
+  if (cfg.required_confirmations) document.getElementById('erc20Confs').value = cfg.required_confirmations;
+  if (cfg.poll_interval_seconds) document.getElementById('erc20Poll').value = cfg.poll_interval_seconds;
+  if (cfg.timeout_minutes) document.getElementById('erc20Timeout').value = cfg.timeout_minutes;
+}
+
+async function loadExchangeRateSection() {
+  const r = await fetch('/api/exchange-rate');
+  const d = await r.json().catch(() => null);
+  if (!d?.success) return;
+  const cfg = d.config || {};
+  const mode = cfg.mode || 'fixed';
+  const rateInput = document.querySelector(`input[name="rate_mode"][value="${mode}"]`);
+  if (rateInput) { rateInput.checked = true; toggleRateMode(); }
+  if (cfg.fixed_rate) document.getElementById('fixedRateInput').value = cfg.fixed_rate;
+  document.querySelector('input[name="markup_percent"]').value = cfg.markup_percent ?? 2;
+  if (d.rate) {
+    document.getElementById('ratePreview').innerHTML =
+      `<div class="display-6 text-primary fw-bold">${Number(d.rate).toLocaleString('vi-VN')} đ</div>
+       <div class="text-muted small mt-1">VND / 1 USDT (sau markup)</div>`;
+  }
+}
+
+function toggleRateMode() {
+  const mode = document.querySelector('input[name="rate_mode"]:checked')?.value;
+  document.getElementById('fixedRateField').style.display = mode === 'fixed' ? '' : 'none';
+}
+
+async function previewRate() {
+  const div = document.getElementById('ratePreview');
+  div.innerHTML = '<span class="text-muted">Đang lấy tỉ giá...</span>';
+  try {
+    const r = await fetch('/api/exchange-rate');
+    const d = await r.json();
+    if (d.success) {
+      div.innerHTML =
+        `<div class="display-6 text-primary fw-bold">${Number(d.rate).toLocaleString('vi-VN')} đ</div>
+         <div class="text-muted small mt-1">VND / 1 USDT (sau markup ${d.config?.markup_percent ?? 0}%)</div>
+         <div class="small mt-2">Chế độ: <b>${d.config?.mode || 'fixed'}</b></div>`;
+    } else {
+      div.innerHTML = `<div class="alert alert-danger small py-1">${d.message}</div>`;
+    }
+  } catch(e) {
+    div.innerHTML = `<div class="alert alert-danger small py-1">${e}</div>`;
+  }
+}
+
+// ── All sections live on the one "Cấu hình bot" page now — load every
+// payment method's saved config immediately instead of waiting for a tab
+// switch that no longer exists. ──────────────────────────────────────────────
+(async () => {
+  await Promise.all([
+    loadBinanceSection(),
+    loadBep20Section(),
+    loadTrc20Section(),
+    loadErc20Section(),
+    loadExchangeRateSection(),
+  ]);
+})();
+</script>
+{% endblock %}

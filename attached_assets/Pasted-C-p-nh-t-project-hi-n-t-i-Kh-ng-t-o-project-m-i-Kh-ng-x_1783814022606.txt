@@ -1,0 +1,645 @@
+Cập nhật project hiện tại.
+
+Không tạo project mới.
+Không xóa database, đơn hàng, kết nối API nguồn hoặc cấu hình SePay hiện có.
+
+MỤC TIÊU:
+
+1. Sản phẩm nguồn hết hàng thì không cho khách bắt đầu mua.
+2. Thêm ngôn ngữ Tiếng Việt và English cho Telegram Bot.
+3. Thêm phương thức thanh toán:
+   - SePay chuyển khoản ngân hàng
+   - Binance Pay
+   - USDT BEP20
+   - USDT TRC20
+
+==================================================
+A. KHÓA MUA KHI NGUỒN HẾT HÀNG
+==================================================
+
+1. Trạng thái sản phẩm phải được tính theo tồn kho nguồn mới nhất.
+
+Nếu sản phẩm delivery_mode = api_auto:
+
+- Tổng tồn kho của tất cả nguồn API hoạt động > 0:
+  status = in_stock
+
+- Tất cả nguồn đang hết hàng:
+  status = out_of_stock
+
+- Tất cả nguồn lỗi hoặc không đồng bộ được:
+  status = unavailable
+
+2. Trước khi hiển thị chi tiết sản phẩm:
+
+- Nếu lần đồng bộ tồn kho cũ quá 60 giây:
+  gọi lại API GET /products của các nguồn liên kết.
+- Không được dùng số tồn kho cũ để cho khách mua.
+
+3. Giao diện danh sách:
+
+🟢 Tên sản phẩm
+= còn hàng
+
+🔴 Tên sản phẩm
+= hết hàng
+
+⚠️ Tên sản phẩm
+= nguồn tạm lỗi
+
+4. Khi khách bấm sản phẩm hết hàng:
+
+Hiển thị:
+
+🔴 SẢN PHẨM ĐÃ HẾT HÀNG
+
+Sản phẩm này hiện không còn hàng tại nguồn.
+Vui lòng quay lại sau hoặc chọn sản phẩm khác.
+
+Nút:
+
+🔄 Kiểm tra lại
+⬅️ Quay lại
+🏠 Trang chủ
+
+Không hiển thị nút “Mua ngay”.
+
+5. Nếu khách dùng callback mua cũ hoặc callback giả:
+
+- Kiểm tra lại tồn kho ngay trên server.
+- Nếu stock <= 0:
+  từ chối tạo đơn.
+- Không tạo pending_payment.
+- Không tạo QR.
+- Không thu tiền.
+
+6. Sau khi khách nhập số lượng, kiểm tra lại:
+
+available_stock >= requested_quantity
+
+Nếu không đủ:
+
+⚠️ Số lượng còn lại không đủ.
+
+Kho hiện có: X
+Bạn yêu cầu: Y
+
+Không tạo đơn thanh toán.
+
+7. Sau khi thanh toán nhưng nguồn bất ngờ hết hàng:
+
+- Không gọi thành công giả.
+- Trạng thái đơn:
+  paid_waiting_stock
+
+- Báo khách:
+
+✅ Đã nhận thanh toán.
+
+⚠️ Sản phẩm vừa hết hàng tại nguồn.
+Đơn đã chuyển sang chờ admin xử lý.
+
+- Báo admin để:
+  giao thủ công, đổi nguồn hoặc hoàn tiền.
+
+==================================================
+B. NGÔN NGỮ VIỆT NAM VÀ ENGLISH
+==================================================
+
+1. Thêm trường users.language_code.
+
+Giá trị:
+
+vi
+en
+
+Mặc định:
+
+vi
+
+2. Khi user gửi /start lần đầu:
+
+Hiển thị:
+
+🌐 Chọn ngôn ngữ / Choose language
+
+🇻🇳 Tiếng Việt
+🇬🇧 English
+
+3. Menu chính:
+
+Tiếng Việt:
+
+🛍 Sản phẩm
+📦 Đơn hàng
+🌐 Ngôn ngữ
+💬 Hỗ trợ
+
+English:
+
+🛍 Products
+📦 Orders
+🌐 Language
+💬 Support
+
+4. Tạo file:
+
+bot/i18n.py
+
+Hoặc:
+
+locales/vi.json
+locales/en.json
+
+Không viết rải rác text tiếng Việt trong handler.
+
+Tất cả câu bot phải dùng:
+
+t(user, "translation_key")
+
+5. Dịch đầy đủ:
+
+- Menu
+- Chi tiết sản phẩm
+- Hết hàng
+- Nhập số lượng
+- Thanh toán
+- Chờ thanh toán
+- Thanh toán thành công
+- Thanh toán thiếu
+- Đơn hết hạn
+- API nguồn lỗi
+- Giao tài khoản
+- Đơn hàng
+- Hỗ trợ
+- Các nút quay lại, hủy và kiểm tra lại
+
+6. Khi user đổi ngôn ngữ:
+
+- Lưu database.
+- Áp dụng ngay.
+- Không cần restart bot.
+
+7. Tiền tệ:
+
+- SePay hiển thị VND.
+- Binance/USDT hiển thị USDT.
+- Không tự dịch tên sản phẩm và mô tả do admin nhập.
+- Web cho phép nhập:
+  description_vi
+  description_en
+
+Nếu description_en trống:
+  dùng description_vi.
+
+==================================================
+C. CHỌN PHƯƠNG THỨC THANH TOÁN
+==================================================
+
+Sau khi khách nhập số lượng hợp lệ:
+
+Không hỏi xác nhận đơn.
+
+Tạo order draft và hiển thị:
+
+💳 CHỌN PHƯƠNG THỨC THANH TOÁN
+
+🏦 Chuyển khoản ngân hàng
+🟡 Binance Pay
+🟨 USDT BEP20
+🔴 USDT TRC20
+❌ Hủy đơn
+
+Chỉ hiện phương thức đang được admin bật.
+
+English:
+
+💳 CHOOSE PAYMENT METHOD
+
+🏦 Bank transfer
+🟡 Binance Pay
+🟨 USDT BEP20
+🔴 USDT TRC20
+❌ Cancel order
+
+==================================================
+D. DATABASE THANH TOÁN
+==================================================
+
+Bổ sung bảng payment_methods:
+
+- id
+- method_code
+- display_name_vi
+- display_name_en
+- is_active
+- config_encrypted
+- created_at
+- updated_at
+
+method_code:
+
+sepay
+binance_pay
+usdt_bep20
+usdt_trc20
+
+Bổ sung orders:
+
+- payment_method
+- payment_currency
+- exchange_rate
+- expected_crypto_amount
+- received_crypto_amount
+- payment_address
+- payment_memo
+- payment_txid
+- payment_network
+- confirmations
+- required_confirmations
+- payment_expires_at
+- paid_at
+
+Tạo bảng crypto_transactions:
+
+- id
+- network
+- token_symbol
+- token_contract
+- txid
+- from_address
+- to_address
+- amount
+- block_number
+- confirmations
+- matched_order_id
+- status
+- raw_json
+- detected_at
+- confirmed_at
+
+Tạo unique index:
+
+network + txid + log_index
+
+để không xử lý giao dịch hai lần.
+
+==================================================
+E. TỶ GIÁ VND SANG USDT
+==================================================
+
+Admin cấu hình một trong hai chế độ:
+
+1. Tỷ giá cố định
+2. Tỷ giá tự động + phần trăm dự phòng
+
+Ví dụ:
+
+1 USDT = 26.500 VND
+
+Đơn 40.000 VND:
+
+40.000 / 26.500 = 1.5094 USDT
+
+Làm tròn theo cấu hình, ví dụ 1.51 USDT.
+
+Lưu exchange_rate vào order tại thời điểm tạo thanh toán.
+
+Không thay đổi số USDT của đơn cũ khi tỷ giá đổi.
+
+Cho phép thêm crypto_markup_percent để bù biến động và phí.
+
+==================================================
+F. BINANCE PAY
+==================================================
+
+Hỗ trợ hai chế độ riêng biệt:
+
+1. Binance Pay Merchant API
+2. Binance Pay ID thủ công
+
+--------------------------------------------------
+F1. BINANCE PAY MERCHANT API
+--------------------------------------------------
+
+Cấu hình web:
+
+- Merchant ID
+- API Key
+- Secret Key
+- Webhook URL
+- Webhook public key/certificate
+- Currency mặc định: USDT
+- Thời gian hết hạn
+
+Không hiển thị key đầy đủ.
+
+Khi khách chọn Binance Pay:
+
+- Gọi Binance Pay Create Order API.
+- Tạo merchantTradeNo duy nhất.
+- amount = số USDT cần thanh toán.
+- currency = USDT.
+- Lưu prepayId.
+- Nhận checkoutUrl hoặc universalUrl/QR content.
+- Gửi QR hoặc nút mở Binance Pay cho khách.
+
+Webhook Binance Pay:
+
+- Xác minh chữ ký đúng theo tài liệu chính thức.
+- Không tin payload chưa xác minh.
+- Khi trạng thái thành công:
+  payment_status = paid
+  gọi process_paid_order đúng một lần.
+
+Nút:
+
+🟡 Open Binance Pay
+🔄 Check payment
+❌ Cancel
+
+Không dùng Binance Pay ID cá nhân cho luồng Merchant API.
+
+--------------------------------------------------
+F2. BINANCE PAY ID THỦ CÔNG
+--------------------------------------------------
+
+Cấu hình:
+
+- Binance Pay ID
+- Tên người nhận
+- QR ảnh cố định
+- Hướng dẫn thanh toán
+- Admin Telegram ID
+
+Hiển thị:
+
+🟡 BINANCE PAY
+
+Pay ID: <code>{pay_id}</code>
+Recipient: {recipient}
+Amount: <b>{amount} USDT</b>
+Order code: <code>{order_code}</code>
+
+Sau khi thanh toán, gửi Transaction ID hoặc ảnh biên nhận.
+
+Lưu ý:
+
+- Không tự động đánh dấu đã thanh toán chỉ từ ảnh.
+- Tạo trạng thái:
+  waiting_manual_verification
+- Admin phải bấm:
+  ✅ Approve payment
+  ❌ Reject payment
+
+Chỉ sau khi admin duyệt mới gọi API nguồn.
+
+==================================================
+G. USDT BEP20
+==================================================
+
+Cấu hình web:
+
+- Địa chỉ ví nhận BEP20
+- USDT contract address BEP20
+- BSC RPC URL
+- BSCScan API key nếu sử dụng
+- Số confirmation yêu cầu
+- Chu kỳ kiểm tra
+- Bật/tắt
+
+Khuyến nghị confirmations mặc định: 12,
+nhưng để admin tự cấu hình.
+
+Khi khách chọn:
+
+🟨 USDT BEP20
+
+Hiển thị:
+
+Network: BNB Smart Chain (BEP20)
+Token: USDT
+Address:
+<code>{wallet_address}</code>
+
+Amount:
+<code>{exact_amount} USDT</code>
+
+⚠️ Chỉ gửi USDT qua mạng BEP20.
+Gửi sai mạng có thể mất tài sản.
+
+Gửi QR chứa địa chỉ ví.
+
+Đối chiếu giao dịch:
+
+- Chỉ chấp nhận đúng USDT contract đã cấu hình.
+- to_address phải đúng ví shop.
+- amount phải đúng số tiền đơn.
+- giao dịch phải thành công.
+- đủ confirmations mới paid.
+- txid chỉ dùng một lần.
+
+Không kiểm tra chỉ bằng số dư ví.
+
+==================================================
+H. USDT TRC20
+==================================================
+
+Cấu hình web:
+
+- Địa chỉ ví TRON
+- USDT TRC20 contract address
+- TronGrid API key
+- Số confirmation yêu cầu
+- Chu kỳ kiểm tra
+- Bật/tắt
+
+Khi khách chọn:
+
+🔴 USDT TRC20
+
+Hiển thị:
+
+Network: TRON (TRC20)
+Token: USDT
+Address:
+<code>{wallet_address}</code>
+
+Amount:
+<code>{exact_amount} USDT</code>
+
+⚠️ Chỉ gửi USDT qua mạng TRC20.
+
+Dùng TronGrid để đọc lịch sử TRC20 của địa chỉ.
+
+Chỉ chấp nhận:
+
+- đúng contract USDT
+- đúng địa chỉ nhận
+- đúng amount
+- giao dịch confirmed
+- chưa từng được sử dụng
+
+==================================================
+I. PHÂN BIỆT CÁC ĐƠN CRYPTO CHUNG MỘT VÍ
+==================================================
+
+Vì BEP20/TRC20 transfer thường không có nội dung chuyển khoản,
+không được tạo nhiều đơn cùng số tiền giống nhau trong cùng thời gian.
+
+Dùng “unique amount”:
+
+Ví dụ giá cơ bản:
+1.5100 USDT
+
+Đơn A:
+1.5101 USDT
+
+Đơn B:
+1.5102 USDT
+
+Đơn C:
+1.5103 USDT
+
+Quy tắc:
+
+- Thêm số lẻ định danh rất nhỏ.
+- Lưu chính xác expected_crypto_amount.
+- Không vượt mức sai số admin cấu hình.
+- Khi đơn hết hạn, unique amount được giải phóng sau khoảng an toàn.
+
+Hoặc cho phép admin cấu hình một địa chỉ riêng cho mỗi đơn nếu hệ thống ví hỗ trợ.
+
+==================================================
+J. THEO DÕI THANH TOÁN CRYPTO
+==================================================
+
+Tạo background worker riêng cho:
+
+- Binance Pay pending orders
+- BEP20 pending orders
+- TRC20 pending orders
+
+Mỗi worker lỗi không làm web hoặc bot dừng.
+
+Không polling nhanh hơn giới hạn API.
+
+Khi tìm thấy giao dịch:
+
+detected
+→ confirming
+→ paid
+
+Bot cập nhật:
+
+⏳ Đã phát hiện giao dịch.
+Đang chờ X xác nhận mạng.
+
+Khi đủ:
+
+✅ Thanh toán thành công.
+Đang lấy hàng tự động...
+
+Sau đó xóa QR/thông tin thanh toán cũ và gọi API nguồn.
+
+==================================================
+K. HẾT HẠN VÀ THANH TOÁN TRỄ
+==================================================
+
+Nếu đơn hết hạn:
+
+payment_status = expired
+
+Nếu phát hiện crypto vào sau thời hạn:
+
+payment_status = late_payment
+
+Không tự mua hàng.
+
+Báo admin xử lý thủ công.
+
+Không bỏ qua tiền khách đã gửi.
+
+==================================================
+L. GIAO DIỆN CÀI ĐẶT WEB
+==================================================
+
+Cài đặt → Thanh toán
+
+Các tab:
+
+🏦 SePay
+🟡 Binance Pay
+🟨 USDT BEP20
+🔴 USDT TRC20
+
+Mỗi tab có:
+
+- Bật/tắt
+- Kiểm tra cấu hình
+- Tạo thanh toán thử
+- Xem log
+- Trạng thái kết nối
+- Lỗi gần nhất
+
+Binance Pay phải cho chọn:
+
+Merchant API
+Pay ID thủ công
+
+==================================================
+M. BẢO MẬT
+==================================================
+
+- Không lưu seed phrase.
+- Không lưu private key ví crypto.
+- Chỉ lưu địa chỉ nhận.
+- Không ghi API secret vào logs.
+- Mã hóa API key.
+- Không tin ảnh biên nhận.
+- Không giao hàng khi giao dịch chưa được xác nhận.
+- Chống xử lý txid trùng.
+- Chống callback mua lặp.
+- process_paid_order phải idempotent.
+- Không tự động hoàn crypto bằng private key từ server.
+
+==================================================
+N. TEST BẮT BUỘC
+==================================================
+
+1. Nguồn stock = 0:
+   - nút đỏ
+   - không có Mua ngay
+   - callback cũ bị từ chối
+   - không tạo QR
+
+2. Chọn English:
+   - toàn bộ menu và thanh toán dùng tiếng Anh
+
+3. SePay:
+   - vẫn hoạt động như cũ
+
+4. Binance Pay ID:
+   - tạo yêu cầu chờ admin duyệt
+   - không tự giao từ ảnh
+
+5. Binance Pay Merchant:
+   - tạo order
+   - webhook ký hợp lệ mới paid
+
+6. BEP20:
+   - sai mạng không nhận
+   - sai token contract không nhận
+   - đúng giao dịch nhưng chưa đủ confirmations chưa giao
+   - đủ confirmations giao một lần
+
+7. TRC20:
+   - đúng địa chỉ, contract, amount
+   - đủ confirmations mới giao
+
+8. Webhook hoặc blockchain worker chạy lại:
+   - không giao hàng lần hai
+
+9. Nguồn hết hàng sau khi đã trả tiền:
+   - chuyển paid_waiting_stock
+   - không báo hoàn thành giả

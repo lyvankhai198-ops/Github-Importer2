@@ -1,0 +1,659 @@
+CẬP NHẬT PROJECT HIỆN TẠI.
+
+Không tạo project mới.
+Không xóa database.
+Không xóa người dùng, số dư, sản phẩm, đơn hàng, API nguồn hoặc cấu hình thanh toán hiện có.
+
+MỤC TIÊU:
+
+1. Người dùng tự tạo API Key ngay trên Telegram Bot.
+2. Khi bấm /start, hiển thị ngay danh sách sản phẩm mới nhất.
+3. Web mục Người dùng có thể cộng tiền hoặc trừ tiền ví đúng như giao diện mẫu.
+4. Khách nạp ví qua thanh toán tự động, khi nhận tiền thành công hệ thống tự cộng số dư.
+5. Sau khi hoàn thành phải kiểm thử, commit và push toàn bộ code lên GitHub.
+
+==================================================
+1. /START HIỂN THỊ NGAY SẢN PHẨM
+==================================================
+
+Khi người dùng gửi:
+
+/start
+
+Luồng phải là:
+
+1. Tạo hoặc cập nhật thông tin user.
+2. Nếu là lần đầu sử dụng và chưa chọn ngôn ngữ:
+   - hiển thị chọn ngôn ngữ
+   - sau khi chọn ngôn ngữ, tự mở danh sách sản phẩm
+3. Nếu đã có ngôn ngữ:
+   - tự đồng bộ sản phẩm từ tất cả API nguồn đang bật
+   - hiển thị danh sách sản phẩm ngay
+
+Không gửi một màn hình chào riêng rồi bắt bấm Sản phẩm.
+
+Có thể gửi lời chào ngắn phía trên:
+
+Tiếng Việt:
+👋 Chào mừng bạn đến với AI Center.
+
+English:
+👋 Welcome to AI Center.
+
+Sau đó hiển thị ngay danh sách sản phẩm.
+
+Giữ menu dưới:
+
+Tiếng Việt:
+🛍 Sản phẩm
+📦 Đơn hàng
+👛 Ví
+🔗 API
+🌐 Ngôn ngữ
+💬 Hỗ trợ
+
+English:
+🛍 Products
+📦 Orders
+👛 Wallet
+🔗 API
+🌐 Language
+💬 Support
+
+==================================================
+2. TỰ ĐỒNG BỘ KHI /START VÀ SẢN PHẨM
+==================================================
+
+Khi người dùng:
+
+- gửi /start
+- gửi /products
+- bấm 🛍 Sản phẩm
+- bấm 🛍 Products
+
+Bot phải gọi:
+
+sync_active_supplier_products()
+
+trước khi render danh sách.
+
+Yêu cầu:
+
+- timeout riêng từng nguồn
+- chạy song song
+- một nguồn lỗi không làm mất danh sách
+- không đặt tồn kho nguồn lỗi về 0
+- cache tối đa 30 giây
+- không cần bấm Làm mới
+
+==================================================
+3. CẤP API KEY NGAY TRÊN BOT
+==================================================
+
+Khi khách bấm:
+
+🔗 API
+hoặc
+/api
+
+Hiển thị:
+
+Tiếng Việt:
+
+🔗 QUẢN LÝ API
+
+Trạng thái: Chưa tạo / Đang hoạt động / Đã khóa
+Số dư VND: ...
+Số dư USDT: ...
+Giới hạn: ... request/phút
+Lần dùng gần nhất: ...
+
+Nút:
+
+🔑 Tạo API Key
+♻️ Tạo lại API Key
+🗑 Thu hồi API Key
+📘 Hướng dẫn API
+📦 Đơn hàng API
+⬅️ Quay lại
+
+English:
+
+🔗 API MANAGEMENT
+
+Status: Not created / Active / Suspended
+VND balance: ...
+USDT balance: ...
+Rate limit: ... requests/minute
+Last used: ...
+
+Buttons:
+
+🔑 Create API Key
+♻️ Regenerate API Key
+🗑 Revoke API Key
+📘 API Documentation
+📦 API Orders
+⬅️ Back
+
+==================================================
+4. TẠO API KEY
+==================================================
+
+Khi bấm Tạo API Key:
+
+- xác nhận user chưa có API Key active
+- sinh key mạnh bằng secrets.token_urlsafe()
+- định dạng:
+
+sk_live_xxxxxxxxxxxxxxxxxxxxxxxxx
+
+- chỉ hiển thị full key đúng một lần
+- lưu hash của key vào database
+- lưu prefix để admin nhận diện
+- không lưu plaintext
+
+Tin nhắn:
+
+✅ API Key của bạn đã được tạo.
+
+<code>sk_live_xxxxxxxxxxxxxxxxx</code>
+
+⚠️ Hãy lưu lại ngay. API Key sẽ không được hiển thị lại.
+
+Nút:
+
+📘 Xem hướng dẫn
+🗑 Thu hồi Key
+
+Khi tạo lại key:
+
+- revoke key cũ ngay
+- tạo key mới
+- key cũ không còn dùng được
+
+==================================================
+5. API DÀNH CHO KHÁCH
+==================================================
+
+Header:
+
+X-API-Key: sk_live_xxxxxxxxx
+
+Endpoint:
+
+GET /api/v1/products
+GET /api/v1/products/{product_id}
+GET /api/v1/balance
+GET /api/v1/orders
+GET /api/v1/orders/{order_id}
+POST /api/v1/orders
+GET /api/v1/me
+
+POST /api/v1/orders body:
+
+{
+  "product_id": "PRODUCT_ID",
+  "quantity": 1,
+  "client_order_id": "CLIENT-ORDER-001",
+  "currency": "VND"
+}
+
+Quy tắc:
+
+- client_order_id unique theo API client
+- gửi lại cùng client_order_id thì trả kết quả cũ
+- không tạo đơn trùng
+- trừ tiền ví trước khi mua
+- nếu nguồn lỗi và chưa giao được thì hoàn lại ví
+- không để số dư âm
+- một đơn chỉ giao một lần
+
+==================================================
+6. WEB — ĐIỀU CHỈNH VÍ NGƯỜI DÙNG
+==================================================
+
+Tại:
+
+Người dùng → Điều chỉnh ví người mua
+
+Giữ giao diện giống ảnh mẫu.
+
+Các trường:
+
+Loại ví:
+- VND
+- USDT
+
+Thao tác:
+- Nạp vào ví
+- Trừ khỏi ví
+
+Người mua:
+- dropdown tìm theo username
+- full name
+- Chat ID
+- số dư hiện tại
+
+Số tiền:
+- dùng Decimal
+- VND không có phần thập phân
+- USDT cho phép phần thập phân
+
+Hưởng gói khuyến mãi:
+- Không
+- Có
+
+Ghi chú:
+- bắt buộc nhập lý do nếu trừ tiền
+- tùy chọn khi cộng tiền
+
+Nút động:
+
+Nếu chọn Nạp vào ví:
+➕ Nạp vào ví
+
+Nếu chọn Trừ khỏi ví:
+➖ Trừ khỏi ví
+
+Nút:
+🔄 Làm mới danh sách
+
+==================================================
+7. XỬ LÝ CỘNG/TRỪ VÍ
+==================================================
+
+Không được sửa trực tiếp balance mà không tạo lịch sử.
+
+Mỗi thao tác phải chạy trong database transaction:
+
+1. khóa bản ghi ví
+2. đọc balance_before
+3. kiểm tra số tiền hợp lệ
+4. tính balance_after
+5. cập nhật ví
+6. tạo wallet_transaction
+7. commit
+8. thông báo cho user
+
+wallet_transaction gồm:
+
+- user_id
+- chat_id
+- type
+- currency
+- amount
+- balance_before
+- balance_after
+- reference_type
+- reference_id
+- note
+- created_by
+- created_at
+
+type:
+
+admin_add
+admin_subtract
+deposit
+purchase
+refund
+promotion
+adjustment
+
+Không cho trừ quá số dư.
+
+==================================================
+8. THÔNG BÁO KHI ADMIN ĐIỀU CHỈNH VÍ
+==================================================
+
+Khi admin cộng VND:
+
+✅ Ví của bạn vừa được cộng tiền.
+
+Số tiền: 100.000đ
+Số dư mới: 250.000đ
+Nội dung: {note}
+
+Khi admin trừ VND:
+
+💸 Ví của bạn vừa được điều chỉnh giảm.
+
+Số tiền: 20.000đ
+Số dư mới: 230.000đ
+Nội dung: {note}
+
+English phải dịch toàn bộ tương ứng.
+
+==================================================
+9. NẠP VÍ TỰ ĐỘNG
+==================================================
+
+Khi khách bấm:
+
+👛 Ví
+→ ➕ Nạp tiền
+
+Cho chọn:
+
+🏦 Chuyển khoản ngân hàng
+🟡 Binance Pay
+🌐 USDT BEP20
+🌐 USDT TRC20
+
+Khách nhập số tiền muốn nạp.
+
+Hệ thống tạo:
+
+wallet_deposit_order
+
+Các trường:
+
+- deposit_code
+- user_id
+- chat_id
+- currency
+- expected_amount
+- payment_method
+- payment_status
+- created_at
+- expires_at
+- paid_at
+- external_transaction_id
+- credited_at
+
+Trạng thái:
+
+pending
+paid
+credited
+expired
+cancelled
+failed
+
+==================================================
+10. NẠP VÍ QUA SEPAY
+==================================================
+
+Khi khách chọn chuyển khoản:
+
+- sinh mã nạp riêng
+- ví dụ:
+
+NAP5704581851A1B2
+
+- QR chứa:
+  - đúng ngân hàng
+  - đúng số tài khoản
+  - đúng số tiền
+  - đúng nội dung chuyển khoản
+
+Khi webhook SePay nhận tiền:
+
+1. xác thực webhook
+2. kiểm tra giao dịch tiền vào
+3. lấy nội dung giao dịch
+4. tìm deposit_code
+5. kiểm tra đúng số tiền
+6. kiểm tra deposit chưa credited
+7. đánh dấu paid
+8. cộng balance_vnd
+9. tạo wallet_transaction type = deposit
+10. đánh dấu credited
+11. gửi thông báo user
+
+Tất cả trong transaction an toàn.
+
+Không cần admin cộng thủ công.
+
+==================================================
+11. NẠP VÍ QUA BINANCE
+==================================================
+
+Binance Pay:
+
+- xác minh giao dịch qua Binance API Management nếu API có quyền đọc Pay History
+- đúng Transaction ID
+- đúng Binance ID nhận
+- đúng USDT
+- đúng số tiền
+- chưa dùng giao dịch này
+- deposit chưa credited
+
+BEP20/TRC20:
+
+- xác minh on-chain
+- đúng mạng
+- đúng token USDT
+- đúng địa chỉ nhận
+- đúng số tiền
+- đủ confirmations
+- tx hash chưa từng dùng
+
+Sau khi xác minh:
+
+- cộng balance_usdt
+- tạo wallet_transaction
+- đánh dấu credited
+- thông báo user
+
+==================================================
+12. CHỐNG CỘNG TIỀN HAI LẦN
+==================================================
+
+Tạo unique index:
+
+provider + external_transaction_id
+
+Một giao dịch chỉ được cộng ví đúng một lần.
+
+Webhook gửi lại nhiều lần:
+- trả 200
+- không cộng lại
+
+Khách bấm Kiểm tra thanh toán nhiều lần:
+- không cộng trùng
+
+==================================================
+13. MÀN HÌNH VÍ TRÊN BOT
+==================================================
+
+Tiếng Việt:
+
+👛 VÍ CỦA TÔI
+
+Số dư VND: 250.000đ
+Số dư USDT: 8.44 USDT
+Tổng đã nạp: ...
+Tổng đã chi: ...
+
+Nút:
+
+➕ Nạp tiền
+📜 Lịch sử ví
+🔗 API
+🏠 Trang chủ
+
+English:
+
+👛 MY WALLET
+
+VND balance: ...
+USDT balance: ...
+Total deposited: ...
+Total spent: ...
+
+Buttons:
+
+➕ Deposit
+📜 Wallet history
+🔗 API
+🏠 Home
+
+==================================================
+14. THANH TOÁN BẰNG VÍ
+==================================================
+
+Trong phương thức thanh toán sản phẩm thêm:
+
+👛 Thanh toán bằng Ví
+
+Nếu ngôn ngữ Việt và đơn giá VND:
+- dùng balance_vnd
+
+Nếu đơn giá USDT:
+- dùng balance_usdt
+
+Nếu đủ tiền:
+
+- trừ ví
+- đánh dấu đơn paid
+- giao hàng
+- tạo wallet_transaction type = purchase
+
+Nếu giao hàng thất bại:
+
+- hoàn lại đúng loại ví
+- tạo wallet_transaction type = refund
+- không mất tiền khách
+
+==================================================
+15. DANH SÁCH NGƯỜI DÙNG TRÊN WEB
+==================================================
+
+Bảng người dùng có:
+
+- Chat ID
+- Username
+- Họ tên
+- Balance VND
+- Balance USDT
+- Tổng nạp
+- Tổng chi
+- API status
+- Trạng thái bot
+- Ngày tạo
+
+Nút mỗi user:
+
+➕ Cộng ví
+➖ Trừ ví
+📜 Lịch sử ví
+🔑 API
+✉️ Gửi tin
+🔒 Khóa
+
+==================================================
+16. COMMAND KHÔNG HỢP LỆ
+==================================================
+
+Tiếng Việt:
+
+⚠️ Lệnh không hợp lệ. Các lệnh được hỗ trợ:
+
+/start – Bắt đầu và xem sản phẩm
+/menu – Mở menu chính
+/products – Xem sản phẩm
+/orders – Xem đơn hàng
+/wallet – Mở ví
+/api – Quản lý API
+/support – Hỗ trợ
+/find – Tìm đơn hàng
+
+English dịch đầy đủ tương ứng.
+
+Lệnh /product có thể tự chuyển thành /products.
+
+==================================================
+17. BẢO MẬT
+==================================================
+
+- API Key chỉ lưu hash
+- Không log API Key đầy đủ
+- Không log Secret Key
+- Rate limit theo API client
+- Không cho số dư âm
+- Dùng Decimal, không dùng float
+- Mọi thay đổi ví đều có audit log
+- Web admin phải kiểm tra quyền
+- CSRF protection cho form điều chỉnh ví
+- Chống gửi form hai lần
+- API order idempotent
+
+==================================================
+18. TEST BẮT BUỘC
+==================================================
+
+1. User mới /start:
+- chọn ngôn ngữ
+- tự hiện sản phẩm
+
+2. User cũ /start:
+- tự sync
+- hiện sản phẩm ngay
+
+3. User tạo API Key:
+- dùng được
+- chỉ thấy key đầy đủ một lần
+
+4. Admin cộng ví:
+- số dư đúng
+- có lịch sử
+- user nhận thông báo
+
+5. Admin trừ ví:
+- không cho âm
+- có ghi chú
+- user nhận thông báo
+
+6. Nạp qua SePay:
+- webhook tới
+- tự cộng ví
+- không cộng trùng
+
+7. Nạp qua Binance:
+- xác minh đúng
+- tự cộng USDT
+- không cộng trùng
+
+8. Mua bằng ví:
+- trừ tiền
+- giao hàng
+- lỗi giao hàng thì hoàn ví
+
+9. API order:
+- trừ ví
+- giao hàng
+- chống đơn trùng
+
+10. Restart:
+- bot, web, API, webhook và scheduler tự chạy
+
+==================================================
+19. GITHUB
+==================================================
+
+Sau khi hoàn tất:
+
+1. Chạy migration an toàn.
+2. Chạy toàn bộ test.
+3. Kiểm tra syntax.
+4. Restart bot.
+5. Kiểm tra web.
+6. Không commit file chứa secret.
+7. Kiểm tra .gitignore gồm:
+   - .env
+   - database local
+   - uploads nhạy cảm
+   - logs
+   - API keys
+8. Commit với nội dung:
+
+feat: add wallet auto deposit, user API keys and start product flow
+
+9. Push toàn bộ thay đổi lên branch main của GitHub remote hiện tại.
+10. Báo rõ:
+   - commit hash
+   - số file thay đổi
+   - migration đã chạy
+   - test đã pass

@@ -1,0 +1,186 @@
+CHỈ SỬA MỤC "THÔNG TIN NGƯỜI DÙNG" TRÊN BOT TELEGRAM.
+
+Không sửa phần khác.
+Không tạo project mới.
+Không reset database.
+Không làm mất dữ liệu người dùng.
+Không sửa API, sản phẩm, đơn hàng, ví hoặc thanh toán.
+
+==================================================
+1. THIẾT KẾ LẠI GIAO DIỆN
+==================================================
+
+Thiết kế lại phần "Thông tin" theo phong cách hiện đại, gọn gàng, dễ đọc trên điện thoại.
+
+Hiển thị theo đúng thứ tự:
+
+🌅 Chào buổi sáng / chiều / tối {Tên người dùng}
+
+🆔 ID: {Telegram ID}
+
+━━━━━━━━━━━━━━━━━━━━━━
+
+👑 Cấp bậc:
+{Tên cấp}
+
+💰 Số dư:
+{balance} VNĐ
+
+📉 Tổng chi tiêu:
+{total_spent} VNĐ
+
+📦 Tổng đơn hàng:
+{total_orders}
+
+🛍 Tổng tài khoản đã mua:
+{total_accounts}
+
+━━━━━━━━━━━━━━━━━━━━━━
+
+📈 Tiến độ lên cấp tiếp theo
+
+████████░░ 82%
+
+Còn thiếu:
+xxx VNĐ
+
+để lên:
+
+👑 {Tên cấp tiếp theo}
+
+==================================================
+2. HỆ THỐNG CẤP BẬC
+==================================================
+
+Thêm hệ thống cấp bậc tự động.
+
+Mỗi user luôn có đúng một cấp.
+
+Cấp được tính theo:
+
+TỔNG CHI TIÊU
+
+KHÔNG phải số dư.
+
+==================================================
+3. CẤP MẶC ĐỊNH
+==================================================
+
+Tạo các cấp:
+
+🥉 Thành viên mới
+
+🥈 Đồng
+
+🥇 Bạc
+
+💎 Vàng
+
+👑 Bạch Kim
+
+⚜️ Kim Cương
+
+🏆 Đại lý
+
+🚀 Đại lý VIP
+
+🔥 Tổng đại lý
+
+💠 Nhà phân phối
+
+🌟 Nhà phân phối cấp cao
+
+👑 Đối tác chiến lược
+
+==================================================
+4. TỰ ĐỘNG NÂNG CẤP
+==================================================
+
+Sau mỗi đơn hàng thành công:
+
+- cộng tổng chi tiêu
+- kiểm tra lại cấp
+- nếu đủ điều kiện thì nâng cấp ngay
+- lưu vào database
+
+Nếu vừa lên cấp mới:
+
+Bot gửi:
+
+🎉 CHÚC MỪNG!
+
+Bạn đã được nâng cấp lên
+
+👑 {Tên cấp}
+
+Cảm ơn bạn đã đồng hành cùng AI Center.
+
+==================================================
+5. ADMIN CÓ THỂ CHỈNH
+==================================================
+
+Trong Web Admin tạo mục:
+
+"Cấp bậc"
+
+Admin có thể:
+
+- thêm cấp
+- sửa tên
+- sửa emoji
+- sửa ngưỡng doanh số
+- đổi thứ tự
+- bật/tắt cấp
+
+Không cần sửa code khi muốn thay đổi.
+
+==================================================
+6. THANH TIẾN ĐỘ
+==================================================
+
+Thanh tiến độ tính theo:
+
+(doanh số hiện tại - ngưỡng cấp hiện tại)
+
+chia
+
+(ngưỡng cấp kế tiếp - ngưỡng cấp hiện tại)
+
+Hiển thị %
+
+Nếu đã ở cấp cao nhất:
+
+Hiển thị:
+
+🏆 Bạn đã đạt cấp cao nhất.
+
+Không hiện thanh tiến độ.
+
+==================================================
+7. YÊU CẦU
+==================================================
+
+Không dùng dữ liệu cứng.
+
+Đọc dữ liệu trực tiếp từ database.
+
+Không reset user.
+
+Không reset lịch sử.
+
+Không làm mất tổng chi tiêu hiện có.
+
+Giữ tương thích toàn bộ hệ thống hiện tại.
+
+Sau khi hoàn thành:
+
+- Test nâng cấp cấp bậc.
+- Test giao diện trên Telegram iPhone.
+- Commit.
+- Push GitHub.
+
+Báo lại:
+- file đã sửa
+- migration (nếu có)
+- commit hash
+- push thành công.

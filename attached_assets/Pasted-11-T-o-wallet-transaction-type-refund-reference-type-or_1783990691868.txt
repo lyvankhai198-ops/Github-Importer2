@@ -1,0 +1,215 @@
+11. Tạo wallet_transaction:
+
+   - type = refund
+
+   - reference_type = order_issue
+
+   - reference_id = issue_id
+
+   - order_id
+
+   - amount
+
+   - currency
+
+   - note
+
+   - created_by
+
+12. Cập nhật:
+
+   - order.refunded_amount
+
+   - order.refunded_at
+
+   - order.refunded_by
+
+   - issue.status = refunded
+
+   - issue.handled_by
+
+   - issue.handled_at
+
+13. Commit một lần trong database transaction.
+
+14. Gửi thông báo user.
+
+Thông báo user:
+
+✅ HOÀN TIỀN THÀNH CÔNG
+
+🧾 Mã đơn: {order_code}
+
+💰 Số tiền hoàn: {refund_amount}
+
+👛 Số dư mới: {new_balance}
+
+Sau khi refund:
+
+- nút Hoàn tiền phải biến mất hoặc không còn hoạt động
+
+- bấm lại phải báo:
+
+  Giao dịch này đã được hoàn tiền trước đó.
+
+- không cộng lần hai
+
+==================================================
+
+5. TỪ CHỐI VÀ ĐÁNH DẤU ĐÃ XỬ LÝ
+
+==================================================
+
+Khi admin bấm Từ chối:
+
+- yêu cầu nhập lý do
+
+- issue.status = rejected
+
+- lưu admin và thời gian
+
+- gửi lý do cho user
+
+Khi admin bấm Đánh dấu đã xử lý:
+
+- issue.status = resolved
+
+- lưu admin và thời gian
+
+- không cộng ví
+
+==================================================
+
+6. AUDIT LOG
+
+==================================================
+
+Lưu đầy đủ:
+
+- admin_id
+
+- user_id
+
+- order_id
+
+- issue_id
+
+- action
+
+- refund_amount
+
+- currency
+
+- balance_before
+
+- balance_after
+
+- reason
+
+- created_at
+
+Không cho user thường xem audit log.
+
+==================================================
+
+7. TEST BẮT BUỘC
+
+==================================================
+
+Test 1:
+
+- user nhập email đúng
+
+- trả đúng đơn của họ
+
+Test 2:
+
+- user nhập email thuộc đơn người khác
+
+- không được xem
+
+Test 3:
+
+- cùng email có nhiều đơn
+
+- hiển thị danh sách chọn
+
+Test 4:
+
+- user gửi text báo lỗi
+
+- admin nhận đủ thông tin
+
+Test 5:
+
+- user gửi ảnh/video
+
+- admin nhận đúng media
+
+Test 6:
+
+- đơn 90 ngày, đã dùng 30 ngày
+
+- refund = sale_price × 60 / 90
+
+Test 7:
+
+- đơn hết bảo hành
+
+- refund = 0
+
+Test 8:
+
+- admin bấm hoàn tiền
+
+- ví user tăng đúng
+
+- wallet_transaction được tạo
+
+Test 9:
+
+- admin bấm lần hai
+
+- không cộng lại
+
+Test 10:
+
+- hai admin bấm gần như đồng thời
+
+- chỉ một transaction được thực hiện
+
+==================================================
+
+8. HOÀN THÀNH
+
+==================================================
+
+Sau khi sửa:
+
+- chạy migration an toàn nếu cần
+
+- chạy test
+
+- restart bot
+
+- kiểm tra Telegram thật
+
+- commit
+
+- push GitHub
+
+Commit message:
+
+feat: add order search, issue reporting and wallet refunds
+
+Báo lại:
+
+- file đã sửa/tạo
+
+- migration đã chạy
+
+- test đã pass
+
+- commit hash
+
+- push successful

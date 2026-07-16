@@ -1,0 +1,19 @@
+{# Shared order-status badge — always icon + text, never color alone (accessibility).
+   Color mapping follows the spec's fixed status→color legend:
+   Đã giao=green, Chờ xử lý=yellow, Đang xử lý=blue, Đặt trước=orange,
+   Lỗi=red, Đã hủy=gray, Chờ admin=purple, Đã hoàn tiền=teal. #}
+{% set sv = o.status.value if o.status.value is defined else o.status %}
+{% if sv == 'completed' %}<span class="badge-pill badge-pill-green">✅ Đã giao</span>
+{% elif sv == 'partial_delivery' %}<span class="badge-pill badge-pill-orange">⚠️ Giao thiếu</span>
+{% elif sv == 'pending_payment' %}<span class="badge-pill badge-pill-yellow">💳 Chờ thanh toán</span>
+{% elif sv == 'processing_api' %}<span class="badge-pill badge-pill-blue">🔄 Đang xử lý</span>
+{% elif sv == 'paid_waiting_stock' %}<span class="badge-pill badge-pill-orange">📦 Đặt trước (chờ hàng)</span>
+{% elif sv == 'pending_manual' %}<span class="badge-pill badge-pill-purple">🗂 Chờ admin</span>
+{% elif sv == 'waiting_manual_verification' %}<span class="badge-pill badge-pill-purple">🗂 Chờ admin xác nhận</span>
+{% elif sv == 'pending_seller_fulfillment' %}<span class="badge-pill badge-pill-purple">🗂 Chờ xử lý (seller)</span>
+{% elif sv == 'api_failed' %}<span class="badge-pill badge-pill-red">🚨 API lỗi</span>
+{% elif sv == 'delivery_failed' %}<span class="badge-pill badge-pill-red">🚨 Giao hàng lỗi</span>
+{% elif sv == 'failed' %}<span class="badge-pill badge-pill-red">❌ Thất bại</span>
+{% elif sv == 'payment_expired' %}<span class="badge-pill badge-pill-gray">⏰ Hết hạn TT</span>
+{% elif sv == 'cancelled' %}<span class="badge-pill badge-pill-gray">🚫 Đã hủy</span>
+{% else %}<span class="badge-pill badge-pill-gray">{{ sv }}</span>{% endif %}

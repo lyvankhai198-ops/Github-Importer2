@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}API Client #{{ client.id }} - AI Center{% endblock %}
+{% block page_title %}🔗 API Client #{{ client.id }}{% endblock %}
+{% block content %}
+
+<div class="row g-3 mb-3">
+  <div class="col-md-6">
+    <div class="card h-100">
+      <div class="card-body">
+        <h6 class="card-title">Thông tin</h6>
+        <p class="mb-1"><strong>Owner:</strong>
+          <a href="/users/{{ client.telegram_user_id }}">
+            {{ user.first_name if user else '' }} {{ ('@' + user.username) if user and user.username else '' }}
+          </a>
+          ({{ client.telegram_user_id }})
+        </p>
+        <p class="mb-1"><strong>Key:</strong> <code>{{ client.key_prefix or '—' }}••••</code></p>
+        <p class="mb-1"><strong>Trạng thái:</strong>
+          {% if client.status.value == "active" %}<span class="badge bg-success">Đang hoạt động</span>
+          {% elif client.status.value == "locked" %}<span class="badge bg-warning text-dark">Đã khóa</span>
+          {% else %}<span class="badge bg-secondary">Đã thu hồi</span>{% endif %}
+        </p>
+        <p class="mb-1"><strong>Giới hạn:</strong> {{ client.rate_limit_per_minute }}/phút, {{ client.daily_limit }}/ngày</p>
+        <p class="mb-1"><strong>Requests:</strong> {{ client.total_requests }} | <strong>Orders:</strong> {{ client.total_orders }}</p>
+        <p class="mb-1"><strong>Doanh thu:</strong>
+          {{ "{:,.0f}".format(client.total_revenue_vnd).replace(",", ".") }}đ /
+          {{ "%.2f"|format(client.total_revenue_usdt) }} USDT
+        </p>
+        <p class="mb-1"><strong>Lần dùng cuối:</strong> {{ client.last_used_at.strftime('%d/%m/%Y %H:%M') if client.last_used_at else 'Chưa dùng' }}</p>
+        <p class="mb-0"><strong>Ngày tạo:</strong> {{ client.created_at.strftime('%d/%m/%Y %H:%M') }}</p>
+      </div>
+      <div class="card-footer d-flex gap-2">
+        {% if client.status.value == "locked" %}
+        <form action="/api-clients/{{ client.id }}/unlock" method="post">
+          <button type="submit" class="btn btn-sm btn-success">Mở khóa</button>
+        </form>
+        {% else %}
+        <form action="/api-clients/{{ client.id }}/lock" method="post" onsubmit="return confirm('Khóa API client này? Khách hàng sẽ nhận lỗi 401 cho mọi request.')">
+          <button type="submit" class="btn btn-sm btn-outline-warning">Khóa</button>
+        </form>
+        {% endif %}
+        <form action="/api-clients/{{ client.id }}/reset-key" method="post" onsubmit="return confirm('Cấp key mới? Key cũ sẽ ngừng hoạt động ngay lập tức.')">
+          <button type="submit" class="btn btn-sm btn-outline-secondary">Cấp lại key</button>
+        </form>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="card h-100">
+      <div class="card-body">
+        <h6 class="card-title">Điều chỉnh ví</h6>
+        <form action="/api-clients/{{ client.id }}/adjust-wallet" method="post" class="d-flex flex-column gap-2">
+          <select name="currency" class="form-select form-select-sm">
+            <option value="VND">VND</option>
+            <option value="USDT">USDT</option>
+          </select>
+          <input type="number" step="any" name="amount" class="form-control form-control-sm" placeholder="Số tiền (âm để trừ)" required>
+          <input type="text" name="note" class="form-control form-control-sm" placeholder="Lý do">
+          <button type="submit" class="btn btn-sm btn-primary">Áp dụng</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card mb-3">
+  <div class="card-header">Đơn hàng qua API</div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm mb-0">
+        <thead><tr><th>Mã đơn</th><th>client_order_id</th><th>Sản phẩm</th><th>Trạng thái</th><th>Tổng tiền</th><th>Ngày tạo</th></tr></thead>
+        <tbody>
+          {% for o in orders %}
+          <tr>
+            <td><a href="/orders/{{ o.id }}"><code>{{ o.order_code }}</code></a></td>
+            <td><small>{{ o.client_order_id }}</small></td>
+            <td>{{ o.product.name if o.product else '—' }}</td>
+            <td><small>{{ o.status.value }}</small></td>
+            <td>{{ "{:,.0f}".format(o.total_price).replace(",", ".") if o.payment_currency == "VND" else "%.2f"|format(o.total_price) }} {{ o.payment_currency }}</td>
+            <td><small>{{ o.created_at.strftime('%d/%m %H:%M') }}</small></td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6" class="text-center text-muted py-3">Chưa có đơn hàng nào</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">Request log (100 gần nhất)</div>
+  <div class="card-body p-0">
+    <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+      <table class="table table-sm mb-0">
+        <thead><tr><th>Thời gian</th><th>Method</th><th>Endpoint</th><th>Status</th><th>IP</th></tr></thead>
+        <tbody>
+          {% for l in logs %}
+          <tr>
+            <td><small>{{ l.created_at.strftime('%d/%m %H:%M:%S') }}</small></td>
+            <td>{{ l.method }}</td>
+            <td><small>{{ l.endpoint }}</small></td>
+            <td>
+              {% if l.status_code and l.status_code < 300 %}<span class="badge bg-success">{{ l.status_code }}</span>
+              {% elif l.status_code and l.status_code < 500 %}<span class="badge bg-warning text-dark">{{ l.status_code }}</span>
+              {% else %}<span class="badge bg-danger">{{ l.status_code }}</span>{% endif %}
+            </td>
+            <td><small>{{ l.ip_address or '—' }}</small></td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5" class="text-center text-muted py-3">Chưa có request nào</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

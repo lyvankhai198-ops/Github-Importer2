@@ -1,0 +1,108 @@
+Sửa luồng thanh toán SePay trên bot Telegram hiện tại.
+
+Hiện trạng:
+- Webhook SePay đã được cấu hình.
+- Bot chưa gửi ảnh QR khi khách xác nhận mua.
+- Webhook chỉ nhận giao dịch, không phải chức năng tạo QR.
+
+Yêu cầu:
+
+1. Khi khách xác nhận mua hàng:
+- Chưa gọi API nguồn.
+- Tạo đơn với trạng thái pending_payment.
+- Sinh mã thanh toán duy nhất theo tiền tố đang cấu hình.
+
+Ví dụ:
+Tiền tố: ODER
+Mã thanh toán: ODERCF4B8D1A
+
+2. Lấy cấu hình từ database:
+- sepay_bank_name
+- sepay_bank_bin
+- sepay_account_number
+- sepay_account_owner
+- sepay_payment_prefix
+- payment_expiry_minutes
+
+3. Tạo URL ảnh VietQR theo cấu trúc:
+
+https://vietqr.app/img?acc={ACCOUNT_NUMBER}&bank={BANK_BIN_OR_CODE}&amount={AMOUNT}&des={PAYMENT_CODE}&template=compact&download=0&showinfo=1&fullacc=0&holder={ACCOUNT_OWNER}&store={SHOP_NAME}
+
+Phải URL-encode toàn bộ tham số bằng urllib.parse.urlencode.
+
+Không đưa SePay API Token hoặc Webhook Secret vào URL QR.
+
+4. Gửi QR cho khách bằng:
+
+await bot.send_photo(
+    chat_id=telegram_id,
+    photo=qr_url,
+    caption=payment_caption,
+    parse_mode="HTML",
+    reply_markup=payment_keyboard
+)
+
+5. Caption:
+
+💳 <b>THANH TOÁN ĐƠN HÀNG</b>
+
+Mã đơn: <code>{order_code}</code>
+Sản phẩm: {product_name}
+Số lượng: {quantity}
+Số tiền: <b>{formatted_amount}</b>
+
+Ngân hàng: {bank_name}
+Số tài khoản: <code>{account_number}</code>
+Chủ tài khoản: {account_owner}
+
+Nội dung chuyển khoản:
+<code>{payment_code}</code>
+
+⚠️ Vui lòng chuyển đúng số tiền và đúng nội dung.
+Đơn hết hạn sau {expiry_minutes} phút.
+
+6. Nút bên dưới:
+
+🔄 Kiểm tra thanh toán
+❌ Hủy đơn
+💬 Hỗ trợ
+
+7. Nếu Telegram không tải được ảnh từ qr_url:
+- tải ảnh QR bằng httpx
+- gửi bằng InputFile(BytesIO(response.content))
+- timeout 15 giây
+- báo lỗi rõ cho admin
+
+8. Kiểm tra cấu hình trước khi tạo QR.
+
+Nếu thiếu:
+- số tài khoản
+- mã ngân hàng/BIN
+- tên chủ tài khoản
+
+thì không tạo đơn giả thành công.
+
+Báo admin:
+“Thiếu cấu hình ngân hàng để tạo QR.”
+
+9. Webhook POST /webhooks/sepay:
+- kiểm tra header Authorization
+- giá trị phải bằng:
+  Apikey {WEBHOOK_SECRET}
+- tìm mã ODER... trong content hoặc transferContent
+- đối chiếu đủ tiền
+- đánh dấu paid
+- sau đó mới gọi API nguồn và giao tài khoản
+
+10. Nút “Kiểm tra thanh toán”:
+- chỉ đọc trạng thái từ database
+- tuyệt đối không tự đánh dấu đã thanh toán
+
+11. Test bắt buộc:
+- Tạo đơn 40.000đ
+- Bot phải gửi ảnh QR
+- QR chứa đúng số tiền 40.000
+- QR chứa đúng nội dung ODER...
+- Quét thử bằng app ngân hàng
+- Chưa có webhook thì không giao tài khoản
+- Webhook đủ tiền mới mua API nguồn và giao tài khoản

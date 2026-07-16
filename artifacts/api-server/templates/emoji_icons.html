@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Kho icon Telegram - AI Center{% endblock %}
+{% block page_title %}✨ Kho icon Telegram (Custom Emoji){% endblock %}
+{% block content %}
+<div class="card mb-3">
+  <div class="card-body">
+    <p class="text-muted mb-0">
+      Icon ở đây dùng để hiển thị đúng <b>Telegram Custom Emoji</b> khi bot gửi chi tiết sản phẩm
+      (định dạng <code>&lt;tg-emoji emoji-id="..."&gt;</code>). Sau khi thêm vào đây, icon sẽ xuất hiện
+      trong mục "Chọn icon sản phẩm" khi thêm/sửa sản phẩm. Hệ thống không lưu ảnh — chỉ lưu
+      <b>Custom Emoji ID</b> để Telegram tự hiển thị icon gốc.
+    </p>
+  </div>
+</div>
+
+<div class="card mb-3">
+  <div class="card-header"><h6 class="mb-0">📥 Nhập cả bộ icon từ link Telegram</h6></div>
+  <div class="card-body">
+    <form action="/emoji-icons/import" method="post" class="row g-2 align-items-end">
+      <div class="col-12 col-md-9">
+        <label class="form-label small">Link bộ pack hoặc tên bộ pack</label>
+        <input type="text" name="sticker_set" class="form-control" placeholder="https://t.me/addemoji/IconsEmoji_JABA" required>
+      </div>
+      <div class="col-12 col-md-3">
+        <button type="submit" class="btn btn-primary w-100">Nhập icon</button>
+      </div>
+    </form>
+    <div class="form-text mt-2">
+      Cần cấu hình Telegram Bot Token ở mục Cài đặt trước. Nếu hệ thống không tự lấy được (bot chưa cấu hình,
+      không kết nối được Telegram, hoặc link không hợp lệ), hãy thêm từng icon bằng tay ở form dưới đây.
+    </div>
+  </div>
+</div>
+
+<div class="card mb-3">
+  <div class="card-header"><h6 class="mb-0">➕ Thêm icon bằng tay</h6></div>
+  <div class="card-body">
+    <form action="/emoji-icons/add" method="post" class="row g-2 align-items-end">
+      <div class="col-12 col-md-4">
+        <label class="form-label small">Tên icon</label>
+        <input type="text" name="name" class="form-control" placeholder="VD: Kim cương xanh" required>
+      </div>
+      <div class="col-12 col-md-5">
+        <label class="form-label small">Custom Emoji ID</label>
+        <input type="text" name="custom_emoji_id" class="form-control" placeholder="VD: 5368324170671202286" required>
+      </div>
+      <div class="col-8 col-md-2">
+        <label class="form-label small">Emoji dự phòng</label>
+        <input type="text" name="fallback_emoji" class="form-control" value="⭐" maxlength="10" required>
+      </div>
+      <div class="col-4 col-md-1">
+        <button type="submit" class="btn btn-primary w-100">Thêm</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header"><h6 class="mb-0">Danh sách icon trong kho ({{ icons|length }})</h6></div>
+  <div class="table-responsive">
+    <table class="table align-middle mb-0">
+      <thead>
+        <tr>
+          <th style="width: 70px">Xem trước</th>
+          <th>Tên icon</th>
+          <th>Custom Emoji ID</th>
+          <th>Bộ pack</th>
+          <th>Trạng thái</th>
+          <th style="width: 160px">Hành động</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for icon in icons %}
+        <tr {% if not icon.is_active %}class="text-muted"{% endif %}>
+          <td style="font-size: 1.6rem">{{ icon.fallback_emoji }}</td>
+          <td>{{ icon.name }}</td>
+          <td><code>{{ icon.custom_emoji_id }}</code></td>
+          <td>{{ icon.sticker_set_name or '—' }}</td>
+          <td>
+            {% if icon.is_active %}
+            <span class="badge bg-success">Đang bật</span>
+            {% else %}
+            <span class="badge bg-secondary">Đã tắt</span>
+            {% endif %}
+          </td>
+          <td>
+            <div class="d-flex gap-1">
+              <form action="/emoji-icons/{{ icon.id }}/toggle" method="post">
+                <button type="submit" class="btn btn-sm btn-outline-warning">{{ "Tắt" if icon.is_active else "Bật" }}</button>
+              </form>
+              <form action="/emoji-icons/{{ icon.id }}/delete" method="post" onsubmit="return confirm('Xoá icon này khỏi kho? Sản phẩm đang dùng icon này sẽ không đổi cho tới khi admin chọn icon khác.')">
+                <button type="submit" class="btn btn-sm btn-outline-danger">🗑</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="text-center text-muted py-4">Kho icon đang trống — hãy nhập một bộ pack hoặc thêm icon bằng tay ở trên.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

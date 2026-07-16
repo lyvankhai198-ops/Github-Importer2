@@ -1,0 +1,618 @@
+CẬP NHẬT PROJECT HIỆN TẠI.
+
+Không tạo project mới.
+Không xóa database, người dùng, đơn hàng, sản phẩm, API nguồn hoặc cấu hình thanh toán hiện có.
+
+MỤC TIÊU:
+
+1. Khi khách nhập sai lệnh, bot hiển thị danh sách lệnh được hỗ trợ.
+2. Thêm chức năng Ví để khách nạp tiền trước và dùng số dư mua hàng sau.
+3. Web có thể cộng/trừ số dư người dùng.
+4. Thêm chức năng API để khách hàng lấy sản phẩm và mua hàng từ hệ thống của mình.
+5. API khách hàng phải có API Key riêng, hạn mức, lịch sử và bảo mật.
+
+==================================================
+1. XỬ LÝ LỆNH KHÔNG HỢP LỆ
+==================================================
+
+Khi khách nhập lệnh không tồn tại, ví dụ:
+
+/product
+/abc
+/test123
+
+Bot không được im lặng.
+
+Hiển thị đúng theo ngôn ngữ người dùng.
+
+Tiếng Việt:
+
+⚠️ Lệnh không hợp lệ. Các lệnh được hỗ trợ:
+
+/start – Bắt đầu và xem menu
+/menu – Mở menu chính
+/products – Xem sản phẩm
+/wallet – Mở ví
+/api – Quản lý API
+/orders – Xem đơn hàng
+/support – Hỗ trợ
+/find – Tìm đơn hàng
+
+English:
+
+⚠️ Invalid command. Supported commands:
+
+/start – Start and open menu
+/menu – Open the main menu
+/products – Show products
+/wallet – Open wallet
+/api – Manage API
+/orders – Show orders
+/support – Open support
+/find – Find an order
+
+Lệnh /product phải tự chuyển sang /products hoặc báo rõ dùng /products.
+
+==================================================
+2. MENU KHÁCH HÀNG
+==================================================
+
+Tiếng Việt:
+
+🛍 Sản phẩm
+📦 Đơn hàng
+👛 Ví
+🔗 API
+🌐 Ngôn ngữ
+💬 Hỗ trợ
+
+English:
+
+🛍 Products
+📦 Orders
+👛 Wallet
+🔗 API
+🌐 Language
+💬 Support
+
+Giữ nút:
+
+☰ Menu
+⬅️ Quay lại
+
+==================================================
+3. CẤU TRÚC VÍ NGƯỜI DÙNG
+==================================================
+
+Trong bảng users hoặc bảng wallets, thêm:
+
+- balance_vnd
+- balance_usdt
+- wallet_status
+- total_deposit_vnd
+- total_deposit_usdt
+- total_spent_vnd
+- total_spent_usdt
+- updated_at
+
+Không dùng một cột balance chung cho cả VND và USDT.
+
+Tạo bảng wallet_transactions:
+
+- id
+- user_id
+- type
+- currency
+- amount
+- balance_before
+- balance_after
+- reference_type
+- reference_id
+- note
+- created_by
+- created_at
+
+type gồm:
+
+deposit
+purchase
+refund
+admin_add
+admin_subtract
+adjustment
+
+==================================================
+4. MÀN HÌNH VÍ TRÊN BOT
+==================================================
+
+Tiếng Việt:
+
+👛 VÍ CỦA TÔI
+
+Số dư VND: 120.000đ
+Số dư USDT: 8.44 USDT
+
+Tổng đã nạp: ...
+Tổng đã mua: ...
+
+Nút:
+
+➕ Nạp tiền
+📜 Lịch sử ví
+🏠 Trang chủ
+
+English:
+
+👛 MY WALLET
+
+VND balance: ...
+USDT balance: ...
+
+Total deposited: ...
+Total spent: ...
+
+Buttons:
+
+➕ Deposit
+📜 Wallet history
+🏠 Home
+
+==================================================
+5. NẠP TIỀN VÀO VÍ
+==================================================
+
+Khách chọn:
+
+➕ Nạp tiền
+
+Bot cho chọn:
+
+🏦 Chuyển khoản ngân hàng
+🟡 Binance Pay
+🌐 USDT BEP20
+🌐 USDT TRC20
+
+Sau khi thanh toán thành công:
+
+- không tạo đơn sản phẩm
+- cộng tiền vào ví
+- tạo wallet_transaction type = deposit
+- gửi thông báo:
+
+✅ Nạp ví thành công
+
+Số tiền: 100.000đ
+Số dư mới: 250.000đ
+
+Nếu nạp USDT:
+
+✅ Deposit successful
+
+Amount: 10 USDT
+New balance: 18.44 USDT
+
+==================================================
+6. THANH TOÁN BẰNG VÍ
+==================================================
+
+Trong bước chọn phương thức thanh toán sản phẩm, thêm:
+
+👛 Thanh toán bằng Ví
+hoặc
+👛 Pay with Wallet
+
+Khi khách chọn:
+
+- kiểm tra số dư đúng loại tiền
+- tiếng Việt dùng balance_vnd
+- English mặc định dùng balance_usdt nếu giá đang hiển thị USDT
+
+Nếu đủ số dư:
+
+Trong một database transaction:
+
+1. khóa user/wallet row
+2. kiểm tra số dư lần cuối
+3. trừ số dư
+4. tạo wallet_transaction type = purchase
+5. đánh dấu đơn paid
+6. gọi process_paid_order(order_id)
+7. giao hàng
+
+Nếu giao hàng lỗi:
+
+- không mất tiền vĩnh viễn
+- tạo refund tự động vào ví
+- ghi wallet_transaction type = refund
+- đưa đơn sang delivery_failed hoặc waiting_admin
+
+Nếu không đủ số dư:
+
+❌ Số dư không đủ.
+Số dư hiện tại: ...
+Cần thanh toán: ...
+
+Nút:
+
+➕ Nạp tiền
+⬅️ Quay lại
+
+==================================================
+7. WEB QUẢN LÝ NGƯỜI DÙNG
+==================================================
+
+Trong menu Người dùng, mỗi user có:
+
+- Chat ID
+- Username
+- Họ tên
+- Số dư VND
+- Số dư USDT
+- Tổng đã nạp
+- Tổng đã mua
+- Trạng thái
+- Ngày tạo
+
+Nút:
+
+➕ Cộng tiền
+➖ Trừ tiền
+📜 Lịch sử ví
+✉️ Gửi tin nhắn
+🔒 Khóa ví
+🔓 Mở khóa ví
+
+Khi admin cộng/trừ tiền phải nhập:
+
+- Loại tiền: VND / USDT
+- Số tiền
+- Ghi chú
+
+Không được sửa trực tiếp số dư mà không tạo lịch sử.
+
+Sau khi thao tác:
+
+- cập nhật số dư
+- tạo wallet_transaction
+- gửi thông báo cho khách
+
+Ví dụ:
+
+💰 Admin đã cộng 100.000đ vào ví của bạn.
+Số dư mới: 250.000đ
+
+Hoặc:
+
+💸 Admin đã trừ 20.000đ khỏi ví của bạn.
+Số dư mới: 230.000đ
+
+==================================================
+8. KHÔNG CHO ÂM VÍ
+==================================================
+
+Mặc định:
+
+- không cho balance_vnd < 0
+- không cho balance_usdt < 0
+
+Nếu admin muốn trừ vượt số dư:
+- báo lỗi
+- không cập nhật
+
+Không dùng float cho tiền.
+Dùng Decimal hoặc kiểu numeric trong database.
+
+==================================================
+9. API DÀNH CHO KHÁCH HÀNG
+==================================================
+
+Khách có thể dùng API của hệ thống để:
+
+- lấy danh sách sản phẩm
+- xem chi tiết
+- xem tồn kho
+- xem số dư API
+- tạo đơn mua hàng
+- xem lịch sử đơn
+- lấy kết quả giao hàng
+
+Menu bot:
+
+🔗 API
+
+Hiển thị:
+
+- Trạng thái API
+- API Key
+- Số dư
+- Số request đã dùng
+- Ngày tạo
+- Quyền truy cập
+
+Nút:
+
+🔑 Tạo API Key
+♻️ Đổi API Key
+🗑 Thu hồi API Key
+📘 Hướng dẫn API
+📜 Lịch sử API
+
+==================================================
+10. API KEY
+==================================================
+
+Tạo bảng api_clients:
+
+- id
+- user_id
+- api_key_hash
+- api_key_prefix
+- name
+- status
+- permissions
+- rate_limit_per_minute
+- daily_limit
+- created_at
+- last_used_at
+- revoked_at
+
+Chỉ hiển thị API Key đầy đủ một lần khi tạo.
+
+Không lưu API Key plaintext.
+
+API Key dạng:
+
+sk_live_xxxxxxxxxxxxxxxxx
+
+Header:
+
+X-API-Key: sk_live_xxxxxxxxx
+
+==================================================
+11. ENDPOINT API KHÁCH HÀNG
+==================================================
+
+GET /api/v1/products
+
+Trả:
+
+- product_id
+- name
+- name_en
+- price_vnd
+- price_usdt
+- stock
+- min_quantity
+- status
+- description
+- description_en
+- image_url
+
+GET /api/v1/products/{product_id}
+
+GET /api/v1/balance
+
+Trả:
+
+{
+  "balance_vnd": 100000,
+  "balance_usdt": "8.44"
+}
+
+POST /api/v1/orders
+
+Body:
+
+{
+  "product_id": "abc123",
+  "quantity": 2,
+  "client_order_id": "ORDER-001"
+}
+
+GET /api/v1/orders
+
+GET /api/v1/orders/{order_id}
+
+GET /api/v1/me
+
+==================================================
+12. THANH TOÁN ĐƠN API
+==================================================
+
+Đơn API mặc định trừ từ ví của khách.
+
+Quy tắc:
+
+- nếu giá VND → trừ balance_vnd
+- nếu giá USDT → trừ balance_usdt
+- kiểm tra đủ số dư trước khi mua
+- không cho âm ví
+- transaction an toàn
+- chống tạo đơn trùng
+
+client_order_id phải unique theo từng API client.
+
+Nếu gửi lại cùng client_order_id:
+- không tạo đơn mới
+- trả lại kết quả đơn cũ
+
+==================================================
+13. GIAO HÀNG QUA API
+==================================================
+
+Nếu sản phẩm có hàng:
+
+response:
+
+{
+  "success": true,
+  "order_id": "ORD-ABC123",
+  "status": "completed",
+  "accounts": [
+    "user1|pass1",
+    "user2|pass2"
+  ]
+}
+
+Nếu nguồn đang xử lý:
+
+{
+  "success": true,
+  "order_id": "ORD-ABC123",
+  "status": "processing"
+}
+
+Nếu hết hàng:
+
+{
+  "success": false,
+  "error": "OUT_OF_STOCK"
+}
+
+Không trả API key nguồn thật cho khách.
+
+==================================================
+14. BẢO MẬT API
+==================================================
+
+Bắt buộc:
+
+- HTTPS
+- hash API key
+- rate limit
+- log request
+- chống replay bằng client_order_id
+- không log dữ liệu tài khoản đã giao ở plaintext nếu không cần
+- không trả secret nguồn
+- chặn API Key bị revoke
+- có thể khóa API theo user
+
+Nếu sai API Key:
+
+401 Unauthorized
+
+Nếu vượt rate limit:
+
+429 Too Many Requests
+
+==================================================
+15. WEB QUẢN LÝ API KHÁCH
+==================================================
+
+Trong menu API khách hàng thêm:
+
+- Danh sách API client
+- User
+- API prefix
+- Trạng thái
+- Số request
+- Số đơn
+- Doanh số
+- Lần dùng gần nhất
+- Ngày tạo
+
+Nút:
+
+🔒 Khóa
+🔓 Mở
+♻️ Reset key
+📜 Xem log
+💰 Cộng/trừ số dư
+
+==================================================
+16. HƯỚNG DẪN API TRÊN BOT
+==================================================
+
+Hiển thị ví dụ:
+
+curl -H "X-API-Key: YOUR_API_KEY" \
+https://your-domain.com/api/v1/products
+
+Mua hàng:
+
+curl -X POST \
+-H "X-API-Key: YOUR_API_KEY" \
+-H "Content-Type: application/json" \
+-d '{"product_id":"abc123","quantity":1,"client_order_id":"ORDER-001"}' \
+https://your-domain.com/api/v1/orders
+
+==================================================
+17. THÔNG BÁO CHO ADMIN
+==================================================
+
+Khi có:
+
+- user nạp ví
+- admin cộng/trừ tiền
+- khách tạo API key
+- đơn API thành công
+- đơn API lỗi
+- API client bị khóa
+
+gửi log/thông báo cho admin nếu setting bật.
+
+==================================================
+18. COMMANDS TELEGRAM
+==================================================
+
+Cập nhật command:
+
+/start
+/menu
+/products
+/orders
+/wallet
+/api
+/support
+/find
+
+Không hiển thị /cancel trong danh sách lệnh.
+
+==================================================
+19. TEST BẮT BUỘC
+==================================================
+
+1. Nhập sai lệnh:
+- hiện danh sách lệnh đúng ngôn ngữ
+
+2. Nạp ví:
+- thanh toán thành công
+- cộng đúng số dư
+- có lịch sử
+
+3. Mua bằng ví:
+- trừ đúng
+- giao hàng
+- không giao trùng
+
+4. Không đủ số dư:
+- không tạo đơn paid
+
+5. Admin cộng/trừ:
+- cập nhật đúng
+- có log
+- gửi thông báo
+
+6. Tạo API Key:
+- chỉ hiển thị đầy đủ một lần
+- database chỉ lưu hash
+
+7. API products:
+- trả đúng sản phẩm mới nhất
+
+8. API order:
+- trừ ví
+- giao hàng
+- chống trùng client_order_id
+
+9. Khóa API:
+- request bị 401/403
+
+10. Restart app:
+- bot, web, scheduler và API vẫn tự chạy
+
+Sau khi hoàn thành:
+- migrate database an toàn
+- test toàn bộ
+- commit
+- push GitHub

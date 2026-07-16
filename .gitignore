@@ -27,6 +27,11 @@ node_modules
 !.vscode/launch.json
 !.vscode/extensions.json
 
+# Fallback ENCRYPTION_KEY persisted to disk when the env var isn't set —
+# see artifacts/api-server/crypto.py. Must never be committed: it decrypts
+# every secret in the database (Telegram bot token, supplier API keys...).
+artifacts/api-server/.encryption_key
+
 # misc
 /.sass-cache
 /connect.lock
@@ -40,6 +45,9 @@ testem.log
 # System Files
 .DS_Store
 Thumbs.db
+*.db
+*.sqlite
+*.sqlite3
 
 .cursor/rules/nx-rules.mdc
 .github/instructions/nx.instructions.md

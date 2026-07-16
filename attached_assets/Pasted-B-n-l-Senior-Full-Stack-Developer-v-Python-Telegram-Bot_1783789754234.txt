@@ -1,0 +1,911 @@
+Bạn là Senior Full-Stack Developer và Python Telegram Bot Developer.
+
+Hãy tạo mới toàn bộ project từ đầu.
+
+Tên hệ thống:
+
+AI Center Web Bot Manager
+
+==================================================
+MỤC TIÊU
+==================================================
+
+Xây dựng một hệ thống gồm:
+
+1. Website quản trị.
+2. Telegram Bot bán hàng.
+3. Nhiều kết nối API nhà cung cấp.
+4. Website và bot dùng chung một database.
+5. Website thay đổi gì thì bot đọc dữ liệu mới ngay.
+
+Phạm vi chỉ gồm:
+
+- Tổng quan
+- Sản phẩm
+- Đơn hàng
+- Kết nối API
+- Người dùng
+- Cài đặt
+
+Không thêm:
+- Bảo hành
+- Hoàn tiền
+- Thuế
+- Nhà cung cấp thủ công
+- Khuyến mãi
+- Ví người dùng
+- Hệ thống CTV
+- Chức năng ngoài phạm vi trên
+
+Ưu tiên:
+Gọn, ổn định, dễ dùng trên điện thoại.
+
+==================================================
+1. CÔNG NGHỆ
+==================================================
+
+Backend:
+FastAPI
+
+Frontend:
+Jinja2 Templates + HTML + CSS + JavaScript
+
+Database:
+SQLite trong giai đoạn đầu
+
+ORM:
+SQLAlchemy
+
+Telegram Bot:
+python-telegram-bot
+
+HTTP client:
+httpx
+
+Authentication web:
+Session login
+
+Password:
+Hash bằng bcrypt/passlib
+
+Chạy toàn bộ bằng:
+
+python3 main.py
+
+Website và bot Telegram chạy trong cùng một project.
+
+==================================================
+2. BIẾN MÔI TRƯỜNG
+==================================================
+
+Replit Secrets chỉ cần:
+
+SECRET_KEY
+ADMIN_USERNAME
+ADMIN_PASSWORD
+ENCRYPTION_KEY
+
+Không bắt buộc TELEGRAM_BOT_TOKEN trong Secrets.
+
+Token bot và API key được nhập trên website.
+
+Nếu chưa có admin trong database:
+- Tự tạo từ ADMIN_USERNAME và ADMIN_PASSWORD.
+- Hash mật khẩu trước khi lưu.
+
+==================================================
+3. KIẾN TRÚC HOẠT ĐỘNG
+==================================================
+
+Website là trung tâm quản lý.
+
+Telegram Bot đọc trực tiếp dữ liệu từ database.
+
+Luồng:
+
+Website
+↓
+Database chung
+↓
+Telegram Bot
+
+Khi admin:
+- thêm sản phẩm
+- sửa giá bán
+- sửa tên
+- sửa mô tả
+- bật/tắt sản phẩm
+- thay ảnh
+- cập nhật tồn kho API
+
+Bot phải thấy dữ liệu mới ngay ở lần user bấm tiếp theo.
+
+Không cache sản phẩm lâu.
+
+Không cần restart bot khi sửa sản phẩm.
+
+==================================================
+4. SIDEBAR WEBSITE
+==================================================
+
+Sidebar chỉ gồm:
+
+📊 Tổng quan
+📦 Sản phẩm
+🧾 Đơn hàng
+🔗 Kết nối API
+👥 Người dùng
+⚙️ Cài đặt
+🚪 Đăng xuất
+
+Thiết kế mobile-first.
+
+Sidebar trượt từ trái.
+
+Có light mode và dark mode.
+
+==================================================
+5. ĐĂNG NHẬP
+==================================================
+
+Trang:
+
+/login
+
+Có:
+- Username
+- Password
+- Ghi nhớ đăng nhập
+- Hiện/ẩn mật khẩu
+
+Route quản trị phải yêu cầu đăng nhập.
+
+Nếu chưa đăng nhập:
+redirect về /login.
+
+==================================================
+6. TỔNG QUAN
+==================================================
+
+Dashboard hiển thị các card:
+
+- Trạng thái Bot Telegram
+- Tổng sản phẩm đang bán
+- Tổng sản phẩm từ API
+- Tổng API đang hoạt động
+- Tổng đơn hôm nay
+- Tổng đơn toàn bộ
+- Doanh thu hôm nay
+- Doanh thu toàn bộ
+- Tổng người dùng bot
+- API lỗi gần nhất
+
+Hiển thị thêm:
+
+- Biểu đồ doanh thu 7 ngày
+- Top 5 sản phẩm bán chạy
+- 10 đơn gần nhất
+- Trạng thái từng API nguồn
+- Lần đồng bộ sản phẩm gần nhất
+
+Dùng Chart.js.
+
+==================================================
+7. SẢN PHẨM
+==================================================
+
+Trang sản phẩm cho phép:
+
+1. Thêm sản phẩm thủ công.
+2. Tạo sản phẩm từ sản phẩm nguồn API.
+3. Liên kết nhiều nguồn API với một sản phẩm bán.
+4. Sửa giá bán.
+5. Sửa tên.
+6. Sửa mô tả.
+7. Sửa ảnh.
+8. Bật/tắt hiển thị trên bot.
+9. Chọn cách lấy hàng.
+
+Mỗi sản phẩm gồm:
+
+- id
+- product_code
+- name
+- description
+- image_path hoặc telegram_file_id
+- sale_price
+- source_type
+- delivery_mode
+- is_active
+- sold_count
+- created_at
+- updated_at
+
+source_type:
+
+manual
+api
+
+delivery_mode:
+
+manual
+api_auto
+
+==================================================
+8. THÊM SẢN PHẨM THỦ CÔNG
+==================================================
+
+Form gồm:
+
+Tên sản phẩm
+Mã sản phẩm
+Mô tả
+Giá bán
+Ảnh
+Trạng thái bật/tắt
+Hình thức giao:
+- Admin giao thủ công
+- API tự động
+
+Nếu admin giao thủ công:
+- Không cần tồn kho.
+- Khi khách mua, tạo đơn chờ admin xử lý.
+
+Nếu API tự động:
+- Phải chọn nguồn API và sản phẩm nguồn.
+
+==================================================
+9. SẢN PHẨM TỪ API
+==================================================
+
+Trang sản phẩm nguồn hiển thị:
+
+- Tên nguồn
+- External product ID
+- Tên sản phẩm nguồn
+- Giá nguồn
+- Tồn kho nguồn
+- Trạng thái
+- Lần đồng bộ cuối
+
+Nút:
+
+➕ Tạo sản phẩm bán
+🔗 Liên kết sản phẩm hiện có
+🔄 Đồng bộ
+👁 Xem dữ liệu gốc
+
+Khi tạo sản phẩm bán từ nguồn:
+
+Tự điền:
+- Tên nguồn
+- External product ID
+- Giá nguồn
+- Tồn kho nguồn
+
+Admin nhập:
+- Tên hiển thị
+- Giá bán
+- Mô tả
+- Ảnh
+- Trạng thái
+
+==================================================
+10. NHIỀU API CÙNG HOẠT ĐỘNG
+==================================================
+
+Website phải hỗ trợ nhiều API nhà cung cấp cùng lúc.
+
+Mỗi kết nối API gồm:
+
+- id
+- name
+- base_url
+- api_key_encrypted
+- auth_type
+- api_type
+- is_active
+- sync_interval_minutes
+- last_sync_at
+- last_success_at
+- last_error
+- created_at
+- updated_at
+
+auth_type:
+
+x_api_key
+bearer
+
+api_type:
+
+zampto_standard
+custom
+
+Mỗi API chạy độc lập.
+
+Một API lỗi không được làm API khác dừng.
+
+Website vẫn chạy khi tất cả API lỗi.
+
+==================================================
+11. KẾT NỐI API
+==================================================
+
+Trang:
+
+🔗 Kết nối API
+
+Có nút:
+
+➕ Thêm kết nối API
+
+Form:
+
+Tên nguồn
+Base URL
+API Key
+Loại xác thực
+Loại API
+Chu kỳ đồng bộ
+Bật/tắt
+
+API key phải mã hóa trước khi lưu.
+
+Sau khi lưu chỉ hiển thị dạng:
+
+sk_abcd********wxyz
+
+Không hiển thị lại toàn bộ key.
+
+Mỗi kết nối có nút:
+
+🔍 Kiểm tra kết nối
+💰 Kiểm tra số dư
+🔄 Đồng bộ sản phẩm
+📦 Xem sản phẩm nguồn
+🧾 Xem đơn nguồn
+✏️ Sửa
+⏸ Tắt
+🗑 Xóa
+
+==================================================
+12. API ZAMPTO STANDARD
+==================================================
+
+Hỗ trợ sẵn API dạng:
+
+Header:
+
+X-API-Key: <API_KEY>
+
+Endpoints:
+
+GET /products
+GET /balance
+POST /buy
+GET /orders
+GET /orders/{order_id}
+GET /me
+
+POST /buy body:
+
+{
+  "product_id": "ID_SP",
+  "quantity": 1
+}
+
+Base URL ví dụ:
+
+http://node12.zampto.net:20291/api
+
+Không hard-code URL.
+
+==================================================
+13. CUSTOM API
+==================================================
+
+Cho phép tạo adapter mới.
+
+Cấu trúc:
+
+integrations/
+    base.py
+    zampto.py
+    custom.py
+    manager.py
+
+Interface chung:
+
+test_connection()
+get_balance()
+get_products()
+buy_product()
+get_orders()
+get_order()
+
+Mỗi API adapter chuẩn hóa dữ liệu về cùng format.
+
+==================================================
+14. ĐỒNG BỘ SẢN PHẨM
+==================================================
+
+Tạo bảng:
+
+api_products
+
+Gồm:
+
+- id
+- api_connection_id
+- external_product_id
+- external_name
+- external_price
+- external_stock
+- external_status
+- raw_json
+- last_sync_at
+- created_at
+- updated_at
+
+Khi đồng bộ:
+
+- Nếu external_product_id đã tồn tại thì cập nhật.
+- Nếu chưa có thì tạo mới.
+- Không tự tạo sản phẩm bán.
+- Admin phải bấm Tạo sản phẩm bán hoặc Liên kết.
+
+Nếu API lỗi:
+
+- Giữ dữ liệu cũ.
+- Không đặt tồn kho thành 0.
+- Lưu last_error.
+- Hiển thị cảnh báo.
+
+==================================================
+15. LIÊN KẾT NHIỀU NGUỒN CHO MỘT SẢN PHẨM
+==================================================
+
+Tạo bảng:
+
+product_sources
+
+Gồm:
+
+- id
+- product_id
+- api_product_id
+- priority
+- is_active
+- last_cost
+- last_stock
+- created_at
+- updated_at
+
+Một sản phẩm bán có thể có nhiều nguồn.
+
+Ví dụ:
+
+GROK SUPER
+- Nguồn A
+- Nguồn B
+- Nguồn C
+
+Khi khách mua:
+
+- Ưu tiên nguồn có priority nhỏ nhất.
+- Chỉ chọn nguồn đang hoạt động.
+- Chỉ chọn nguồn đủ tồn kho.
+- Nếu nguồn đầu lỗi thì thử nguồn tiếp theo.
+- Không mua trùng.
+- Dùng idempotency key.
+
+==================================================
+16. CÁCH HIỂN THỊ SẢN PHẨM TRÊN BOT
+==================================================
+
+Bot chỉ hiển thị sản phẩm is_active = true.
+
+Danh sách dạng nút:
+
+🟢 Tên sản phẩm
+🟡 Tên sản phẩm
+🔴 Tên sản phẩm
+
+Quy tắc:
+
+🟢:
+Có API nguồn hoạt động và có hàng.
+
+🟡:
+Sản phẩm giao thủ công hoặc API tạm hết hàng nhưng vẫn nhận đơn thủ công.
+
+🔴:
+Sản phẩm tắt hoặc ngừng nhận đơn.
+
+Danh sách không hiển thị mô tả dài.
+
+Khi user bấm sản phẩm mới hiện:
+
+Tên
+Ảnh
+Giá bán
+Mô tả
+Trạng thái
+Nút mua
+
+==================================================
+17. BOT TELEGRAM
+==================================================
+
+Trong Cài đặt website có mục:
+
+Cấu hình Bot Telegram
+
+Admin chỉ cần nhập:
+
+- Bot Token
+- Telegram Admin ID
+- Tin nhắn chào
+- Username hỗ trợ
+- Bật/tắt bot
+
+Nút:
+
+🔍 Kiểm tra token
+💾 Lưu
+▶️ Bật bot
+⏸ Tắt bot
+🔄 Khởi động lại
+📨 Gửi tin test
+
+Khi nhập token:
+
+- Gọi Telegram getMe.
+- Hiển thị tên bot.
+- Hiển thị username.
+- Hiển thị bot ID.
+- Nếu token sai thì báo rõ.
+
+Token bot phải mã hóa trước khi lưu.
+
+Sau khi lưu không hiển thị đầy đủ.
+
+Chỉ hiển thị:
+
+123456****abcd
+
+==================================================
+18. CHẠY BOT TỪ TOKEN TRÊN WEB
+==================================================
+
+Bot không dùng token hard-code.
+
+Bot đọc token đã mã hóa từ database.
+
+Khi admin bấm Bật bot:
+
+- Giải mã token.
+- Khởi tạo Telegram Application.
+- Bắt đầu polling.
+- Lưu trạng thái running.
+
+Khi bấm Tắt bot:
+
+- Dừng polling an toàn.
+- Website vẫn chạy.
+
+Khi bấm Khởi động lại:
+
+- Dừng instance cũ.
+- Khởi tạo instance mới.
+
+Phải ngăn chạy hai phiên polling cùng token.
+
+Hiển thị trạng thái:
+
+⚪ Chưa cấu hình
+🟡 Đang khởi động
+🟢 Đang chạy
+🔴 Mất kết nối
+⚠️ Trùng phiên
+
+==================================================
+19. MENU BOT
+==================================================
+
+Menu bot chỉ gồm:
+
+🛍 Sản phẩm
+📦 Đơn hàng
+💬 Hỗ trợ
+
+Admin Telegram có thêm:
+
+🌐 Mở trang quản trị
+
+Không thêm ví hoặc các chức năng ngoài phạm vi.
+
+==================================================
+20. MUA HÀNG QUA BOT
+==================================================
+
+Khi user chọn sản phẩm:
+
+Bot hỏi số lượng.
+
+Hiển thị:
+
+Sản phẩm
+Số lượng
+Đơn giá
+Tổng tiền
+Hình thức giao
+
+Nút:
+
+✅ Xác nhận
+❌ Hủy
+
+Chưa tích hợp thanh toán tự động trong phiên bản này.
+
+Sau khi xác nhận:
+
+Nếu delivery_mode = manual:
+- Tạo đơn trạng thái pending_manual.
+- Thông báo admin.
+- User nhận:
+  “Admin sẽ gửi đơn hàng X số lượng cho bạn ngay khi chuẩn bị xong.”
+
+Nếu delivery_mode = api_auto:
+- Chọn nguồn phù hợp.
+- Gọi API mua hàng.
+- Nếu thành công:
+  - Lưu đơn
+  - Lưu mã đơn nguồn
+  - Lưu dữ liệu giao hàng
+  - Gửi hàng cho user
+- Nếu tất cả nguồn lỗi:
+  - Tạo đơn failed hoặc pending_manual tùy cấu hình
+  - Báo admin
+  - Không báo thành công giả
+
+==================================================
+21. ĐƠN HÀNG
+==================================================
+
+Trang web Đơn hàng hiển thị:
+
+- Mã đơn
+- Telegram user
+- Username
+- Sản phẩm
+- Số lượng
+- Giá bán
+- Tổng tiền
+- Nguồn API
+- Mã đơn nguồn
+- Trạng thái
+- Dữ liệu giao hàng
+- Ngày tạo
+
+Trạng thái:
+
+pending_manual
+processing_api
+completed
+failed
+cancelled
+
+Admin có thể:
+
+- Xem chi tiết
+- Giao hàng thủ công
+- Gửi lại hàng
+- Đổi trạng thái
+- Hủy đơn
+- Nhắn khách
+
+==================================================
+22. NGƯỜI DÙNG
+==================================================
+
+Trang người dùng hiển thị:
+
+- Telegram ID
+- Username
+- Họ tên
+- Tổng đơn
+- Tổng tiền
+- Ngày tham gia
+- Lần hoạt động cuối
+- Trạng thái
+
+Admin có thể:
+
+- Xem chi tiết
+- Xem đơn
+- Ban
+- Mở ban
+- Gửi tin nhắn
+
+==================================================
+23. CÀI ĐẶT
+==================================================
+
+Trang cài đặt gồm:
+
+Thông tin cửa hàng:
+- Tên shop
+- Logo
+- Username hỗ trợ
+
+Bot Telegram:
+- Token
+- Admin ID
+- Tin nhắn chào
+- Trạng thái bot
+
+Đơn hàng:
+- Có cho chuyển API lỗi sang thủ công không
+- Mặc định số lượng tối thiểu
+- Nội dung thông báo đơn thủ công
+
+API:
+- Timeout
+- Retry
+- Chu kỳ đồng bộ mặc định
+
+==================================================
+24. DATABASE
+==================================================
+
+Tạo các bảng:
+
+admin_users
+settings
+telegram_bot_config
+users
+products
+api_connections
+api_products
+product_sources
+orders
+order_source_attempts
+activity_logs
+
+Mọi bảng có:
+
+id
+created_at
+updated_at
+
+==================================================
+25. BẢO MẬT
+==================================================
+
+- Hash mật khẩu admin.
+- Mã hóa Bot Token.
+- Mã hóa API Key.
+- Không ghi token hoặc API key vào log.
+- Không hiển thị password dữ liệu giao hàng trong activity log.
+- Validate URL API.
+- Timeout request.
+- Retry chỉ với GET hoặc lỗi an toàn.
+- Không retry POST /buy nếu không có idempotency key.
+- Chặn double-click tạo hai đơn.
+- Kiểm tra quyền admin trên mọi route quản trị.
+- Bắt lỗi toàn cục.
+
+==================================================
+26. CẤU TRÚC PROJECT
+==================================================
+
+main.py
+config.py
+database.py
+models.py
+auth.py
+crypto.py
+services/
+    product_service.py
+    order_service.py
+    bot_service.py
+    api_service.py
+integrations/
+    base.py
+    zampto.py
+    custom.py
+    manager.py
+bot/
+    app.py
+    handlers.py
+    keyboards.py
+    notifier.py
+routers/
+    auth.py
+    dashboard.py
+    products.py
+    orders.py
+    api_connections.py
+    users.py
+    settings.py
+templates/
+static/
+requirements.txt
+README.md
+.gitignore
+
+==================================================
+27. REQUIREMENTS
+==================================================
+
+fastapi
+uvicorn
+jinja2
+sqlalchemy
+python-multipart
+passlib[bcrypt]
+itsdangerous
+cryptography
+httpx
+python-telegram-bot
+python-dotenv
+aiofiles
+
+==================================================
+28. TEST BẮT BUỘC
+==================================================
+
+Test:
+
+1. Đăng nhập web.
+2. Thêm sản phẩm thủ công.
+3. Sửa giá bán.
+4. Bot thấy giá mới ngay.
+5. Thêm API Zampto.
+6. Kiểm tra kết nối.
+7. Đồng bộ sản phẩm nguồn.
+8. Tạo sản phẩm bán từ nguồn.
+9. Thêm API thứ hai.
+10. Liên kết hai nguồn cho cùng sản phẩm.
+11. Nguồn 1 lỗi thì thử nguồn 2.
+12. Nhập token bot trên web.
+13. Kiểm tra getMe.
+14. Bật bot.
+15. /start hiển thị menu.
+16. Bot hiển thị sản phẩm.
+17. Admin sửa tên trên web.
+18. Bot hiển thị tên mới.
+19. User tạo đơn thủ công.
+20. Đơn hiện trên web.
+21. User mua qua API.
+22. Lưu mã đơn nguồn.
+23. Bot giao hàng.
+24. Tắt bot nhưng website vẫn chạy.
+25. Một API lỗi không làm API khác ngừng.
+
+==================================================
+29. YÊU CẦU CUỐI
+==================================================
+
+Viết code hoạt động thật.
+
+Không tạo nút giả.
+
+Không để TODO hoặc pass.
+
+Không seed dữ liệu mẫu Netflix/Spotify.
+
+Database phải sạch khi tạo lần đầu.
+
+Sau khi viết:
+
+- chạy syntax check
+- khởi động website
+- kiểm thử đăng nhập
+- kiểm thử thêm sản phẩm
+- kiểm thử kết nối API
+- kiểm thử bot
+- đọc console
+- tự sửa cho đến khi chạy thành công

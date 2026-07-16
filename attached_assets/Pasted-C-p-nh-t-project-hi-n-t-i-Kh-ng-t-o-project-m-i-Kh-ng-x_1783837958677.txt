@@ -1,0 +1,472 @@
+Cập nhật project hiện tại.
+
+Không tạo project mới.
+Không xóa database, đơn hàng, API nguồn, cấu hình SePay hoặc dữ liệu người dùng hiện có.
+
+MỤC TIÊU:
+
+1. Web tự động đồng bộ sản phẩm và tồn kho khi nguồn có thay đổi.
+2. Bot Telegram luôn tự chạy, không cần vào web bấm bật lại.
+3. Bot luôn có nút Menu và nút Quay lại đúng trang trước.
+4. Người dùng mới vào bot phải chọn ngôn ngữ ngay trước khi dùng.
+
+==================================================
+1. TỰ ĐỘNG ĐỒNG BỘ SẢN PHẨM NGUỒN
+==================================================
+
+Tạo background scheduler chạy độc lập với request web.
+
+Dùng APScheduler hoặc asyncio task phù hợp với kiến trúc hiện tại.
+
+Mặc định:
+
+- Đồng bộ mỗi 2 phút.
+- Admin có thể đổi chu kỳ trong web.
+- Mỗi API nguồn chạy độc lập.
+- Một nguồn lỗi không làm các nguồn khác dừng.
+- Web và bot vẫn hoạt động khi API nguồn lỗi.
+
+Mỗi lần đồng bộ:
+
+- Gọi GET /products của từng API đang active.
+- Cập nhật:
+  external_name
+  external_description
+  external_price
+  external_stock
+  external_status
+  external_image_url
+  min_quantity
+  warranty
+  duration
+  last_sync_at
+- Không ghi đè giá bán do admin đặt.
+- Không ghi đè tên/mô tả riêng nếu admin đã sửa thủ công.
+- Giữ dữ liệu cũ nếu API lỗi.
+- Không tự đặt tồn kho thành 0 khi request lỗi.
+
+Nếu nguồn từ 0 lên có hàng:
+
+- cập nhật sản phẩm bán thành còn hàng ngay
+- bot thấy trạng thái mới ở lần mở danh sách tiếp theo
+- gửi admin:
+
+📦 NGUỒN ĐÃ CÓ HÀNG
+
+Sản phẩm: {product_name}
+Nguồn: {source_name}
+Tồn kho mới: {stock}
+
+Nếu nguồn từ có hàng về 0:
+
+- cập nhật trạng thái hết hàng
+- bot không cho mua
+- gửi admin:
+
+⚠️ NGUỒN ĐÃ HẾT HÀNG
+
+Sản phẩm: {product_name}
+Nguồn: {source_name}
+
+Nếu giá nguồn thay đổi:
+
+- lưu lịch sử giá
+- không đổi giá bán nếu pricing_mode = fixed
+- chỉ tính lại giá bán nếu pricing_mode = markup
+
+==================================================
+2. CẤU HÌNH ĐỒNG BỘ TRÊN WEB
+==================================================
+
+Trong Kết nối API thêm:
+
+- Bật/tắt tự động đồng bộ
+- Chu kỳ đồng bộ theo phút
+- Lần đồng bộ cuối
+- Lần thành công cuối
+- Lỗi gần nhất
+- Trạng thái worker
+
+Nút:
+
+🔄 Đồng bộ ngay
+▶️ Bật tự động
+⏸ Tắt tự động
+📜 Xem lịch sử đồng bộ
+
+Trong Cài đặt chung thêm:
+
+- sync_enabled
+- sync_interval_minutes
+- notify_admin_on_restock
+- notify_admin_on_out_of_stock
+
+Mặc định:
+
+sync_enabled = true
+sync_interval_minutes = 2
+notify_admin_on_restock = true
+notify_admin_on_out_of_stock = true
+
+==================================================
+3. BOT TELEGRAM LUÔN TỰ KHỞI ĐỘNG
+==================================================
+
+Hiện tại bot có thể chỉ chạy sau khi admin vào web bấm Bật bot.
+
+Sửa thành:
+
+- Khi ứng dụng web khởi động:
+  - đọc bot token đã lưu trong database
+  - nếu token hợp lệ và bot_enabled = true
+  - tự động khởi động Telegram polling
+
+Không cần admin mở trang web.
+
+Không cần bấm Bật bot mỗi lần Replit restart.
+
+Thêm startup hook:
+
+- FastAPI lifespan
+hoặc
+- app startup event
+
+Trong startup:
+
+1. Khởi động database.
+2. Khởi động scheduler đồng bộ API.
+3. Khởi động Telegram bot.
+4. Ghi log trạng thái.
+
+Nếu token chưa có:
+- website vẫn chạy
+- log:
+  TELEGRAM_BOT_NOT_CONFIGURED
+
+Nếu token sai:
+- website vẫn chạy
+- lưu trạng thái bot = error
+- hiển thị lỗi trên web
+
+Nếu bot đã chạy:
+- không tạo instance thứ hai
+- chống Conflict: terminated by other getUpdates request
+
+==================================================
+4. BOT TỰ KHỞI ĐỘNG LẠI KHI MẤT KẾT NỐI
+==================================================
+
+Tạo watchdog cho bot.
+
+Nếu polling dừng do lỗi mạng:
+
+- thử khởi động lại sau 5 giây
+- retry với khoảng:
+  5s
+  15s
+  30s
+  60s
+- tối đa 10 lần
+- sau đó tiếp tục kiểm tra mỗi 5 phút
+
+Không restart toàn bộ website.
+
+Trạng thái bot:
+
+starting
+running
+reconnecting
+error
+stopped
+
+Web hiển thị trạng thái thật.
+
+==================================================
+5. GIỮ NÚT BẬT/TẮT TRÊN WEB
+==================================================
+
+Vẫn giữ nút:
+
+▶️ Bật bot
+⏸ Tắt bot
+🔄 Khởi động lại
+
+Nhưng:
+
+- mặc định bot_enabled = true
+- sau khi Replit hoặc VPS restart, bot tự chạy lại nếu bot_enabled = true
+- nếu admin chủ động bấm Tắt bot thì lưu bot_enabled = false
+- lần sau ứng dụng khởi động không tự bật lại
+
+==================================================
+6. NÚT MENU CHO KHÁCH
+==================================================
+
+Bot phải luôn có Reply Keyboard cố định:
+
+🏠 Menu
+⬅️ Quay lại
+
+Tùy từng màn hình có thể thêm nút chức năng khác.
+
+Menu chính tiếng Việt:
+
+🛍 Sản phẩm
+📦 Đơn hàng
+🌐 Ngôn ngữ
+💬 Hỗ trợ
+
+Menu chính English:
+
+🛍 Products
+📦 Orders
+🌐 Language
+💬 Support
+
+Nút Menu phải luôn đưa về trang chủ.
+
+Nút Quay lại phải đưa về đúng màn hình trước đó, không phải luôn về trang chủ.
+
+==================================================
+7. LỊCH SỬ ĐIỀU HƯỚNG
+==================================================
+
+Tạo navigation stack cho từng user.
+
+Có thể lưu trong context.user_data hoặc database.
+
+Ví dụ:
+
+home
+→ products_page_1
+→ product_detail_25
+→ quantity_input
+
+Khi bấm Quay lại:
+
+quantity_input
+→ product_detail_25
+
+product_detail_25
+→ products_page_1
+
+products_page_1
+→ home
+
+Không gửi lại /start.
+
+Không reset trạng thái khi bấm Quay lại.
+
+Nút Trang chủ mới quay hẳn về home.
+
+Lệnh /huy hoặc /cancel:
+
+- hủy toàn bộ flow hiện tại
+- xóa navigation stack
+- quay về menu chính
+
+==================================================
+8. KHÔNG SPAM TIN NHẮN
+==================================================
+
+Ưu tiên edit_message_text, edit_message_caption hoặc edit_message_media.
+
+Khi chuyển trang:
+
+- chỉnh sửa tin nhắn hiện tại nếu có thể
+- không gửi nhiều tin nhắn mới liên tục
+
+Ngoại lệ:
+
+- gửi QR thanh toán
+- giao tài khoản
+- thông báo quan trọng
+
+==================================================
+9. CHỌN NGÔN NGỮ NGAY KHI VÀO BOT
+==================================================
+
+Người dùng mới chưa có language_code:
+
+Khi gửi /start:
+
+Chỉ hiển thị:
+
+🌐 Chọn ngôn ngữ
+Choose your language
+
+🇻🇳 Tiếng Việt
+🇬🇧 English
+
+Không hiện menu chính trước khi chọn.
+
+Không cho mở sản phẩm hoặc mua hàng trước khi chọn ngôn ngữ.
+
+Sau khi chọn:
+
+- lưu users.language_code
+- lưu ngay vào database
+- hiển thị menu chính bằng ngôn ngữ đã chọn
+- thiết lập Telegram commands theo ngôn ngữ của chat đó
+
+Người dùng cũ đã có language_code:
+
+- /start đi thẳng vào menu chính
+- không bắt chọn lại
+
+==================================================
+10. ĐỔI NGÔN NGỮ SAU NÀY
+==================================================
+
+Nút:
+
+🌐 Ngôn ngữ
+hoặc
+🌐 Language
+
+Hiển thị:
+
+🇻🇳 Tiếng Việt
+🇬🇧 English
+⬅️ Quay lại
+🏠 Menu
+
+Khi chọn:
+
+- cập nhật database
+- cập nhật menu
+- cập nhật BotCommandScopeChat
+- áp dụng ngay
+
+==================================================
+11. MENU COMMANDS TELEGRAM
+==================================================
+
+Sau khi bot khởi động, set command mặc định:
+
+/start - Bắt đầu
+/menu - Trang chủ
+/products - Sản phẩm
+/orders - Đơn hàng
+/language - Ngôn ngữ
+/support - Hỗ trợ
+/cancel - Hủy thao tác
+
+English scope:
+
+/start - Start
+/menu - Home
+/products - Products
+/orders - Orders
+/language - Language
+/support - Support
+/cancel - Cancel current action
+
+==================================================
+12. TRẠNG THÁI SẢN PHẨM TRÊN BOT
+==================================================
+
+Bot không dùng cache dài.
+
+Mỗi lần mở danh sách:
+
+- đọc dữ liệu mới nhất từ database
+
+Mỗi lần bấm sản phẩm:
+
+- kiểm tra stock mới nhất
+- nếu dữ liệu cũ quá 2 phút:
+  sync riêng nguồn liên kết trước khi cho mua
+
+Nếu hết hàng:
+
+- không hiện Mua ngay
+- popup hoặc trang báo hết hàng
+- không tạo đơn
+- không tạo QR
+
+==================================================
+13. STARTUP VÀ SHUTDOWN AN TOÀN
+==================================================
+
+Khi app shutdown:
+
+- dừng bot polling đúng cách
+- dừng scheduler
+- đóng HTTP client
+- đóng database session
+
+Khi app restart:
+
+- không tạo scheduler trùng
+- không tạo polling trùng
+- không chạy hai worker đồng bộ giống nhau
+
+==================================================
+14. LOG BẮT BUỘC
+==================================================
+
+Log:
+
+APP_STARTING
+DATABASE_READY
+SYNC_SCHEDULER_STARTED
+TELEGRAM_BOT_STARTING
+TELEGRAM_BOT_RUNNING
+TELEGRAM_BOT_RECONNECTING
+API_SYNC_STARTED
+API_SYNC_COMPLETED
+API_SYNC_FAILED
+PRODUCT_RESTOCKED
+PRODUCT_OUT_OF_STOCK
+
+Không ghi token hoặc API key.
+
+==================================================
+15. TEST BẮT BUỘC
+==================================================
+
+1. Restart Replit:
+- không mở trang web
+- bot vẫn tự chạy
+- /start phản hồi
+
+2. API nguồn thêm hàng:
+- trong tối đa 2 phút web cập nhật stock
+- bot đổi từ hết hàng sang còn hàng
+- admin nhận thông báo
+
+3. API nguồn hết hàng:
+- bot không cho mua
+
+4. Người dùng mới:
+- /start chỉ hiện chọn ngôn ngữ
+- chọn Việt → menu tiếng Việt
+- chọn English → menu English
+
+5. Nút Quay lại:
+- quay về đúng trang trước
+
+6. Nút Menu:
+- về trang chủ
+
+7. /cancel:
+- hủy flow và về menu chính
+
+8. Bot mất mạng:
+- tự reconnect
+- website vẫn chạy
+
+9. Admin bấm Tắt bot:
+- bot dừng
+- restart app vẫn không tự bật
+
+10. Admin bấm Bật bot:
+- bot chạy
+- restart app tự chạy lại
+
+Sau khi sửa:
+- chạy kiểm thử
+- restart app
+- xác minh bot tự khởi động
+- commit và push lên GitHub

@@ -1,0 +1,181 @@
+CẬP NHẬT PROJECT HIỆN TẠI — ĐỢT 1: BOT VÀ SẢN PHẨM
+
+Không tạo project mới.
+Không xóa database, sản phẩm, người dùng, đơn hàng, ví hoặc cấu hình API hiện có.
+Không sửa lại hệ thống Generic API vì phần đó đã hoàn thành.
+
+1. XÓA NÚT THỪA TRÊN BOT
+
+Xóa hoàn toàn hai nút Reply Keyboard:
+
+☰ Menu
+⬅️ Quay lại
+
+Không hiển thị hai nút này ở bất kỳ màn hình nào.
+Không để lại hàng trống trong keyboard.
+Giữ các nút chức năng cần thiết như Trang chủ, Mua tiếp, Hỗ trợ.
+
+2. TRANG CHỦ TỰ CẬP NHẬT SẢN PHẨM
+
+Khi khách bấm:
+
+🏠 Trang chủ
+hoặc /start
+
+Bot phải:
+
+- đồng bộ nhanh các nguồn API đang active
+- đọc lại danh sách sản phẩm mới nhất từ database
+- cập nhật tồn kho
+- hiển thị danh sách sản phẩm ngay
+
+Không bắt khách bấm Làm mới.
+Không dùng danh sách cache cũ quá 30 giây.
+
+Nếu nguồn lỗi:
+- vẫn hiện dữ liệu gần nhất
+- không đặt tồn kho về 0
+- không làm bot treo
+
+3. TỐI ƯU TỐC ĐỘ
+
+- Chạy đồng bộ nhiều nguồn song song bằng asyncio.gather.
+- Timeout mỗi nguồn tối đa 5–8 giây.
+- Cache ngắn tối đa 30 giây.
+- Không tải lại ảnh và dữ liệu không cần thiết.
+- Tối ưu truy vấn sản phẩm, tránh N+1 query.
+- Phản hồi callback Telegram ngay để không hiện loading lâu.
+- Khi dữ liệu vừa sync trong 30 giây thì dùng database hiện tại, không gọi lại nguồn.
+
+4. EMOJI SẢN PHẨM
+
+Thêm hoặc sử dụng trường:
+
+products.telegram_icon
+
+Trong form Thêm/Sửa sản phẩm trên web:
+- có ô chọn emoji
+- có danh sách emoji gợi ý
+- admin có thể nhập emoji thủ công
+
+Sản phẩm đồng bộ từ API phải tự gán emoji theo tên:
+
+Grok → 🤖
+ChatGPT / OpenAI → 🟢
+Claude → 🧠
+Gemini → ✨
+Canva → 🎨
+CapCut → 🎬
+Adobe → 🅰️
+Cursor → 🖥️
+Veo → 🎥
+Kling → 🎞️
+Microsoft / Office → 🪟
+Binance → 🟡
+API / Token → 🔌
+Key / License → 🔑
+
+Không nhận diện được thì dùng 📦.
+
+Nếu admin đã chọn emoji thủ công:
+- không ghi đè khi đồng bộ API.
+
+5. SẮP XẾP SẢN PHẨM
+
+Tự động nhóm sản phẩm theo thương hiệu và sắp xếp theo chữ cái, không phân biệt hoa thường.
+
+Ví dụ:
+- tất cả Grok đứng cạnh nhau
+- tất cả ChatGPT đứng cạnh nhau
+- tất cả Gemini đứng cạnh nhau
+
+Tạo brand_key chuẩn hóa từ tên sản phẩm.
+
+Ví dụ:
+"GROK SUPER 1 YEAR"
+"Grok Super 3 Months"
+đều có brand_key = "grok"
+
+Thứ tự:
+1. brand_key ASC
+2. product_name ASC
+3. duration nếu nhận diện được ASC
+
+Không để sản phẩm thương hiệu khác chen giữa nhóm Grok.
+
+6. TỰ THÔNG BÁO SẢN PHẨM MỚI VÀ NHẬP THÊM HÀNG
+
+Khi:
+- admin tạo sản phẩm mới
+- API sync được sản phẩm mới
+- tồn kho tăng so với lần trước
+
+Bot phải tự gửi thông báo đến người dùng active.
+
+Chỉ gửi khi có thay đổi thật.
+Không gửi lại mỗi lần sync nếu dữ liệu không đổi.
+Không gửi khi tồn kho giảm do khách mua.
+
+Sản phẩm mới:
+
+🆕 SẢN PHẨM MỚI
+
+{emoji} {product_name}
+📦 Tồn kho: {stock}
+💰 Giá: {formatted_price}
+
+Nhập thêm hàng:
+
+🔄 ĐÃ BỔ SUNG HÀNG
+
+{emoji} {product_name}
+➕ Đã thêm: {added_quantity}
+📦 Tồn kho hiện tại: {new_stock}
+💰 Giá: {formatted_price}
+
+Bên dưới có nút:
+
+🛒 Mua ngay
+
+Callback phải chứa product_id.
+Khi bấm:
+- kiểm tra lại tồn kho
+- còn hàng thì mở chi tiết sản phẩm
+- hết hàng thì báo đã hết hàng
+- không tạo đơn giả
+
+7. CÀI ĐẶT THÔNG BÁO TRÊN WEB
+
+Thêm các setting:
+
+notify_new_products = true
+notify_restock = true
+broadcast_batch_size
+broadcast_delay_ms
+
+Cho phép bật/tắt:
+- thông báo sản phẩm mới
+- thông báo nhập thêm hàng
+
+Gửi theo batch để tránh Telegram rate limit.
+User block bot thì đánh dấu inactive, không làm dừng toàn bộ broadcast.
+
+8. TEST BẮT BUỘC
+
+- Không còn nút Menu và Quay lại.
+- Bấm Trang chủ thấy sản phẩm mới nhất.
+- Nguồn lỗi không làm danh sách biến mất.
+- Grok được gom cạnh Grok.
+- Emoji tự gán đúng.
+- Emoji admin chọn không bị ghi đè.
+- Thêm sản phẩm mới gửi thông báo một lần.
+- Tăng tồn kho gửi thông báo một lần.
+- Nút Mua ngay mở đúng sản phẩm.
+- Broadcast không làm bot crash.
+
+Sau khi hoàn thành:
+- chạy test
+- restart app
+- commit
+- push GitHub
+- báo commit hash và danh sách file đã sửa

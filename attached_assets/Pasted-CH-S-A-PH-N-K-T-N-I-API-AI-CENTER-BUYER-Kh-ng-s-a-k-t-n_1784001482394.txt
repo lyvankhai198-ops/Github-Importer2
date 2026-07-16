@@ -1,0 +1,143 @@
+CHỈ SỬA PHẦN KẾT NỐI API AI CENTER BUYER.
+
+Không sửa kết nối Zampto hiện có.
+Không làm hỏng Taphoagiare.
+Không xóa database hoặc API key đã lưu.
+
+Tạo loại API mới:
+
+- Tên hiển thị: AI Center Buyer
+- api_type: aicenter_buyer
+
+Không dùng adapter zampto_standard cho kết nối này.
+
+Cấu hình adapter AI Center Buyer:
+
+Base URL:
+https://canboso.com
+
+Authentication:
+Header: X-API-Key
+Value: API key đã giải mã từ kết nối
+Không dùng Authorization.
+Không dùng Bearer.
+Không dùng access_token.
+Không gửi API key qua query param.
+
+Endpoints:
+
+Test kết nối:
+GET /api/telegram-buyer/balance
+
+Lấy sản phẩm:
+GET /api/telegram-buyer/products
+
+Mua hàng:
+POST /api/telegram-buyer/purchase
+
+Mọi request phải có:
+
+headers = {
+    "X-API-Key": decrypted_api_key,
+    "Accept": "application/json",
+    "Content-Type": "application/json"
+}
+
+Lưu ý:
+Base URL là https://canboso.com
+Không phải https://canboso.com/api
+vì endpoint đã chứa /api/telegram-buyer/...
+
+Khi test kết nối:
+- gọi chính xác GET https://canboso.com/api/telegram-buyer/balance
+- không gọi /api/balance
+- không gọi /balance
+- HTTP 200 và success=true thì báo kết nối thành công
+
+Khi đồng bộ sản phẩm:
+- gọi GET https://canboso.com/api/telegram-buyer/products
+- đọc danh sách từ response.products
+- map các trường:
+
+external_id = product._id
+name = product.product_name
+raw_name = product.product_name_raw
+source_price = product.pricing hoặc walletPricing tùy loại tiền
+usd_price = product.usdPricing
+description = product.description
+stock hoặc trạng thái lấy từ product.stats và các trường tồn kho thực tế
+is_slot_product = product.isSlotProduct
+slot_durations = product.slotDurations
+requires_customer_email = product.requiresCustomerEmail
+requires_slot_months = product.requiresSlotMonths
+currency = response.walletCurrency hoặc product.walletCurrency
+
+Không dùng JSON path của Zampto.
+
+Khi mua hàng:
+POST https://canboso.com/api/telegram-buyer/purchase
+
+Body phải theo PurchaseRequest:
+
+{
+  "key": "<buyer key nếu schema backend bắt buộc>",
+  "product_id": "<external product id>",
+  "quantity": 1,
+  "customer_email": "<email nếu sản phẩm yêu cầu>",
+  "slot_months": <số tháng nếu sản phẩm slot yêu cầu>
+}
+
+Quan trọng:
+- Nếu API key đã được truyền bằng X-API-Key và field "key" vẫn bắt buộc theo schema, dùng đúng giá trị API key đã giải mã.
+- Nếu backend thực tế không cần field key thì không gửi dư.
+- Kiểm tra OpenAPI/schema thực tế trước khi chốt request body.
+
+Đọc kết quả mua từ PurchaseResponse:
+
+- success
+- orderCode
+- productType
+- quantity
+- finalQuantity
+- amount
+- amountText
+- balance
+- balanceText
+- deliveredAccounts
+- workspaceInviteStatus
+- inviteError
+- referralReward
+
+Trong giao diện thêm/sửa kết nối:
+- thêm lựa chọn “AI Center Buyer”
+- badge hiển thị “aicenter_buyer”
+- giữ nguyên key cũ nếu ô API Key để trống
+- không tự đổi kết nối Taphoagiare sang loại này
+
+Migration:
+- nếu api_type là enum thì bổ sung aicenter_buyer an toàn
+- không xóa enum/type cũ
+- không đổi dữ liệu kết nối hiện có
+
+Test bắt buộc:
+
+1. Taphoagiare vẫn test thành công bằng zampto_standard.
+2. AI Center gọi đúng:
+   GET /api/telegram-buyer/balance
+3. AI Center không còn báo “Thiếu access token”.
+4. Đồng bộ đọc được response.products.
+5. Sản phẩm AI Center hiển thị đúng tên, giá, loại slot/account.
+6. Purchase dùng đúng /api/telegram-buyer/purchase.
+7. Không gọi nhầm /api/buy.
+8. Không gửi Bearer token.
+9. Không làm lộ API key trong log.
+
+Commit message:
+
+fix: add dedicated AI Center Buyer API adapter
+
+Sau khi xong:
+- test cả Taphoagiare và AI Center
+- commit
+- push GitHub
+- báo URL thực tế đã gọi và HTTP status

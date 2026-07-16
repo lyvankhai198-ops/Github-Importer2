@@ -1,0 +1,125 @@
+==================================================
+15. SỬA HOÀN TOÀN PHẦN MÔ TẢ TIẾNG ANH
+==================================================
+
+Hiện tại description_en đang dịch từng từ nên đọc không tự nhiên.
+
+Sửa lại:
+
+Khi user chọn English:
+
+Ưu tiên:
+
+description_en
+
+Nếu chưa có:
+
+Tự tạo description_en chuẩn khi admin lưu sản phẩm hoặc khi đồng bộ API.
+
+KHÔNG dịch từng từ mỗi lần mở sản phẩm.
+
+==================================================
+QUY TẮC DỊCH
+==================================================
+
+Ví dụ mô tả tiếng Việt:
+
+• Grok gói Super hạn sử dụng 3 tháng.
+• Định dạng: tk|mk
+• Bảo hành full 3 tháng.
+
+⚠️ VUI LÒNG ĐỌC KỸ MÔ TẢ TRƯỚC KHI MUA:
+
+• Không đổi email. Đổi email = mất bảo hành.
+• Không bật 2FA. Bật 2FA = mất bảo hành.
+• Không liên kết hoặc gỡ tài khoản khỏi X.
+• Không liên kết hoặc gỡ khỏi Google.
+• Vi phạm các điều trên sẽ mất bảo hành.
+
+Phải hiển thị thành:
+
+• Grok Super subscription valid for 3 months.
+• Format: Username | Password.
+• Full 3-month warranty.
+
+⚠️ PLEASE READ CAREFULLY BEFORE PURCHASING:
+
+• Do not change the account email address. Changing the email will void your warranty.
+• Do not enable two-factor authentication (2FA). Enabling 2FA will void your warranty.
+• Do not link or unlink this account from X (Twitter).
+• Do not link or unlink this account from Google.
+• Violating any of the above conditions will void your warranty.
+
+==================================================
+CHUẨN HÓA
+==================================================
+
+tk|mk
+→ Username | Password
+
+BHF
+→ Full Warranty
+
+KBH
+→ No Warranty
+
+Đổi mail
+→ Change email
+
+Mất bảo hành
+→ Warranty void
+
+Bật 2FA
+→ Enable 2FA
+
+Link
+→ Link account
+
+Gỡ
+→ Unlink account
+
+==================================================
+KHÔNG ĐƯỢC DỊCH KIỂU MÁY
+==================================================
+
+Sai:
+
+Grok Super package has a shelf life of 3 months.
+
+Đúng:
+
+Grok Super subscription valid for 3 months.
+
+Sai:
+
+turn on 2fa
+
+Đúng:
+
+Enable two-factor authentication (2FA).
+
+Sai:
+
+Change email = no warranty.
+
+Đúng:
+
+Changing the email will void your warranty.
+
+==================================================
+WEB
+==================================================
+
+Web thêm trường:
+
+Description (English)
+
+Có nút:
+
+✨ Generate English Description
+
+Admin có thể sửa tay.
+
+Nếu admin sửa:
+
+Không tự ghi đè khi đồng bộ API sau này.

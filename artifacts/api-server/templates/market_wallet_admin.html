@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block title %}Duyệt ví chợ - AI Center{% endblock %}
+{% block page_title %}🏦 Ví chợ — Duyệt yêu cầu (Owner){% endblock %}
+{% block content %}
+
+<div class="card mb-3">
+  <div class="card-body d-flex gap-2">
+    <a href="/market-wallet/admin?tab=deposits" class="btn btn-sm {{ 'btn-warning' if tab == 'deposits' else 'btn-outline-warning' }}">⚠️ Nạp cần duyệt ({{ deposits|length }})</a>
+    <a href="/market-wallet/admin?tab=withdrawals" class="btn btn-sm {{ 'btn-warning' if tab == 'withdrawals' else 'btn-outline-warning' }}">📤 Rút chờ xử lý ({{ withdrawals|length }})</a>
+    <a href="/market-wallet/admin?tab=tenants" class="btn btn-sm {{ 'btn-secondary' if tab == 'tenants' else 'btn-outline-secondary' }}">👥 Số dư khách thuê</a>
+  </div>
+</div>
+
+{% if tab == "deposits" %}
+<div class="card">
+  <div class="card-header fw-semibold">Yêu cầu nạp ví chợ cần admin xác nhận</div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm mb-0 align-middle">
+        <thead><tr><th>Khách thuê</th><th>Mã</th><th>Số tiền</th><th>PT/Network</th><th>Ngày tạo</th><th>Hành động</th></tr></thead>
+        <tbody>
+          {% for d in deposits %}
+          {% set a = admin_map.get(d.admin_user_id) %}
+          <tr>
+            <td>{{ a.display_name or a.username if a else d.admin_user_id }}</td>
+            <td><code>{{ d.reference_code }}</code></td>
+            <td>{{ "%.4f"|format(d.amount) }} {{ d.currency.value }} (≈{{ "{:,.0f}".format(d.vnd_credit_amount or 0).replace(",", ".") }}đ)</td>
+            <td>{{ d.method }}<div class="text-muted small">{{ d.network }}</div></td>
+            <td><small>{{ d.created_at.strftime('%d/%m/%Y %H:%M') }}</small></td>
+            <td>
+              <div class="d-flex gap-1">
+                <form action="/market-wallet/admin/deposit/{{ d.id }}/confirm" method="post" onsubmit="return confirm('Xác nhận đã nhận tiền và cộng vào ví chợ?')">
+                  <button class="btn btn-sm btn-success">✅ Xác nhận</button>
+                </form>
+                <form action="/market-wallet/admin/deposit/{{ d.id }}/reject" method="post" onsubmit="return confirm('Từ chối yêu cầu này?')">
+                  <button class="btn btn-sm btn-outline-danger">❌ Từ chối</button>
+                </form>
+              </div>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6" class="text-center text-muted py-4">Không có yêu cầu nào cần duyệt</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% if tab == "withdrawals" %}
+<div class="card">
+  <div class="card-header fw-semibold">Yêu cầu rút ví chợ</div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm mb-0 align-middle">
+        <thead><tr><th>Khách thuê</th><th>Số tiền</th><th>Thông tin nhận</th><th>Trạng thái</th><th>Ngày tạo</th><th>Hành động</th></tr></thead>
+        <tbody>
+          {% for w in withdrawals %}
+          {% set a = admin_map.get(w.admin_user_id) %}
+          {% set st = w.status.value if w.status.value is defined else w.status %}
+          <tr>
+            <td>{{ a.display_name or a.username if a else w.admin_user_id }}</td>
+            <td>{{ "{:,.0f}".format(w.amount).replace(",", ".") }}đ</td>
+            <td><small>{{ w.account_info }}</small></td>
+            <td>
+              {% if st == "pending" %}<span class="badge bg-secondary">Chờ duyệt</span>
+              {% else %}<span class="badge bg-info text-dark">Đã duyệt — chờ chuyển</span>{% endif %}
+            </td>
+            <td><small>{{ w.created_at.strftime('%d/%m/%Y %H:%M') }}</small></td>
+            <td>
+              <div class="d-flex gap-1">
+                {% if st == "pending" %}
+                <form action="/market-wallet/admin/withdraw/{{ w.id }}/approve" method="post" onsubmit="return confirm('Duyệt yêu cầu rút này? Số dư sẽ bị trừ ngay.')">
+                  <button class="btn btn-sm btn-success">✅ Duyệt</button>
+                </form>
+                <form action="/market-wallet/admin/withdraw/{{ w.id }}/reject" method="post" onsubmit="return confirm('Từ chối yêu cầu này?')">
+                  <button class="btn btn-sm btn-outline-danger">❌ Từ chối</button>
+                </form>
+                {% else %}
+                <form action="/market-wallet/admin/withdraw/{{ w.id }}/mark-paid" method="post" onsubmit="return confirm('Xác nhận đã chuyển tiền cho khách thuê?')">
+                  <button class="btn btn-sm btn-primary">💸 Đã trả</button>
+                </form>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6" class="text-center text-muted py-4">Không có yêu cầu rút nào</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% if tab == "tenants" %}
+<div class="card">
+  <div class="card-header fw-semibold">Số dư ví chợ theo khách thuê</div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm mb-0 align-middle">
+        <thead><tr><th>Tài khoản</th><th>Loại</th><th>Số dư ví chợ</th><th></th></tr></thead>
+        <tbody>
+          {% for a in tenants %}
+          <tr>
+            <td>{{ a.display_name or a.username }}</td>
+            <td>{% if a.is_owner %}<span class="badge bg-primary">Owner (đã trả trước cho nguồn)</span>{% else %}<span class="badge bg-secondary">Khách thuê</span>{% endif %}</td>
+            <td class="fw-bold">{{ "{:,.0f}".format(a.market_wallet_balance or 0).replace(",", ".") }}đ</td>
+            <td>
+              {% if a.is_owner %}
+              <form action="/market-wallet/admin/owner-balance" method="post" class="d-flex gap-1">
+                <input type="number" name="balance" class="form-control form-control-sm" style="width:160px" value="{{ (a.market_wallet_balance or 0)|int }}" step="1000">
+                <button class="btn btn-sm btn-outline-primary">Cập nhật</button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}

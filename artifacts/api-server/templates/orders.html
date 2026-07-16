@@ -1,0 +1,227 @@
+{% extends "base.html" %}
+{% block title %}Đơn hàng - AI Center{% endblock %}
+{% block page_title %}🧾 {{ title if title is defined else 'Đơn hàng' }}{% endblock %}
+{% block content %}
+{% set active_filter_count = (1 if search else 0) + (1 if status_filter else 0) + (1 if payment_status_filter else 0) + (1 if date_from else 0) + (1 if date_to else 0) %}
+
+<!-- Desktop filter bar -->
+<div class="d-none d-md-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <form class="d-flex gap-2 flex-wrap" method="get">
+    <input type="text" name="search" value="{{ search }}" class="form-control form-control-sm" placeholder="Mã đơn, User ID..." style="width:160px">
+    <select name="status" class="form-select form-select-sm" style="width:170px">
+      <option value="">Tất cả trạng thái</option>
+      {% for st in order_statuses %}
+      <option value="{{ st }}" {% if status_filter == st %}selected{% endif %}>{{ st }}</option>
+      {% endfor %}
+    </select>
+    <select name="payment_status" class="form-select form-select-sm" style="width:170px">
+      <option value="">Tất cả thanh toán</option>
+      <option value="pending" {% if payment_status_filter == 'pending' %}selected{% endif %}>⏳ Chờ thanh toán</option>
+      <option value="partial" {% if payment_status_filter == 'partial' %}selected{% endif %}>⚠️ Thanh toán thiếu</option>
+      <option value="paid" {% if payment_status_filter == 'paid' %}selected{% endif %}>✅ Đã thanh toán</option>
+      <option value="overpaid" {% if payment_status_filter == 'overpaid' %}selected{% endif %}>💰 Thanh toán thừa</option>
+      <option value="expired" {% if payment_status_filter == 'expired' %}selected{% endif %}>⏰ Hết hạn</option>
+    </select>
+    <input type="date" name="date_from" value="{{ date_from }}" class="form-control form-control-sm" style="width:140px">
+    <input type="date" name="date_to" value="{{ date_to }}" class="form-control form-control-sm" style="width:140px">
+    <button type="submit" class="btn btn-sm btn-outline-primary">Lọc</button>
+    {% if active_filter_count %}
+    <a href="/orders" class="btn btn-sm btn-outline-secondary">Đặt lại</a>
+    {% endif %}
+  </form>
+</div>
+
+<!-- Mobile filter button -->
+<div class="d-flex d-md-none mb-3">
+  <button type="button" class="btn btn-outline-primary flex-fill" data-bs-toggle="offcanvas" data-bs-target="#orderFilterSheet">
+    <i class="bi bi-funnel"></i> Bộ lọc
+    {% if active_filter_count %}<span class="badge bg-primary rounded-pill ms-1">{{ active_filter_count }}</span>{% endif %}
+  </button>
+</div>
+
+<!-- Mobile filter bottom sheet -->
+<div class="offcanvas offcanvas-bottom filter-sheet" tabindex="-1" id="orderFilterSheet">
+  <div class="offcanvas-header">
+    <h5 class="offcanvas-title">Bộ lọc đơn hàng</h5>
+    <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
+  </div>
+  <form method="get" id="orderFilterForm">
+    <div class="offcanvas-body">
+      <div class="filter-group">
+        <label class="form-label">Mã đơn / Telegram ID</label>
+        <input type="text" name="search" value="{{ search }}" class="form-control" placeholder="Mã đơn, User ID...">
+      </div>
+      <div class="filter-group">
+        <label class="form-label">Trạng thái đơn</label>
+        <select name="status" class="form-select">
+          <option value="">Tất cả trạng thái</option>
+          {% for st in order_statuses %}
+          <option value="{{ st }}" {% if status_filter == st %}selected{% endif %}>{{ st }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="filter-group">
+        <label class="form-label">Trạng thái thanh toán</label>
+        <select name="payment_status" class="form-select">
+          <option value="">Tất cả thanh toán</option>
+          <option value="pending" {% if payment_status_filter == 'pending' %}selected{% endif %}>⏳ Chờ thanh toán</option>
+          <option value="partial" {% if payment_status_filter == 'partial' %}selected{% endif %}>⚠️ Thanh toán thiếu</option>
+          <option value="paid" {% if payment_status_filter == 'paid' %}selected{% endif %}>✅ Đã thanh toán</option>
+          <option value="overpaid" {% if payment_status_filter == 'overpaid' %}selected{% endif %}>💰 Thanh toán thừa</option>
+          <option value="expired" {% if payment_status_filter == 'expired' %}selected{% endif %}>⏰ Hết hạn</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label class="form-label">Khoảng ngày</label>
+        <div class="d-flex gap-2">
+          <input type="date" name="date_from" value="{{ date_from }}" class="form-control" placeholder="Từ ngày">
+          <input type="date" name="date_to" value="{{ date_to }}" class="form-control" placeholder="Đến ngày">
+        </div>
+      </div>
+    </div>
+    <div class="offcanvas-footer-sticky">
+      <a href="/orders" class="btn btn-outline-secondary">Đặt lại</a>
+      <button type="submit" class="btn btn-primary">Áp dụng</button>
+    </div>
+  </form>
+</div>
+
+<!-- ── Desktop table ── -->
+<div class="card d-none d-md-block">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead>
+          <tr>
+            <th>Mã đơn</th>
+            <th>Người dùng</th>
+            <th>Sản phẩm</th>
+            <th>SL</th>
+            <th>Tổng tiền</th>
+            <th>Trạng thái</th>
+            <th>Thanh toán</th>
+            <th>Thời gian</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for o in orders %}
+          <tr>
+            <td><a href="/orders/{{ o.id }}" class="fw-semibold">{{ o.order_code }}</a></td>
+            <td><small>{{ o.telegram_user_id }}</small></td>
+            <td>{{ o.product.name if o.product else '—' }}</td>
+            <td>{{ o.quantity }}</td>
+            <td>{{ "{:,.0f}".format(o.total_price).replace(",", ".") }}đ</td>
+            <td>{% include "_order_status_badge.html" %}</td>
+            <td>
+              {% if o.payment_status %}
+                {% set ps = o.payment_status.value if o.payment_status.value is defined else o.payment_status %}
+                {% if ps == 'paid' %}<span class="badge bg-success">✅ Đã TT</span>
+                {% elif ps == 'partial' %}<span class="badge bg-warning text-dark">⚠️ Thiếu</span>
+                {% elif ps == 'overpaid' %}<span class="badge bg-info">💰 Thừa</span>
+                {% elif ps == 'expired' %}<span class="badge bg-secondary">⏰ HH</span>
+                {% elif ps == 'pending' %}<span class="badge bg-light text-dark border">⏳</span>
+                {% else %}<span class="badge bg-secondary">{{ ps }}</span>{% endif %}
+              {% else %}
+                <span class="text-muted small">—</span>
+              {% endif %}
+            </td>
+            <td><small>{{ o.created_at.strftime('%d/%m/%Y %H:%M') }}</small></td>
+            <td><a href="/orders/{{ o.id }}" class="btn btn-xs btn-outline-primary"><i class="bi bi-eye"></i></a></td>
+          </tr>
+          {% else %}
+          <tr><td colspan="9" class="text-center text-muted py-4">Không có đơn hàng nào</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ── Mobile cards ── -->
+<div class="d-md-none order-card-list">
+  {% for o in orders %}
+  {% set sv = o.status.value if o.status.value is defined else o.status %}
+  <div class="order-card">
+    <div class="order-card-head">
+      <div>
+        <div class="order-card-code">🧾 {{ o.order_code }}</div>
+        <div class="order-card-product">📦 {{ o.product.name if o.product else '—' }}</div>
+      </div>
+      {% include "_order_status_badge.html" %}
+    </div>
+    <div class="order-card-body">
+      <div class="order-card-row">👤 Khách: <strong>{{ o.telegram_user_id }}</strong></div>
+      <div class="order-card-row">🆔 Telegram ID: <strong>{{ o.telegram_user_id }}</strong></div>
+      <div class="order-card-row">🔢 Số lượng: <strong>{{ o.quantity }}</strong>
+        {% if o.partial_count is not none and o.partial_count != o.quantity %}
+          <span class="badge bg-warning text-dark ms-1">Giao {{ o.partial_count }}/{{ o.quantity }}</span>
+        {% endif %}
+      </div>
+      <div class="order-card-row">💰 Tổng tiền: <strong>{{ "{:,.0f}".format(o.total_price).replace(",", ".") }}đ</strong></div>
+      <div class="order-card-row">💳 Thanh toán:
+        {% if o.payment_status %}
+          {% set ps = o.payment_status.value if o.payment_status.value is defined else o.payment_status %}
+          {% if ps == 'paid' %}<span class="badge bg-success">✅ Đã TT</span>
+          {% elif ps == 'partial' %}<span class="badge bg-warning text-dark">⚠️ Thiếu</span>
+          {% elif ps == 'overpaid' %}<span class="badge bg-info">💰 Thừa</span>
+          {% elif ps == 'expired' %}<span class="badge bg-secondary">⏰ HH</span>
+          {% elif ps == 'pending' %}<span class="badge bg-light text-dark border">⏳</span>
+          {% else %}<span class="badge bg-secondary">{{ ps }}</span>{% endif %}
+        {% else %}<span class="text-muted">—</span>{% endif %}
+      </div>
+      <div class="order-card-row">🕒 {{ o.created_at.strftime('%d/%m/%Y %H:%M') }}</div>
+      {% if sv == 'completed' or sv == 'partial_delivery' %}
+      <div class="order-card-row text-success">🎁 Đã giao: <strong>{{ o.partial_count if o.partial_count is not none else o.quantity }}</strong> tài khoản</div>
+      {% endif %}
+      {% if sv in ['api_failed', 'failed', 'delivery_failed'] %}
+      <div class="order-card-row text-danger">⚠️ Có lỗi giao hàng/API</div>
+      {% endif %}
+    </div>
+    <div class="order-card-actions">
+      <a href="/orders/{{ o.id }}" class="btn btn-outline-primary btn-card-action"><i class="bi bi-eye"></i> Xem</a>
+      <button type="button" class="btn btn-outline-secondary btn-card-action copy-code" data-code="{{ o.order_code }}"><i class="bi bi-clipboard"></i> Sao chép</button>
+      <div class="dropdown">
+        <button class="btn btn-outline-secondary btn-card-action btn-card-more" data-bs-toggle="dropdown"><i class="bi bi-three-dots"></i></button>
+        <ul class="dropdown-menu dropdown-menu-end">
+          <li><a class="dropdown-item" href="/orders/{{ o.id }}"><i class="bi bi-arrow-repeat"></i> Đổi trạng thái</a></li>
+          <li><a class="dropdown-item" href="/orders/{{ o.id }}"><i class="bi bi-box-seam"></i> Xem tài khoản đã giao</a></li>
+          {% if sv not in ['cancelled', 'completed'] %}
+          <li>
+            <form action="/orders/{{ o.id }}/cancel" method="post" onsubmit="return confirm('Hủy đơn hàng này?')">
+              <button type="submit" class="dropdown-item text-danger"><i class="bi bi-x-circle"></i> Hủy đơn</button>
+            </form>
+          </li>
+          {% endif %}
+        </ul>
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <div class="text-center text-muted py-5">Không có đơn hàng nào</div>
+  {% endfor %}
+</div>
+
+{% if total > per_page %}
+<nav class="mt-3"><ul class="pagination pagination-sm justify-content-center">
+  {% for i in range(1, (total // per_page) + 2) %}
+  <li class="page-item {% if i == page %}active{% endif %}">
+    <a class="page-link" href="?page={{ i }}&status={{ status_filter }}&payment_status={{ payment_status_filter }}&search={{ search }}&date_from={{ date_from }}&date_to={{ date_to }}">{{ i }}</a>
+  </li>
+  {% endfor %}
+</ul></nav>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+document.querySelectorAll('.copy-code').forEach(btn => {
+  btn.addEventListener('click', function() {
+    navigator.clipboard.writeText(this.dataset.code).then(() => {
+      const orig = this.innerHTML;
+      this.innerHTML = '<i class="bi bi-check"></i> Đã chép!';
+      setTimeout(() => this.innerHTML = orig, 1500);
+    });
+  });
+});
+</script>
+{% endblock %}

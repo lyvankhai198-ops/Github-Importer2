@@ -1,0 +1,206 @@
+SỬA DỨT ĐIỂM LỖI MÔ TẢ KHÔNG ĐỔI THEO NGÔN NGỮ.
+
+Hiện trạng:
+- User đã chọn English.
+- Tên sản phẩm, giá, nút đã là tiếng Anh.
+- Nhưng phần Description vẫn hiển thị tiếng Việt từ nguồn API.
+
+Không tạo project mới.
+Không xóa database hoặc sản phẩm hiện có.
+
+==================================================
+1. SỬA HÀM LẤY MÔ TẢ
+==================================================
+
+Tìm toàn bộ chỗ đang render chi tiết sản phẩm.
+
+Hiện tại có thể đang dùng trực tiếp:
+
+product.description
+hoặc
+product.external_description
+hoặc
+product.description_vi
+
+Phải thay bằng hàm duy nhất:
+
+get_localized_product_description(product, language_code)
+
+Quy tắc:
+
+Nếu language_code == "vi":
+    ưu tiên product.description_vi
+    fallback product.description
+    fallback product.external_description
+
+Nếu language_code == "en":
+    ưu tiên product.description_en
+    nếu trống thì tạo bản dịch tiếng Anh từ nguồn tiếng Việt
+    lưu lại database
+    trả về description_en
+
+Không được fallback thẳng sang description_vi cho user English.
+
+==================================================
+2. TẠO BẢN DỊCH KHI SYNC API
+==================================================
+
+Khi đồng bộ sản phẩm từ API nguồn:
+
+- Lưu mô tả nguồn vào description_vi hoặc external_description.
+- Nếu description_en đang trống và description_en_locked = false:
+  chạy translate_description_to_english()
+  rồi lưu vào description_en.
+
+Nếu admin đã sửa description_en:
+- không ghi đè.
+
+==================================================
+3. DỊCH TOÀN BỘ NỘI DUNG
+==================================================
+
+Ví dụ nguồn:
+
+• Link nhận package Gemini AI Pro hạn 18 Months.
+• Không cần thêm thẻ, không cần sử dụng vpn.
+• Mua về chỉ cần login gmail -> dán link -> kích hoạt package.
+• warranty 12 giờ mua về sử dụng liền no warranty những trường hợp ngâm link quá 12h kể từ lúc mua.
+• Hướng dẫn sử dụng: https://t.me/taphoagiare_update/99
+
+Phải hiển thị English:
+
+• Activation link for a Gemini AI Pro package valid for 18 months.
+• No credit card required and no VPN needed.
+• Simply sign in to Gmail, paste the activation link, and activate the package.
+• 12-hour warranty. No warranty applies if the link is activated more than 12 hours after purchase.
+• User guide: https://t.me/taphoagiare_update/99
+
+Không được còn các từ:
+
+- nhận
+- hạn
+- không cần
+- mua về
+- sử dụng
+- trường hợp
+- kể từ lúc mua
+- hướng dẫn sử dụng
+- giờ
+- tháng
+
+trong bản tiếng Anh.
+
+==================================================
+4. XỬ LÝ NỘI DUNG TRỘN VIỆT - ANH
+==================================================
+
+Mô tả nguồn có thể trộn:
+
+- tiếng Việt
+- tiếng Anh
+- ký hiệu
+- URL
+
+Hàm dịch phải:
+- phát hiện và dịch phần tiếng Việt
+- giữ nguyên thương hiệu
+- giữ nguyên URL
+- giữ nguyên số tháng/ngày
+- chuẩn hóa câu tiếng Anh tự nhiên
+
+Ví dụ:
+
+"warranty 12 giờ"
+→ "12-hour warranty"
+
+"no warranty những trường hợp ngâm link quá 12h"
+→ "No warranty applies if the link is activated more than 12 hours after purchase."
+
+==================================================
+5. KHÔNG DỊCH LẠI MỖI LẦN XEM
+==================================================
+
+Khi description_en được tạo:
+- lưu vào database
+- lần sau đọc trực tiếp
+- không gọi dịch lại
+
+Nếu description_vi thay đổi sau lần sync:
+- chỉ cập nhật description_en nếu description_en_locked = false
+
+==================================================
+6. CACHE
+==================================================
+
+Sau khi lưu description_en:
+
+- clear cache chi tiết sản phẩm
+- hoặc không cache description theo ngôn ngữ
+
+Cache key bắt buộc phải có language_code:
+
+product_detail:{product_id}:{language_code}
+
+Không dùng chung cache tiếng Việt và tiếng Anh.
+
+==================================================
+7. CODE BLOCK SAO CHÉP
+==================================================
+
+Phần mô tả phải render trong:
+
+<pre>{escaped_description}</pre>
+
+hoặc code block tương đương.
+
+Phải escape HTML trước khi đưa vào <pre>.
+
+Không đặt URL ngoài description_en.
+Giữ nguyên toàn bộ xuống dòng.
+
+==================================================
+8. SỬA SẢN PHẨM CŨ
+==================================================
+
+Tạo migration/backfill:
+
+- tìm tất cả sản phẩm có description_en rỗng
+- lấy description_vi / external_description
+- tạo bản tiếng Anh
+- lưu description_en
+
+Không cần admin mở từng sản phẩm để dịch.
+
+Thêm nút web:
+
+🌐 Dịch lại mô tả tiếng Anh
+
+dùng khi admin muốn tạo lại bản dịch.
+
+==================================================
+9. TEST BẮT BUỘC
+==================================================
+
+Test sản phẩm Gemini trong ảnh:
+
+User language = en
+
+Kết quả phải là:
+
+[LINK] Gemini Pro 18 Months
+
+Description:
+• Activation link for a Gemini AI Pro package valid for 18 months.
+• No credit card required and no VPN needed.
+• Simply sign in to Gmail, paste the activation link, and activate the package.
+• 12-hour warranty. No warranty applies if the link is activated more than 12 hours after purchase.
+• User guide: https://t.me/taphoagiare_update/99
+
+Không còn bất kỳ câu tiếng Việt nào.
+
+Sau khi sửa:
+- clear cache
+- restart bot
+- test lại user English
+- commit
+- push GitHub

@@ -1,0 +1,276 @@
+{% extends "base.html" %}
+{% block title %}Chợ - AI Center{% endblock %}
+{% block page_title %}🏪 Chợ{% endblock %}
+{% block content %}
+<style>
+.brand-chip-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-bottom: 1rem;
+}
+@media (min-width: 768px) {
+  .brand-chip-grid { grid-template-columns: repeat(4, 1fr); }
+}
+.brand-chip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 1px solid var(--bs-border-color, #dee2e6);
+  border-radius: 10px;
+  background: var(--bs-card-bg, #fff);
+  text-decoration: none;
+  color: inherit;
+  font-weight: 500;
+  font-size: 0.92rem;
+}
+.brand-chip:hover { border-color: var(--bs-primary, #0d6efd); }
+.brand-chip.active { border-color: var(--bs-primary, #0d6efd); background: rgba(13,110,253,0.08); color: var(--bs-primary, #0d6efd); }
+.brand-chip .chip-count {
+  background: var(--bs-tertiary-bg, #f1f5f9);
+  border-radius: 999px;
+  padding: 2px 9px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.brand-chip.active .chip-count { background: var(--bs-primary, #0d6efd); color: #fff; }
+.market-state-tabs { margin-bottom: 1rem; }
+.market-row-name { font-weight: 600; }
+.market-sync-note { font-size: 0.8rem; }
+</style>
+
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+  <div class="text-muted market-sync-note">
+    <i class="bi bi-arrow-repeat"></i> Sản phẩm được tự động đồng bộ từ API nhà cung cấp.
+  </div>
+  {% if api_connections and request.state.is_owner %}
+  <form action="/products/sync-all" method="post">
+    <button type="submit" class="btn btn-sm btn-outline-success">
+      <i class="bi bi-arrow-repeat"></i> Đồng bộ ngay
+    </button>
+  </form>
+  {% endif %}
+</div>
+
+<!-- Brand picker -->
+<div class="brand-chip-grid">
+  <a href="/products/market?state={{ state_filter }}" class="brand-chip {% if not brand_filter %}active{% endif %}">
+    <span>🗂️ Tất cả</span><span class="chip-count">{{ total_listed }}</span>
+  </a>
+  {% for b in brands %}
+  <a href="/products/market?brand={{ b.key }}&state={{ state_filter }}" class="brand-chip {% if brand_filter==b.key %}active{% endif %}">
+    <span>{{ b.icon }} {{ b.label }}</span><span class="chip-count">{{ b.count }}</span>
+  </a>
+  {% endfor %}
+</div>
+
+<!-- Listed / not-listed state tabs -->
+<ul class="nav nav-pills market-state-tabs">
+  <li class="nav-item">
+    <a class="nav-link {% if state_filter=='listed' %}active{% endif %}" href="/products/market?brand={{ brand_filter }}&state=listed">Đang treo</a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if state_filter=='unlisted' %}active{% endif %}" href="/products/market?brand={{ brand_filter }}&state=unlisted">Nguồn hàng</a>
+  </li>
+</ul>
+
+{% if not products and not brands|selectattr("count", "gt", 0)|list %}
+  {% if other_tab_has_products %}
+  <div class="alert alert-info">
+    {% if state_filter == 'listed' %}
+    Chưa treo sản phẩm nào cả. Chuyển sang tab <a href="/products/market?state=unlisted">Nguồn hàng</a> để chọn sản phẩm và treo lên Chợ.
+    {% else %}
+    Không còn sản phẩm nào chưa treo — tất cả đã ở tab <a href="/products/market?state=listed">Đang treo</a>.
+    {% endif %}
+  </div>
+  {% elif request.state.is_owner %}
+  <div class="alert alert-warning">
+    Chưa có kết nối API nào đang hoạt động. Vào <a href="/api-connections">Kết nối API</a> để thêm nguồn hàng trước khi treo sản phẩm lên Chợ.
+  </div>
+  {% else %}
+  <div class="alert alert-warning">
+    Chưa có sản phẩm nào để treo lên Chợ. Vui lòng liên hệ admin để được chia sẻ nguồn hàng.
+  </div>
+  {% endif %}
+{% endif %}
+
+<!-- ── Desktop table ── -->
+<div class="card d-none d-md-block">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead>
+          <tr>
+            <th>Sản phẩm</th>
+            <th>{% if state_filter=='listed' %}Giá tối thiểu treo{% else %}Giá bán (đã +markup){% endif %}</th>
+            <th>Chưa bán</th>
+            <th>Cập nhật lần cuối</th>
+            <th>Hành động</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for ap in products %}
+          <tr>
+            <td>
+              <div class="d-flex align-items-center gap-2">
+                <img src="{{ ap.display_image or '/static/img/no-image.png' }}" width="36" height="36" style="object-fit:cover;border-radius:4px" onerror="this.src='/static/img/no-image.png'">
+                <div>
+                  {% if ap.linked_product %}
+                  <a href="/products/id/{{ ap.linked_product.id }}" class="market-row-name text-decoration-none">{{ ap.display_icon }} {{ ap.display_name }}</a>
+                  {% else %}
+                  <span class="market-row-name">{{ ap.display_icon }} {{ ap.display_name }}</span>
+                  {% endif %}
+                  {% if ap.is_shared_from_admin %}<span class="badge bg-warning text-dark ms-1">Từ Admin</span>{% endif %}
+                  <div><small class="text-muted">{{ ap.display_connection_name }}</small></div>
+                </div>
+              </div>
+            </td>
+            <td>
+              {{ "{:,.0f}".format(ap.display_price).replace(",", ".") }}đ
+              {% if state_filter != 'listed' and ap.display_source_price and request.state.is_owner %}
+              <div><small class="text-muted">nguồn {{ "{:,.0f}".format(ap.display_source_price).replace(",", ".") }}đ</small></div>
+              {% endif %}
+            </td>
+            <td>
+              {% if ap.display_unlimited %}
+                <span class="badge bg-secondary">∞</span>
+              {% else %}
+                <span class="badge {% if ap.display_stock and ap.display_stock > 0 %}bg-success{% else %}bg-danger{% endif %}">{{ ap.display_stock or 0 }}</span>
+              {% endif %}
+            </td>
+            <td><small>{{ ap.last_update.strftime('%H:%M:%S %d/%m/%Y') if ap.last_update else '—' }}</small></td>
+            <td class="text-nowrap">
+              {% if ap.is_listed %}
+              <button class="btn btn-sm btn-outline-danger market-unlist-btn me-1" data-id="{{ ap.linked_product.id }}">Lấy xuống treo</button>
+              <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editModal{{ ap.linked_product.id }}"><i class="bi bi-pencil"></i></button>
+              {% else %}
+              <button class="btn btn-sm btn-outline-success" data-bs-toggle="modal" data-bs-target="#treoModal{{ ap.id }}">Treo</button>
+              {% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5" class="text-center text-muted py-4">Không có sản phẩm nào</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ── Mobile cards ── -->
+<div class="d-md-none product-card-list">
+  {% for ap in products %}
+  <div class="product-card">
+    <div class="product-card-top">
+      <img src="{{ ap.display_image or '/static/img/no-image.png' }}" class="product-card-img" onerror="this.src='/static/img/no-image.png'">
+      <div class="product-card-title">
+        {% if ap.linked_product %}
+        <a href="/products/id/{{ ap.linked_product.id }}" class="product-card-name">{{ ap.display_icon }} {{ ap.display_name }}</a>
+        {% else %}
+        <span class="product-card-name">{{ ap.display_icon }} {{ ap.display_name }}</span>
+        {% endif %}
+        {% if ap.is_shared_from_admin %}<span class="badge bg-warning text-dark">Từ Admin</span>{% endif %}
+        <div class="text-muted small">{{ ap.display_connection_name }}</div>
+      </div>
+      {% if ap.display_unlimited %}
+        <span class="badge-pill badge-pill-gray">∞</span>
+      {% elif ap.display_stock and ap.display_stock > 0 %}
+        <span class="badge-pill badge-pill-green">{{ ap.display_stock }} chưa bán</span>
+      {% else %}
+        <span class="badge-pill badge-pill-red">Hết hàng</span>
+      {% endif %}
+    </div>
+    <div class="product-card-body">
+      <div class="product-card-row">💰 {% if state_filter=='listed' %}Giá tối thiểu treo{% else %}Giá bán (đã +markup){% endif %}: <strong>{{ "{:,.0f}".format(ap.display_price).replace(",", ".") }}đ</strong>
+        {% if state_filter != 'listed' and ap.display_source_price and request.state.is_owner %}
+        <small class="text-muted">(nguồn {{ "{:,.0f}".format(ap.display_source_price).replace(",", ".") }}đ)</small>
+        {% endif %}
+      </div>
+      <div class="product-card-row">🕒 Cập nhật lần cuối: <strong>{{ ap.last_update.strftime('%H:%M:%S %d/%m/%Y') if ap.last_update else '—' }}</strong></div>
+    </div>
+    <div class="product-card-actions">
+      {% if ap.is_listed %}
+      <button class="btn btn-outline-danger btn-card-action market-unlist-btn" data-id="{{ ap.linked_product.id }}">Lấy xuống treo</button>
+      <button class="btn btn-outline-primary btn-card-action" data-bs-toggle="modal" data-bs-target="#editModal{{ ap.linked_product.id }}"><i class="bi bi-pencil"></i> Sửa</button>
+      {% else %}
+      <button class="btn btn-outline-success btn-card-action" data-bs-toggle="modal" data-bs-target="#treoModal{{ ap.id }}">Treo</button>
+      {% endif %}
+    </div>
+  </div>
+  {% else %}
+  <div class="text-center text-muted py-5">Không có sản phẩm nào</div>
+  {% endfor %}
+</div>
+
+<!-- Per-product Edit Modals (shared with /products) -->
+{% for ap in products %}
+{% if ap.linked_product %}
+{% set p = ap.linked_product %}
+{% include "_product_edit_modal.html" %}
+{% endif %}
+{% endfor %}
+
+<!-- Per-source-item "Treo" modals — set the listing (sale) price before the
+     source item actually becomes a bot product, instead of silently
+     defaulting to the raw supplier price. -->
+{% for ap in products %}
+{% if not ap.linked_product %}
+<div class="modal fade" id="treoModal{{ ap.id }}" tabindex="-1" aria-modal="true" role="dialog">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">🏷️ Treo lên Chợ</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Đóng"></button>
+      </div>
+      <form action="/products/api-sources/{{ ap.id }}/create-product" method="post">
+        <div class="modal-body">
+          <p class="mb-1">{{ ap.display_icon }} <strong>{{ ap.display_name }}</strong></p>
+          {% if request.state.is_owner %}
+          <p class="mb-3 text-muted small">
+            Giá nguồn: {{ "{:,.0f}".format(ap.display_source_price or 0).replace(",", ".") }}đ
+            — đã tự cộng markup, giá bán đề xuất bên dưới.
+          </p>
+          {% endif %}
+          <div class="mb-2">
+            <label class="form-label fw-semibold">Giá treo (giá bán cho khách)</label>
+            <input type="text"
+                   name="sale_price"
+                   class="form-control form-control-lg vnd-price-input"
+                   value="{{ ap.display_price or 0 }}"
+                   inputmode="numeric"
+                   autocomplete="off"
+                   required>
+            <div class="form-text">
+              {% if request.state.is_owner %}
+              Tự sửa nếu muốn giá khác — mặc định đã +markup từ giá nguồn.
+              {% else %}
+              Giá bán tối thiểu là {{ "{:,.0f}".format(ap.display_price or 0).replace(",", ".") }}đ — không thể đặt thấp hơn.
+              {% endif %}
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
+          <button type="submit" class="btn btn-success">Treo</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endfor %}
+
+{% endblock %}
+{% block scripts %}
+<script>
+document.querySelectorAll('.market-unlist-btn').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    fetch(`/products/${this.dataset.id}/toggle`, { method: 'POST' })
+      .then(function (r) { return r.json(); })
+      .then(function () { window.location.reload(); });
+  });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,146 @@
+<!-- Per-product Edit Modal — shared by products.html (table/card views) and
+     market.html (Chợ view). Included inside a "for p in products" loop;
+     relies on the loop's `p` plus the page's `emoji_icons` context var. -->
+<div class="modal fade" id="editModal{{ p.id }}" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title">Sửa: {{ p.name }}</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+      <form action="/products/{{ p.id }}/edit" method="post" enctype="multipart/form-data">
+        <div class="modal-body">
+          <div class="form-section">
+            <div class="form-section-title">1. Thông tin cơ bản</div>
+            <div class="row g-3">
+              <div class="col-md-6"><label class="form-label">Tên sản phẩm *</label><input type="text" name="name" class="form-control en-src-name" value="{{ p.name }}" required></div>
+              <div class="col-md-6"><label class="form-label">Tên sản phẩm (English) {% if p.name_en_locked %}<span class="badge bg-secondary">🔒 đã sửa tay</span>{% endif %}</label><input type="text" name="name_en" class="form-control en-out-name" value="{{ p.name_en or '' }}" placeholder="Shown to English-language shoppers"></div>
+              <div class="col-md-6"><label class="form-label">Mã sản phẩm *</label><input type="text" name="product_code" class="form-control" value="{{ p.product_code }}" required></div>
+              <div class="col-12"><label class="form-label">Mô tả</label><textarea name="description" class="form-control en-src-desc" rows="3">{{ p.description or '' }}</textarea></div>
+              <div class="col-12">
+                <label class="form-label">Mô tả (English) {% if p.description_en_locked %}<span class="badge bg-secondary">🔒 đã sửa tay</span>{% endif %}</label>
+                <textarea name="description_en" class="form-control en-out-desc" rows="2">{{ p.description_en or '' }}</textarea>
+                <button type="button" class="btn btn-sm btn-outline-info mt-1 gen-en-btn">🌐 Dịch lại sang tiếng Anh</button>
+                <button type="button" class="btn btn-sm btn-outline-info mt-1 gen-vi-btn">🌐 Dịch lại sang tiếng Việt</button>
+                <div class="form-text">
+                  Tự dịch bằng AI — bạn có thể chỉnh lại trước khi lưu.
+                  {% if p.translation_status == "failed" %}<span class="badge bg-danger">⚠️ Dịch thất bại lần gần nhất</span>{% endif %}
+                </div>
+              </div>
+              <div class="col-md-6"><label class="form-label">Trạng thái</label>
+                <select name="is_active" class="form-select">
+                  <option value="true" {% if p.is_active %}selected{% endif %}>Đang bán</option>
+                  <option value="false" {% if not p.is_active %}selected{% endif %}>Tạm ngưng</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <div class="form-section-title">2. Giá</div>
+            <div class="row g-3">
+              {% if p.hide_source_price %}
+              <input type="hidden" name="source_price" value="{{ p.source_price|int if p.source_price is not none else 0 }}">
+              <div class="col-md-6"><label class="form-label">Giá bán (đ)</label><input type="text" name="sale_price" class="form-control price-sale-input vnd-price-input" value="{{ p.sale_price|int }}" inputmode="numeric" autocomplete="off">
+                <div class="form-text">
+                  ≈ {{ "%.2f"|format(p.price_usdt or 0) }} USDT
+                  {% if p.min_allowed_sale_price %} — tối thiểu <strong>{{ "{:,.0f}".format(p.min_allowed_sale_price).replace(",", ".") }}đ</strong>{% endif %}
+                </div>
+              </div>
+              {% else %}
+              <div class="col-md-6"><label class="form-label">Giá nguồn (đ)</label><input type="text" name="source_price" class="form-control price-source-input vnd-price-input" value="{{ p.source_price|int if p.source_price is not none else 0 }}" inputmode="numeric" autocomplete="off">
+                <div class="form-text">Giá nhập từ nhà cung cấp — tự cập nhật khi đồng bộ API.</div>
+              </div>
+              <div class="col-md-6"><label class="form-label">Giá bán (đ)</label><input type="text" name="sale_price" class="form-control price-sale-input vnd-price-input" value="{{ p.sale_price|int }}" inputmode="numeric" autocomplete="off">
+                <div class="form-text">≈ {{ "%.2f"|format(p.price_usdt or 0) }} USDT — tự động tính theo tỉ giá hiện tại</div>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Phần chênh lệch (dự kiến)</label>
+                <input type="text" class="form-control price-margin-preview" value="{{ p.price_margin|int if p.price_margin is not none else 0 }}đ" disabled>
+                <div class="form-text">= Giá bán − Giá nguồn, tự tính lại khi lưu.</div>
+              </div>
+              {% endif %}
+              <div class="col-md-6 d-flex align-items-end">
+                <div class="form-check form-switch">
+                  <input class="form-check-input" type="checkbox" name="auto_adjust_price" value="1" id="autoAdjust{{ p.id }}" {% if p.auto_adjust_price %}checked{% endif %}>
+                  <label class="form-check-label" for="autoAdjust{{ p.id }}">Tự động điều chỉnh giá bán khi giá nguồn đổi</label>
+                </div>
+              </div>
+              <div class="col-md-6"><label class="form-label">Bảo hành</label><input type="text" name="warranty" class="form-control" value="{{ p.warranty or '' }}" placeholder="VD: 30 ngày"></div>
+              <div class="col-md-6"><label class="form-label">Thời hạn</label><input type="text" name="duration" class="form-control" value="{{ p.duration or '' }}" placeholder="VD: 1 năm"></div>
+            </div>
+            <details class="mt-2">
+              <summary class="text-muted" style="cursor:pointer">Bảo vệ giá nâng cao (tùy chọn)</summary>
+              <div class="row g-3 mt-1">
+                <div class="col-md-4"><label class="form-label">Giá bán tối thiểu (đ)</label><input type="number" name="min_sale_price" class="form-control" value="{{ p.min_sale_price|int if p.min_sale_price is not none else '' }}" step="1" min="0" placeholder="Không giới hạn"></div>
+                <div class="col-md-4"><label class="form-label">Giá bán tối đa (đ)</label><input type="number" name="max_sale_price" class="form-control" value="{{ p.max_sale_price|int if p.max_sale_price is not none else '' }}" step="1" min="0" placeholder="Không giới hạn"></div>
+                <div class="col-md-4"><label class="form-label">Cần duyệt nếu giá nguồn tăng quá (%)</label><input type="number" name="require_admin_approval_above_percent" class="form-control" value="{{ p.require_admin_approval_above_percent|int if p.require_admin_approval_above_percent is not none else '' }}" step="1" min="0" placeholder="Không giới hạn"></div>
+              </div>
+            </details>
+            {% if p.price_pending_approval %}
+            <div class="alert alert-warning mt-2 mb-0 d-flex justify-content-between align-items-center flex-wrap gap-2">
+              <div>🚨 Giá nguồn mới <strong>{{ "{:,.0f}".format(p.pending_new_source_price or 0).replace(",", ".") }}đ</strong> đang chờ duyệt.</div>
+              <a href="/products/id/{{ p.id }}" class="btn btn-sm btn-outline-dark">Xem & duyệt</a>
+            </div>
+            {% endif %}
+          </div>
+
+          <div class="form-section">
+            <div class="form-section-title">3. Kho và giao hàng</div>
+            <div class="row g-3">
+              <div class="col-md-6"><label class="form-label">Chế độ giao hàng</label>
+                <select name="delivery_mode" class="form-select">
+                  <option value="manual_admin" {% if p.delivery_mode.value in ['manual', 'manual_admin'] %}selected{% endif %}>Thủ công (Admin giao tay)</option>
+                  <option value="manual_stock" {% if p.delivery_mode.value=='manual_stock' %}selected{% endif %}>Kho tài khoản (tự động)</option>
+                  <option value="api_auto" {% if p.delivery_mode.value=='api_auto' %}selected{% endif %}>Tự động API</option>
+                </select>
+              </div>
+              <div class="col-md-6"><label class="form-label">Số lượng tối thiểu</label><input type="number" name="min_quantity" class="form-control" value="{{ p.min_quantity or 1 }}" step="1" min="1"></div>
+              <div class="col-12">
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" name="allow_manual_order" value="1" id="allowManual{{ p.id }}" {% if p.allow_manual_order %}checked{% endif %}>
+                  <label class="form-check-label" for="allowManual{{ p.id }}">Nhận đơn khi hết hàng</label>
+                </div>
+              </div>
+              {% if p.source_type.value == 'api' %}
+              <div class="col-12">
+                <div class="form-text">
+                  🔒 Trường đã sửa tay sẽ không bị ghi đè bởi lần đồng bộ API tiếp theo:
+                  {% set edited = (p.manually_edited_fields or '').split(',') %}
+                  {% if edited and edited[0] %}{{ edited|join(', ') }}{% else %}chưa có{% endif %}
+                </div>
+              </div>
+              {% endif %}
+            </div>
+          </div>
+
+          <div class="form-section">
+            <div class="form-section-title">4. Hiển thị bot</div>
+            <div class="row g-3">
+              <div class="col-md-6 icon-picker" data-default-fallback="{{ p.telegram_icon or '' }}">
+                <label class="form-label">Chọn icon sản phẩm</label>
+                <input type="hidden" name="telegram_icon" class="icon-picker-fallback" value="{{ p.telegram_icon or '' }}">
+                <input type="hidden" name="telegram_custom_emoji_id" class="icon-picker-custom-id" value="{{ p.telegram_custom_emoji_id or '' }}">
+                <div class="icon-picker-preview d-flex align-items-center gap-2 border rounded p-2 mb-2">
+                  <span class="icon-picker-preview-emoji" style="font-size:1.8rem">{{ p.telegram_icon or '📦' }}</span>
+                  <span class="icon-picker-preview-label text-muted small">{% if p.telegram_custom_emoji_id %}Icon tùy chỉnh đã chọn{% elif p.telegram_icon %}Emoji thường (không phải icon tùy chỉnh){% else %}Chưa chọn icon (tự nhận diện theo tên){% endif %}</span>
+                </div>
+                <div class="d-flex gap-2 mb-2">
+                  <button type="button" class="btn btn-sm btn-outline-primary icon-picker-open">🎨 Đổi icon</button>
+                  <button type="button" class="btn btn-sm btn-outline-danger icon-picker-clear">✖ Xóa icon</button>
+                </div>
+                <div class="icon-picker-grid border rounded p-2" style="display:none; max-height:180px; overflow-y:auto;">
+                  {% for icon in emoji_icons %}
+                  <button type="button" class="btn btn-sm btn-outline-secondary me-1 mb-1 icon-picker-choice" data-fallback="{{ icon.fallback_emoji }}" data-custom-id="{{ icon.custom_emoji_id }}" data-name="{{ icon.name }}" title="{{ icon.name }}">{{ icon.fallback_emoji }}</button>
+                  {% else %}
+                  <div class="text-muted small">Kho icon đang trống. <a href="/emoji-icons" target="_blank">Thêm icon tại đây</a>.</div>
+                  {% endfor %}
+                </div>
+                <div class="form-text">Chưa chọn icon = hệ thống tự nhận diện theo tên sản phẩm (mặc định 📦 nếu không nhận diện được). <a href="/emoji-icons" target="_blank">Quản lý kho icon</a>.</div>
+              </div>
+              <div class="col-md-6"><label class="form-label">Ảnh sản phẩm</label><input type="file" name="image" class="form-control" accept="image/*"></div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer modal-footer-sticky"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button><button type="submit" class="btn btn-primary">Lưu sản phẩm</button></div>
+      </form>
+    </div>
+  </div>
+</div>

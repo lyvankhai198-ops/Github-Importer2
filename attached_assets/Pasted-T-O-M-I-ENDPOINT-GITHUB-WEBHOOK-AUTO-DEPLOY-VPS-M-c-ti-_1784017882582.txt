@@ -1,0 +1,224 @@
+TẠO MỚI ENDPOINT GITHUB WEBHOOK ĐỂ AUTO DEPLOY VPS.
+
+Mục tiêu:
+
+Replit sửa code
+→ Push GitHub
+→ GitHub gọi webhook
+→ VPS chạy git pull
+→ Cài thư viện nếu cần
+→ Restart aicenter
+
+Không dùng cron.
+Không kiểm tra GitHub mỗi phút.
+Phải cập nhật ngay khi có push.
+
+==================================================
+1. TẠO ENDPOINT
+==================================================
+
+Tạo endpoint:
+
+POST /github-webhook
+
+Endpoint này chỉ nhận sự kiện push từ GitHub.
+
+Không được cho truy cập công khai mà không xác thực.
+
+==================================================
+2. XÁC THỰC GITHUB SECRET
+==================================================
+
+Đọc secret từ biến môi trường:
+
+GITHUB_WEBHOOK_SECRET
+
+GitHub gửi signature trong header:
+
+X-Hub-Signature-256
+
+Phải xác thực bằng HMAC SHA-256 trên raw request body.
+
+So sánh signature bằng hmac.compare_digest.
+
+Nếu sai hoặc thiếu signature:
+
+HTTP 401
+
+Response:
+
+{
+  "success": false,
+  "message": "Invalid webhook signature"
+}
+
+Không chạy deploy nếu xác thực thất bại.
+
+==================================================
+3. CHỈ NHẬN PUSH NHÁNH MAIN
+==================================================
+
+Đọc payload GitHub.
+
+Chỉ deploy nếu:
+
+X-GitHub-Event = push
+
+và:
+
+ref = refs/heads/main
+
+Nếu là event khác hoặc nhánh khác:
+
+HTTP 200
+
+{
+  "success": true,
+  "message": "Ignored"
+}
+
+==================================================
+4. CHẠY DEPLOY SCRIPT
+==================================================
+
+Endpoint không tự viết toàn bộ lệnh deploy trong handler.
+
+Chạy script:
+
+/root/deploy-aicenter.sh
+
+Dùng subprocess an toàn:
+
+- không dùng shell=True
+- timeout tối đa 300 giây
+- capture stdout và stderr
+- không trả nội dung bí mật ra ngoài
+
+Nếu script đang chạy thì không chạy thêm lần thứ hai.
+
+Dùng file lock:
+
+/tmp/aicenter-deploy.lock
+
+Nếu đang deploy:
+
+HTTP 202
+
+{
+  "success": true,
+  "message": "Deployment already running"
+}
+
+==================================================
+5. KHÔNG CHỜ DEPLOY XONG TRONG REQUEST
+==================================================
+
+Sau khi xác thực thành công:
+
+- chạy deploy ở background task/thread/process
+- trả response ngay cho GitHub
+
+HTTP 202
+
+{
+  "success": true,
+  "message": "Deployment started"
+}
+
+Không để GitHub chờ vài phút rồi timeout.
+
+==================================================
+6. GHI LOG
+==================================================
+
+Ghi log tại:
+
+/var/log/aicenter-deploy.log
+
+Log tối thiểu:
+
+- thời gian
+- delivery id
+- commit hash
+- branch
+- trạng thái bắt đầu
+- git pull thành công/thất bại
+- pip install thành công/thất bại
+- restart thành công/thất bại
+- tổng thời gian deploy
+
+Không ghi:
+
+- API key
+- webhook secret
+- Telegram token
+- mật khẩu database
+
+==================================================
+7. ENDPOINT KIỂM TRA
+==================================================
+
+Tạo thêm:
+
+GET /github-webhook/health
+
+Response:
+
+{
+  "success": true,
+  "service": "github-webhook",
+  "status": "ready"
+}
+
+Endpoint health không chạy deploy.
+
+==================================================
+8. CẤU HÌNH BIẾN MÔI TRƯỜNG
+==================================================
+
+Thêm vào file mẫu môi trường:
+
+GITHUB_WEBHOOK_SECRET=
+DEPLOY_SCRIPT_PATH=/root/deploy-aicenter.sh
+DEPLOY_BRANCH=main
+
+Không commit secret thật lên GitHub.
+
+==================================================
+9. KHÔNG LÀM HỎNG APP
+==================================================
+
+Không sửa bot.
+Không sửa database.
+Không sửa sản phẩm.
+Không reset dữ liệu.
+Không đổi port hiện tại.
+Không tạo service chạy trùng.
+Không làm ảnh hưởng Taphoagiare hoặc API nguồn.
+
+==================================================
+10. TEST
+==================================================
+
+Test bắt buộc:
+
+1. Không có signature → 401.
+2. Signature sai → 401.
+3. Event ping → ignored.
+4. Push branch khác → ignored.
+5. Push main đúng signature → 202 Deployment started.
+6. Deploy đang chạy → không chạy thêm lần hai.
+7. Health endpoint trả 200.
+8. Không lộ secret trong log.
+9. Không dùng shell=True.
+
+Commit message:
+
+feat: add secure GitHub webhook auto deploy
+
+Sau khi hoàn thành:
+- commit
+- push GitHub
+- báo file đã sửa
+- báo route đã tạo
+- báo cách cấu hình secret

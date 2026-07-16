@@ -1,0 +1,485 @@
+{% extends "base.html" %}
+{% block title %}Sản phẩm - AI Center{% endblock %}
+{% block page_title %}📦 Sản phẩm{% endblock %}
+{% block content %}
+{% set active_filter_count = (1 if search else 0) + (1 if source_type_filter else 0) + (1 if is_active_filter else 0) + (1 if brand_filter else 0) + (1 if stock_filter else 0) %}
+
+<!-- Desktop filter bar -->
+<div class="d-none d-md-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <form class="d-flex gap-2 flex-wrap" method="get">
+    <input type="text" name="search" value="{{ search }}" class="form-control form-control-sm" placeholder="Tìm kiếm..." style="width:180px">
+    <select name="brand" class="form-select form-select-sm" style="width:140px">
+      <option value="">Tất cả thương hiệu</option>
+      {% for b in brand_keys %}
+      <option value="{{ b }}" {% if brand_filter==b %}selected{% endif %}>{{ b }}</option>
+      {% endfor %}
+    </select>
+    <select name="source_type" class="form-select form-select-sm" style="width:140px">
+      <option value="">Tất cả nguồn</option>
+      <option value="manual" {% if source_type_filter=='manual' %}selected{% endif %}>Thủ công</option>
+      <option value="api" {% if source_type_filter=='api' %}selected{% endif %}>API</option>
+    </select>
+    <select name="stock" class="form-select form-select-sm" style="width:140px">
+      <option value="">Còn/Hết hàng</option>
+      <option value="in" {% if stock_filter=='in' %}selected{% endif %}>Còn hàng</option>
+      <option value="out" {% if stock_filter=='out' %}selected{% endif %}>Hết hàng</option>
+    </select>
+    <select name="is_active" class="form-select form-select-sm" style="width:130px">
+      <option value="">Tất cả</option>
+      <option value="true" {% if is_active_filter=='true' %}selected{% endif %}>Đang bán</option>
+      <option value="false" {% if is_active_filter=='false' %}selected{% endif %}>Tạm ngưng</option>
+    </select>
+    <button type="submit" class="btn btn-sm btn-outline-primary">Lọc</button>
+    {% if active_filter_count %}<a href="/products" class="btn btn-sm btn-outline-secondary">Đặt lại</a>{% endif %}
+  </form>
+  <div class="d-flex gap-2">
+    <a href="/products/api-sources" class="btn btn-sm btn-outline-info"><i class="bi bi-cloud"></i> Nguồn API</a>
+    <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addProductModal"><i class="bi bi-plus-lg"></i> Thêm sản phẩm</button>
+  </div>
+</div>
+
+<!-- Mobile toolbar: filter button + add button -->
+<div class="d-flex d-md-none justify-content-between align-items-center mb-3 gap-2">
+  <button type="button" class="btn btn-outline-primary flex-fill" data-bs-toggle="offcanvas" data-bs-target="#productFilterSheet">
+    <i class="bi bi-funnel"></i> Bộ lọc
+    {% if active_filter_count %}<span class="badge bg-primary rounded-pill ms-1">{{ active_filter_count }}</span>{% endif %}
+  </button>
+  <button class="btn btn-primary flex-fill" data-bs-toggle="modal" data-bs-target="#addProductModal"><i class="bi bi-plus-lg"></i> Thêm</button>
+</div>
+<div class="d-flex d-md-none mb-3">
+  <a href="/products/api-sources" class="btn btn-outline-info btn-sm w-100"><i class="bi bi-cloud"></i> Nguồn API</a>
+</div>
+
+<!-- Mobile filter bottom sheet -->
+<div class="offcanvas offcanvas-bottom filter-sheet" tabindex="-1" id="productFilterSheet">
+  <div class="offcanvas-header">
+    <h5 class="offcanvas-title">Bộ lọc sản phẩm</h5>
+    <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
+  </div>
+  <form method="get" id="productFilterForm">
+    <div class="offcanvas-body">
+      <div class="filter-group">
+        <label class="form-label">Tìm theo tên / mã</label>
+        <input type="text" name="search" value="{{ search }}" class="form-control" placeholder="Tìm kiếm...">
+      </div>
+      <div class="filter-group">
+        <label class="form-label">Thương hiệu</label>
+        <select name="brand" class="form-select">
+          <option value="">Tất cả thương hiệu</option>
+          {% for b in brand_keys %}
+          <option value="{{ b }}" {% if brand_filter==b %}selected{% endif %}>{{ b }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="filter-group">
+        <label class="form-label">Nguồn (Thủ công / API)</label>
+        <select name="source_type" class="form-select">
+          <option value="">Tất cả nguồn</option>
+          <option value="manual" {% if source_type_filter=='manual' %}selected{% endif %}>Thủ công</option>
+          <option value="api" {% if source_type_filter=='api' %}selected{% endif %}>API</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label class="form-label">Tình trạng kho</label>
+        <select name="stock" class="form-select">
+          <option value="">Còn/Hết hàng</option>
+          <option value="in" {% if stock_filter=='in' %}selected{% endif %}>Còn hàng</option>
+          <option value="out" {% if stock_filter=='out' %}selected{% endif %}>Hết hàng</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label class="form-label">Trạng thái bán</label>
+        <select name="is_active" class="form-select">
+          <option value="">Tất cả</option>
+          <option value="true" {% if is_active_filter=='true' %}selected{% endif %}>Đang bán</option>
+          <option value="false" {% if is_active_filter=='false' %}selected{% endif %}>Tạm ngưng</option>
+        </select>
+      </div>
+    </div>
+    <div class="offcanvas-footer-sticky">
+      <a href="/products" class="btn btn-outline-secondary">Đặt lại</a>
+      <button type="submit" class="btn btn-primary">Áp dụng</button>
+    </div>
+  </form>
+</div>
+
+<!-- ── Desktop table ── -->
+<div class="card d-none d-md-block">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead>
+          <tr><th>Ảnh</th><th>Tên / Mã</th><th>Giá bán</th><th>Nguồn</th><th>Giao hàng</th><th>Tồn kho</th><th>Đã bán</th><th>Trạng thái</th><th>Hành động</th></tr>
+        </thead>
+        <tbody>
+          {% for p in products %}
+          <tr>
+            <td><img src="{{ p.image_path or '/static/img/no-image.png' }}" width="40" height="40" style="object-fit:cover;border-radius:4px" onerror="this.src='/static/img/no-image.png'"></td>
+            <td>
+              <a href="/products/id/{{ p.id }}" class="fw-semibold text-decoration-none">{{ p.name }}</a>
+              <div><small class="text-muted">{{ p.product_code }}</small></div>
+            </td>
+            <td>{{ "{:,.0f}".format(p.sale_price).replace(",", ".") }}đ<br><small class="text-muted">≈{{ "%.2f"|format(p.price_usdt or 0) }} USDT</small></td>
+            <td><span class="badge {% if p.source_type.value == 'api' %}bg-info{% else %}bg-secondary{% endif %}">{{ p.source_type.value }}</span></td>
+            <td>
+              {% if p.delivery_mode.value == 'api_auto' %}<span class="badge bg-success">Tự động API</span>
+              {% elif p.delivery_mode.value == 'manual_stock' %}<span class="badge bg-primary">Kho tài khoản</span>
+              {% else %}<span class="badge bg-warning text-dark">Thủ công (Admin)</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if p.delivery_mode.value == 'manual_stock' %}
+                <span class="badge {% if p.stock_available and p.stock_available > 0 %}bg-success{% else %}bg-danger{% endif %}">{{ p.stock_available or 0 }}</span>
+              {% elif p.delivery_mode.value == 'api_auto' %}
+                <span class="text-muted">—</span>
+              {% else %}
+                <span class="badge bg-secondary">∞</span>
+              {% endif %}
+            </td>
+            <td>{{ p.sold_count }}</td>
+            <td>
+              <div class="form-check form-switch">
+                <input class="form-check-input toggle-product" type="checkbox" {% if p.is_active %}checked{% endif %} data-id="{{ p.id }}">
+              </div>
+            </td>
+            <td>
+              <a href="/products/id/{{ p.id }}" class="btn btn-xs btn-outline-secondary me-1"><i class="bi bi-eye"></i></a>
+              <button class="btn btn-xs btn-outline-primary me-1" data-bs-toggle="modal" data-bs-target="#editModal{{ p.id }}"><i class="bi bi-pencil"></i></button>
+              <form action="/products/{{ p.id }}/delete" method="post" style="display:inline" onsubmit="return confirm('Xóa sản phẩm này?')">
+                <button type="submit" class="btn btn-xs btn-outline-danger"><i class="bi bi-trash"></i></button>
+              </form>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="9" class="text-center text-muted py-4">Chưa có sản phẩm nào</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ── Mobile cards ── -->
+<div class="d-md-none product-card-list" id="productCardList">
+  {% for p in products %}
+  <div class="product-card">
+    <div class="product-card-top">
+      <img src="{{ p.image_path or '/static/img/no-image.png' }}" class="product-card-img" onerror="this.src='/static/img/no-image.png'">
+      <div class="product-card-title">
+        <a href="/products/id/{{ p.id }}" class="product-card-name">{{ p.telegram_icon or '📦' }} {{ p.name }}</a>
+        <div class="text-muted small">{{ p.product_code }}</div>
+      </div>
+      {% if p.delivery_mode.value == 'manual_stock' %}
+        {% if p.stock_available and p.stock_available > 0 %}<span class="badge-pill badge-pill-green">Còn hàng</span>
+        {% else %}<span class="badge-pill badge-pill-red">Hết hàng</span>{% endif %}
+      {% elif not p.is_active %}
+        <span class="badge-pill badge-pill-gray">Đã ẩn</span>
+      {% endif %}
+    </div>
+    <div class="product-card-body">
+      <div class="product-card-row">💰 Giá bán: <strong>{{ "{:,.0f}".format(p.sale_price).replace(",", ".") }}đ</strong></div>
+      <div class="product-card-row">💵 Giá USDT: <strong>{{ "%.2f"|format(p.price_usdt or 0) }} USDT</strong></div>
+      <div class="product-card-row">
+        📦 Tồn kho:
+        <strong>
+          {% if p.delivery_mode.value == 'manual_stock' %}{{ p.stock_available or 0 }}
+          {% elif p.delivery_mode.value == 'api_auto' %}—
+          {% else %}∞{% endif %}
+        </strong>
+      </div>
+      <div class="product-card-row">🔗 Nguồn: <strong>{{ 'API' if p.source_type.value == 'api' else 'Thủ công' }}</strong></div>
+      <div class="product-card-row">📌 Trạng thái:
+        {% if p.is_active %}<span class="badge-pill badge-pill-green">Đang bán</span>{% else %}<span class="badge-pill badge-pill-gray">Tạm ngưng</span>{% endif %}
+      </div>
+    </div>
+    <div class="product-card-actions">
+      <a href="/products/id/{{ p.id }}" class="btn btn-outline-secondary btn-card-action"><i class="bi bi-eye"></i> Xem</a>
+      <button class="btn btn-outline-primary btn-card-action" data-bs-toggle="modal" data-bs-target="#editModal{{ p.id }}"><i class="bi bi-pencil"></i> Sửa</button>
+      {% if p.delivery_mode.value == 'manual_stock' %}
+      <a href="/products/id/{{ p.id }}#addStockModal" class="btn btn-primary btn-card-action open-add-stock" data-id="{{ p.id }}"><i class="bi bi-plus-lg"></i> Thêm TK</a>
+      {% endif %}
+      <div class="dropdown">
+        <button class="btn btn-outline-secondary btn-card-action btn-card-more" data-bs-toggle="dropdown"><i class="bi bi-three-dots"></i></button>
+        <ul class="dropdown-menu dropdown-menu-end">
+          <li><a class="dropdown-item" href="/products/id/{{ p.id }}"><i class="bi bi-box-seam"></i> Xem kho</a></li>
+          <li>
+            <button type="button" class="dropdown-item toggle-product-menu" data-id="{{ p.id }}" data-active="{{ 'true' if p.is_active else 'false' }}">
+              <i class="bi bi-eye-slash"></i> {% if p.is_active %}Ẩn sản phẩm{% else %}Hiện sản phẩm{% endif %}
+            </button>
+          </li>
+          <li><hr class="dropdown-divider"></li>
+          <li>
+            <form action="/products/{{ p.id }}/delete" method="post" onsubmit="return confirm('Xóa sản phẩm này?')">
+              <button type="submit" class="dropdown-item text-danger"><i class="bi bi-trash"></i> Xóa</button>
+            </form>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <div class="text-center text-muted py-5">Chưa có sản phẩm nào</div>
+  {% endfor %}
+</div>
+
+<!-- Per-product Edit Modals (shared by table + card views) -->
+{% for p in products %}
+{% include "_product_edit_modal.html" %}
+{% endfor %}
+
+{% if total > per_page %}
+<nav class="mt-3"><ul class="pagination pagination-sm justify-content-center">
+  {% for i in range(1, (total // per_page) + 2) %}
+  <li class="page-item {% if i == page %}active{% endif %}"><a class="page-link" href="?page={{ i }}&search={{ search }}&source_type={{ source_type_filter }}&is_active={{ is_active_filter }}&brand={{ brand_filter }}&stock={{ stock_filter }}">{{ i }}</a></li>
+  {% endfor %}
+</ul></nav>
+{% endif %}
+
+<!-- Add Product Modal -->
+<div class="modal fade" id="addProductModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title">Thêm sản phẩm mới</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+      <form action="/products/add" method="post" enctype="multipart/form-data">
+        <div class="modal-body">
+          <div class="form-section">
+            <div class="form-section-title">1. Thông tin cơ bản</div>
+            <div class="row g-3">
+              <div class="col-md-6"><label class="form-label">Tên sản phẩm *</label><input type="text" name="name" class="form-control en-src-name" required></div>
+              <div class="col-md-6"><label class="form-label">Tên sản phẩm (English)</label><input type="text" name="name_en" class="form-control en-out-name" placeholder="Shown to English-language shoppers"></div>
+              <div class="col-md-6"><label class="form-label">Mã sản phẩm *</label><input type="text" name="product_code" class="form-control" required></div>
+              <div class="col-12"><label class="form-label">Mô tả</label><textarea name="description" class="form-control en-src-desc" rows="3"></textarea></div>
+              <div class="col-12">
+                <label class="form-label">Mô tả (English)</label>
+                <textarea name="description_en" class="form-control en-out-desc" rows="2"></textarea>
+                <button type="button" class="btn btn-sm btn-outline-info mt-1 gen-en-btn">🌐 Tạo bản tiếng Anh</button>
+                <button type="button" class="btn btn-sm btn-outline-info mt-1 gen-vi-btn">🌐 Dịch lại sang tiếng Việt</button>
+                <div class="form-text">Tự dịch bằng AI — bạn có thể chỉnh lại trước khi lưu. Bỏ trống ô tiếng Việt và điền tiếng Anh nếu sản phẩm nguồn là tiếng Anh.</div>
+              </div>
+              <div class="col-md-6"><label class="form-label">Trạng thái</label>
+                <select name="is_active" class="form-select">
+                  <option value="true">Đang bán</option>
+                  <option value="false">Tạm ngưng</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <div class="form-section-title">2. Giá</div>
+            <div class="row g-3">
+              <div class="col-md-6"><label class="form-label">Giá nguồn (đ)</label><input type="text" name="source_price" class="form-control price-source-input vnd-price-input" value="0" inputmode="numeric" autocomplete="off"></div>
+              <div class="col-md-6"><label class="form-label">Giá bán (đ)</label><input type="text" name="sale_price" class="form-control price-sale-input vnd-price-input" value="0" inputmode="numeric" autocomplete="off"></div>
+              <div class="col-md-6">
+                <label class="form-label">Phần chênh lệch (dự kiến)</label>
+                <input type="text" class="form-control price-margin-preview" value="0đ" disabled>
+                <div class="form-text">= Giá bán − Giá nguồn, tự tính lại khi lưu.</div>
+              </div>
+              <div class="col-md-6 d-flex align-items-end">
+                <div class="form-check form-switch">
+                  <input class="form-check-input" type="checkbox" name="auto_adjust_price" value="1" id="autoAdjustAdd">
+                  <label class="form-check-label" for="autoAdjustAdd">Tự động điều chỉnh giá bán khi giá nguồn đổi</label>
+                </div>
+              </div>
+            </div>
+            <details class="mt-2">
+              <summary class="text-muted" style="cursor:pointer">Bảo vệ giá nâng cao (tùy chọn)</summary>
+              <div class="row g-3 mt-1">
+                <div class="col-md-4"><label class="form-label">Giá bán tối thiểu (đ)</label><input type="number" name="min_sale_price" class="form-control" step="1" min="0" placeholder="Không giới hạn"></div>
+                <div class="col-md-4"><label class="form-label">Giá bán tối đa (đ)</label><input type="number" name="max_sale_price" class="form-control" step="1" min="0" placeholder="Không giới hạn"></div>
+                <div class="col-md-4"><label class="form-label">Cần duyệt nếu giá nguồn tăng quá (%)</label><input type="number" name="require_admin_approval_above_percent" class="form-control" step="1" min="0" placeholder="Không giới hạn"></div>
+              </div>
+            </details>
+          </div>
+
+          <div class="form-section">
+            <div class="form-section-title">3. Kho và giao hàng</div>
+            <div class="row g-3">
+              <div class="col-md-6"><label class="form-label">Chế độ giao hàng</label>
+                <select name="delivery_mode" class="form-select">
+                  <option value="manual_admin">Thủ công (Admin giao tay)</option>
+                  <option value="manual_stock">Kho tài khoản (tự động)</option>
+                  <option value="api_auto">Tự động API</option>
+                </select>
+              </div>
+              <div class="col-md-6"><label class="form-label">Số lượng tối thiểu</label><input type="number" name="min_quantity" class="form-control" value="1" step="1" min="1"></div>
+              <div class="col-12">
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" name="allow_manual_order" value="1" id="allowManualAdd">
+                  <label class="form-check-label" for="allowManualAdd">Nhận đơn khi hết hàng</label>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <div class="form-section-title">4. Hiển thị bot</div>
+            <div class="row g-3">
+              <div class="col-md-6 icon-picker" data-default-fallback="">
+                <label class="form-label">Chọn icon sản phẩm</label>
+                <input type="hidden" name="telegram_icon" class="icon-picker-fallback" value="">
+                <input type="hidden" name="telegram_custom_emoji_id" class="icon-picker-custom-id" value="">
+                <div class="icon-picker-preview d-flex align-items-center gap-2 border rounded p-2 mb-2">
+                  <span class="icon-picker-preview-emoji" style="font-size:1.8rem">📦</span>
+                  <span class="icon-picker-preview-label text-muted small">Chưa chọn icon (tự nhận diện theo tên)</span>
+                </div>
+                <div class="d-flex gap-2 mb-2">
+                  <button type="button" class="btn btn-sm btn-outline-primary icon-picker-open">🎨 Chọn icon</button>
+                  <button type="button" class="btn btn-sm btn-outline-danger icon-picker-clear">✖ Xóa icon</button>
+                </div>
+                <div class="icon-picker-grid border rounded p-2" style="display:none; max-height:180px; overflow-y:auto;">
+                  {% for icon in emoji_icons %}
+                  <button type="button" class="btn btn-sm btn-outline-secondary me-1 mb-1 icon-picker-choice" data-fallback="{{ icon.fallback_emoji }}" data-custom-id="{{ icon.custom_emoji_id }}" data-name="{{ icon.name }}" title="{{ icon.name }}">{{ icon.fallback_emoji }}</button>
+                  {% else %}
+                  <div class="text-muted small">Kho icon đang trống. <a href="/emoji-icons" target="_blank">Thêm icon tại đây</a>.</div>
+                  {% endfor %}
+                </div>
+                <div class="form-text">Chưa chọn icon = hệ thống tự nhận diện theo tên sản phẩm (mặc định 📦 nếu không nhận diện được). <a href="/emoji-icons" target="_blank">Quản lý kho icon</a>.</div>
+              </div>
+              <div class="col-md-6"><label class="form-label">Ảnh sản phẩm</label><input type="file" name="image" class="form-control" accept="image/*" id="imageUpload"></div>
+              <div class="col-12"><img id="imagePreview" src="" style="max-height:100px;display:none" class="rounded"></div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer modal-footer-sticky"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button><button type="submit" class="btn btn-primary">Lưu sản phẩm</button></div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function applyToggle(id, el) {
+  fetch(`/products/${id}/toggle`, {method:'POST'})
+    .then(r => r.json()).then(d => {
+      if (el) el.checked = d.is_active;
+      window.location.reload();
+    });
+}
+document.querySelectorAll('.toggle-product').forEach(el => {
+  el.addEventListener('change', function() { applyToggle(this.dataset.id, this); });
+});
+document.querySelectorAll('.toggle-product-menu').forEach(el => {
+  el.addEventListener('click', function() { applyToggle(this.dataset.id, null); });
+});
+document.getElementById('imageUpload')?.addEventListener('change', function() {
+  const prev = document.getElementById('imagePreview');
+  if (this.files && this.files[0]) {
+    prev.src = URL.createObjectURL(this.files[0]);
+    prev.style.display = 'block';
+  }
+});
+
+// Telegram custom emoji icon picker — "Chọn icon sản phẩm". Each .icon-picker
+// wraps one hidden telegram_icon (fallback char) + telegram_custom_emoji_id
+// pair. Selecting a library icon fills both from its data-* attributes;
+// clearing resets both to blank so server-side auto-assignment (by name
+// keyword) takes over again on save (see services/product_sync.py).
+document.querySelectorAll('.icon-picker-open').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const wrap = btn.closest('.icon-picker');
+    const grid = wrap.querySelector('.icon-picker-grid');
+    grid.style.display = (grid.style.display === 'none' || !grid.style.display) ? 'block' : 'none';
+  });
+});
+document.querySelectorAll('.icon-picker-choice').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const wrap = btn.closest('.icon-picker');
+    wrap.querySelector('.icon-picker-fallback').value = btn.dataset.fallback || '';
+    wrap.querySelector('.icon-picker-custom-id').value = btn.dataset.customId || '';
+    wrap.querySelector('.icon-picker-preview-emoji').textContent = btn.dataset.fallback || '📦';
+    wrap.querySelector('.icon-picker-preview-label').textContent = `Đã chọn: ${btn.dataset.name}`;
+    wrap.querySelector('.icon-picker-grid').style.display = 'none';
+  });
+});
+document.querySelectorAll('.icon-picker-clear').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const wrap = btn.closest('.icon-picker');
+    wrap.querySelector('.icon-picker-fallback').value = '';
+    wrap.querySelector('.icon-picker-custom-id').value = '';
+    wrap.querySelector('.icon-picker-preview-emoji').textContent = '📦';
+    wrap.querySelector('.icon-picker-preview-label').textContent = 'Chưa chọn icon (tự nhận diện theo tên)';
+  });
+});
+
+// "🌐 Tạo bản tiếng Anh" — auto-translate name/description within the same
+// modal, filling the EN fields for the admin to review/edit before saving.
+document.querySelectorAll('.gen-en-btn').forEach(btn => {
+  btn.addEventListener('click', async function() {
+    const modal = this.closest('.modal-body') || this.closest('form');
+    const nameSrc = modal.querySelector('.en-src-name')?.value || '';
+    const descSrc = modal.querySelector('.en-src-desc')?.value || '';
+    if (!nameSrc && !descSrc) return;
+    this.disabled = true;
+    const oldLabel = this.textContent;
+    this.textContent = 'Đang dịch...';
+    try {
+      const body = new URLSearchParams({ name: nameSrc, description: descSrc });
+      const resp = await fetch('/products/generate_en', { method: 'POST', body });
+      const data = await resp.json();
+      const nameOut = modal.querySelector('.en-out-name');
+      const descOut = modal.querySelector('.en-out-desc');
+      if (nameOut && data.name_en) nameOut.value = data.name_en;
+      if (descOut && data.description_en) descOut.value = data.description_en;
+    } finally {
+      this.disabled = false;
+      this.textContent = oldLabel;
+    }
+  });
+});
+
+// "🌐 Dịch lại sang tiếng Việt" — reverse-direction counterpart: auto-
+// translate the English name/description into Vietnamese for admin review
+// before saving (used for English-sourced products, e.g. supplier data
+// that only has an English description).
+document.querySelectorAll('.gen-vi-btn').forEach(btn => {
+  btn.addEventListener('click', async function() {
+    const modal = this.closest('.modal-body') || this.closest('form');
+    const nameEnSrc = modal.querySelector('.en-out-name')?.value || '';
+    const descEnSrc = modal.querySelector('.en-out-desc')?.value || '';
+    if (!nameEnSrc && !descEnSrc) return;
+    this.disabled = true;
+    const oldLabel = this.textContent;
+    this.textContent = 'Đang dịch...';
+    try {
+      const body = new URLSearchParams({ name_en: nameEnSrc, description_en: descEnSrc });
+      const resp = await fetch('/products/generate_vi', { method: 'POST', body });
+      const data = await resp.json();
+      const nameOut = modal.querySelector('.en-src-name');
+      const descOut = modal.querySelector('.en-src-desc');
+      if (nameOut && data.name) nameOut.value = data.name;
+      if (descOut && data.description) descOut.value = data.description;
+    } finally {
+      this.disabled = false;
+      this.textContent = oldLabel;
+    }
+  });
+});
+
+// Live "Phần chênh lệch" (margin) preview = Giá bán − Giá nguồn, purely
+// informational — the server always recomputes and stores the real value
+// from the submitted sale_price/source_price on save.
+document.querySelectorAll('.modal').forEach(modal => {
+  const sourceInput = modal.querySelector('.price-source-input');
+  const saleInput = modal.querySelector('.price-sale-input');
+  const marginPreview = modal.querySelector('.price-margin-preview');
+  if (!sourceInput || !saleInput || !marginPreview) return;
+  function recompute() {
+    const source = vndValue(sourceInput);
+    const sale = vndValue(saleInput);
+    const margin = Math.round(sale - source);
+    marginPreview.value = margin.toLocaleString('vi-VN') + 'đ';
+  }
+  sourceInput.addEventListener('input', recompute);
+  saleInput.addEventListener('input', recompute);
+});
+
+// "➕ Thêm tài khoản" quick action on a product card jumps straight to that
+// product's detail page and opens its Add-Stock modal once loaded there.
+document.querySelectorAll('.open-add-stock').forEach(a => {
+  a.addEventListener('click', function(e) {
+    sessionStorage.setItem('openAddStockModal', '1');
+  });
+});
+</script>
+{% endblock %}

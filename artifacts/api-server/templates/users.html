@@ -1,0 +1,291 @@
+{% extends "base.html" %}
+{% block title %}Người dùng - AI Center{% endblock %}
+{% block page_title %}👥 Người dùng Telegram{% endblock %}
+{% block content %}
+{% if detail_user %}
+<!-- User Detail View -->
+<div class="row g-3">
+  <div class="col-12 col-lg-4">
+    <div class="card">
+      <div class="card-body text-center">
+        <div class="fs-1 mb-2">👤</div>
+        <h5>{{ detail_user.first_name or '' }} {{ detail_user.last_name or '' }}</h5>
+        {% if detail_user.username %}<div class="text-muted">@{{ detail_user.username }}</div>{% endif %}
+        <div class="mt-2"><code>{{ detail_user.telegram_id }}</code></div>
+        {% if detail_user.is_banned %}<span class="badge bg-danger mt-2">Bị cấm</span>{% elif detail_user.is_blocked %}<span class="badge bg-warning text-dark mt-2">Đã chặn bot</span>{% else %}<span class="badge bg-success mt-2">Hoạt động</span>{% endif %}
+      </div>
+      <div class="card-body border-top">
+        <div class="row g-2 text-center">
+          <div class="col-4"><div class="fw-bold">{{ detail_user.total_orders }}</div><small class="text-muted">Tổng đơn</small></div>
+          <div class="col-4"><div class="fw-bold">{{ "{:,.0f}".format(detail_user.total_spent or 0).replace(",", ".") }}đ</div><small class="text-muted">Đã chi</small></div>
+          <div class="col-4"><div class="fw-bold">{{ "{:,.0f}".format(detail_user.balance or 0).replace(",", ".") }}đ</div><small class="text-muted">Số dư</small></div>
+        </div>
+        {% if detail_user.last_active_at %}<div class="text-muted small mt-2">Hoạt động: {{ detail_user.last_active_at.strftime('%d/%m/%Y %H:%M') }}</div>{% endif %}
+        <div class="text-muted small">Tham gia: {{ detail_user.created_at.strftime('%d/%m/%Y') }}</div>
+      </div>
+      <div class="card-footer d-flex flex-column gap-2">
+        {% if detail_user.is_banned %}
+        <form action="/users/{{ detail_user.telegram_id }}/unban" method="post"><button type="submit" class="btn btn-success w-100">Bỏ cấm</button></form>
+        {% else %}
+        <form action="/users/{{ detail_user.telegram_id }}/ban" method="post" onsubmit="return confirm('Cấm người dùng này?')"><button type="submit" class="btn btn-danger w-100">Cấm user</button></form>
+        {% endif %}
+        <button class="btn btn-info text-white" data-bs-toggle="modal" data-bs-target="#msgModal">💬 Gửi tin nhắn</button>
+        <button class="btn btn-outline-warning test-send-btn" data-chat-id="{{ detail_user.telegram_id }}">📢 Gửi tin thử</button>
+        <a href="/users" class="btn btn-outline-secondary">← Quay lại</a>
+      </div>
+    </div>
+  </div>
+  <div class="col-12 col-lg-8">
+    <div class="card mb-3">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <h6 class="mb-0">💼 Ví khách hàng</h6>
+        <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#walletModal">Điều chỉnh số dư</button>
+      </div>
+      <div class="card-body">
+        <div class="row g-2 text-center mb-3">
+          <div class="col-6"><div class="fw-bold fs-5">{{ "{:,.0f}".format(detail_user.wallet_vnd or 0).replace(",", ".") }}đ</div><small class="text-muted">Số dư VND (Ví)</small></div>
+          <div class="col-6"><div class="fw-bold fs-5">{{ "%.4f"|format(detail_user.wallet_usdt or 0) }} USDT</div><small class="text-muted">Số dư USDT (Ví)</small></div>
+        </div>
+        <div class="table-responsive" style="max-height: 260px; overflow-y: auto;">
+          <table class="table table-sm mb-0">
+            <thead><tr><th>Loại</th><th>Số tiền</th><th>Trước → Sau</th><th>Ghi chú</th><th>Thời gian</th></tr></thead>
+            <tbody>
+              {% for tx in wallet_txs %}
+              <tr>
+                <td><span class="badge bg-secondary">{{ tx.tx_type.value if tx.tx_type.value is defined else tx.tx_type }}</span></td>
+                <td>{{ "{:,.0f}".format(tx.amount).replace(",", ".") if (tx.currency.value if tx.currency.value is defined else tx.currency) == "VND" else "%.2f"|format(tx.amount) }} {{ tx.currency.value if tx.currency.value is defined else tx.currency }}</td>
+                <td><small>{{ "{:,.0f}".format(tx.balance_before).replace(",", ".") if (tx.currency.value if tx.currency.value is defined else tx.currency) == "VND" else "%.2f"|format(tx.balance_before) }} → {{ "{:,.0f}".format(tx.balance_after).replace(",", ".") if (tx.currency.value if tx.currency.value is defined else tx.currency) == "VND" else "%.2f"|format(tx.balance_after) }}</small></td>
+                <td><small>{{ tx.note or '—' }}</small></td>
+                <td><small>{{ tx.created_at.strftime('%d/%m %H:%M') }}</small></td>
+              </tr>
+              {% else %}
+              <tr><td colspan="5" class="text-center text-muted py-3">Chưa có giao dịch ví</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h6 class="mb-0">Lịch sử đơn hàng</h6></div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-sm mb-0">
+            <thead><tr><th>Mã đơn</th><th>Sản phẩm</th><th>Tổng</th><th>Trạng thái</th><th>Ngày</th></tr></thead>
+            <tbody>
+              {% for o in user_orders %}
+              <tr>
+                <td><a href="/orders/{{ o.id }}">{{ o.order_code }}</a></td>
+                <td>{{ o.product.name if o.product else '—' }}</td>
+                <td>{{ "{:,.0f}".format(o.total_price).replace(",", ".") }}đ</td>
+                <td><span class="badge bg-secondary">{{ o.status.value if o.status.value is defined else o.status }}</span></td>
+                <td><small>{{ o.created_at.strftime('%d/%m/%Y') }}</small></td>
+              </tr>
+              {% else %}
+              <tr><td colspan="5" class="text-center text-muted py-3">Chưa có đơn hàng</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<!-- Wallet Adjustment Modal -->
+<div class="modal fade" id="walletModal" tabindex="-1">
+  <div class="modal-dialog"><div class="modal-content">
+    <div class="modal-header"><h5 class="modal-title">💼 Điều chỉnh số dư ví</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+    <form action="/users/{{ detail_user.telegram_id }}/wallet/adjust" method="post">
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label">Loại tiền</label>
+          <select name="currency" class="form-select" required>
+            <option value="VND">VND</option>
+            <option value="USDT">USDT</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Hành động</label>
+          <select name="direction" class="form-select" required>
+            <option value="credit">➕ Cộng tiền</option>
+            <option value="debit">➖ Trừ tiền</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Số tiền</label>
+          <input type="number" name="amount" step="0.01" min="0.01" class="form-control" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Lý do (bắt buộc)</label>
+          <textarea name="note" class="form-control" rows="2" placeholder="Vd: hoàn tiền do khiếu nại, khuyến mãi..." required></textarea>
+        </div>
+      </div>
+      <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button><button type="submit" class="btn btn-primary">Xác nhận</button></div>
+    </form>
+  </div></div>
+</div>
+<!-- Message Modal -->
+<div class="modal fade" id="msgModal" tabindex="-1">
+  <div class="modal-dialog"><div class="modal-content">
+    <div class="modal-header"><h5 class="modal-title">Gửi tin nhắn</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+    <form action="/users/{{ detail_user.telegram_id }}/message" method="post">
+      <div class="modal-body"><textarea name="message" class="form-control" rows="4" placeholder="Nội dung tin nhắn..." required></textarea></div>
+      <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button><button type="submit" class="btn btn-primary">Gửi</button></div>
+    </form>
+  </div></div>
+</div>
+
+{% else %}
+<!-- User List View -->
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <form class="d-flex gap-2" method="get">
+    <input type="text" name="search" value="{{ search }}" class="form-control form-control-sm" placeholder="Tìm kiếm..." style="width:200px">
+    <button type="submit" class="btn btn-sm btn-outline-primary">Tìm</button>
+  </form>
+  <div class="d-flex align-items-center gap-2">
+    <span class="text-muted small">{{ total }} người dùng</span>
+    <button class="btn btn-sm btn-outline-success" data-bs-toggle="modal" data-bs-target="#importModal">📥 Import người dùng cũ</button>
+  </div>
+</div>
+
+{% if import_result %}
+<div class="card mb-3">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <h6 class="mb-0">Kết quả import gần nhất</h6>
+    <button type="button" class="btn-close" data-bs-dismiss="alert" onclick="this.closest('.card').remove()"></button>
+  </div>
+  <div class="card-body">
+    <div class="row g-2 text-center">
+      <div class="col-2"><div class="fw-bold fs-5">{{ import_result.total }}</div><small class="text-muted">Tổng dòng</small></div>
+      <div class="col-2"><div class="fw-bold fs-5 text-success">{{ import_result.success }}</div><small class="text-muted">Thành công</small></div>
+      <div class="col-2"><div class="fw-bold fs-5 text-warning">{{ import_result.duplicates }}</div><small class="text-muted">Trùng</small></div>
+      <div class="col-2"><div class="fw-bold fs-5 text-danger">{{ import_result.errors }}</div><small class="text-muted">Lỗi</small></div>
+      <div class="col-4"><div class="fw-bold fs-5">{{ "{:,.0f}".format(import_result.total_balance_imported or 0).replace(",", ".") }}đ</div><small class="text-muted">Tổng số dư đã nhập</small></div>
+    </div>
+    {% if import_result.error_rows %}
+    <div class="mt-2 small text-danger">
+      {% for e in import_result.error_rows %}<div>{{ e }}</div>{% endfor %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead><tr><th>Telegram ID</th><th>Username</th><th>Tên</th><th>Đơn hàng</th><th>Đã chi</th><th>Số dư</th><th>Tham gia</th><th>Hoạt động</th><th>Trạng thái</th><th></th></tr></thead>
+        <tbody>
+          {% for u in users %}
+          <tr>
+            <td><code>{{ u.telegram_id }}</code></td>
+            <td>{{ '@' + u.username if u.username else '—' }}</td>
+            <td>{{ u.first_name or '' }} {{ u.last_name or '' }}</td>
+            <td>{{ u.total_orders }}</td>
+            <td>{{ "{:,.0f}".format(u.total_spent or 0).replace(",", ".") }}đ</td>
+            <td>{{ "{:,.0f}".format(u.balance or 0).replace(",", ".") }}đ</td>
+            <td><small>{{ u.created_at.strftime('%d/%m/%Y') }}</small></td>
+            <td><small>{{ u.last_active_at.strftime('%d/%m %H:%M') if u.last_active_at else '—' }}</small></td>
+            <td>
+              {% if u.is_banned %}<span class="badge bg-danger">Bị cấm</span>
+              {% elif u.is_blocked %}<span class="badge bg-warning text-dark">Đã chặn bot</span>
+              {% else %}<span class="badge bg-success">Active</span>{% endif %}
+            </td>
+            <td><a href="/users/{{ u.telegram_id }}" class="btn btn-xs btn-outline-primary"><i class="bi bi-eye"></i></a></td>
+          </tr>
+          {% else %}
+          <tr><td colspan="10" class="text-center text-muted py-4">Chưa có người dùng nào</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% if total > per_page %}
+<nav class="mt-3"><ul class="pagination pagination-sm justify-content-center">
+  {% for i in range(1, (total // per_page) + 2) %}
+  <li class="page-item {% if i == page %}active{% endif %}"><a class="page-link" href="?page={{ i }}&search={{ search }}">{{ i }}</a></li>
+  {% endfor %}
+</ul></nav>
+{% endif %}
+
+<!-- Import Users Modal -->
+<div class="modal fade" id="importModal" tabindex="-1">
+  <div class="modal-dialog"><div class="modal-content">
+    <div class="modal-header"><h5 class="modal-title">📥 Import người dùng từ bot cũ</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+    <form action="/users/import" method="post" enctype="multipart/form-data">
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label">File CSV hoặc Excel *</label>
+          <input type="file" name="file" class="form-control" accept=".csv,.xlsx,.xlsm,.txt" required>
+          <div class="form-text">Các cột nhận diện: chat_id, username, full_name, balance, created_at.</div>
+        </div>
+        <div class="mb-2">
+          <label class="form-label">Chế độ import</label>
+          <select name="mode" class="form-select">
+            <option value="new_only">Chỉ thêm người mới</option>
+            <option value="update_info" selected>Cập nhật thông tin (username/họ tên)</option>
+            <option value="update_balance">Cập nhật cả số dư</option>
+          </select>
+        </div>
+        <div class="form-text">Chat ID được giữ nguyên để bot mới có thể gửi thông báo tới đúng người dùng cũ. Không có dòng nào bị xoá.</div>
+      </div>
+      <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button><button type="submit" class="btn btn-success">Import</button></div>
+    </form>
+  </div></div>
+</div>
+
+<!-- Test Send Modal -->
+<div class="modal fade" id="testSendModal" tabindex="-1">
+  <div class="modal-dialog"><div class="modal-content">
+    <div class="modal-header"><h5 class="modal-title">📢 Gửi tin thử</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+      <label class="form-label">Chat ID</label>
+      <input type="text" id="testSendChatId" class="form-control" placeholder="VD: 123456789">
+      <div id="testSendResult" class="small mt-2"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Đóng</button>
+      <button type="button" id="testSendSubmit" class="btn btn-warning">Gửi tin thử</button>
+    </div>
+  </div></div>
+</div>
+{% endif %}
+
+{% endblock %}
+{% block scripts %}
+<script>
+// "📢 Gửi tin thử" — from a user's detail page, prefill and send directly;
+// from the list view, open the small modal to type a chat_id.
+async function sendTestMessage(chatId, resultEl, btnEl) {
+  if (!chatId) return;
+  if (btnEl) { btnEl.disabled = true; }
+  try {
+    const body = new URLSearchParams({ chat_id: chatId });
+    const resp = await fetch('/users/test-send', { method: 'POST', body });
+    const data = await resp.json();
+    if (resultEl) {
+      resultEl.textContent = data.success ? '✅ Đã gửi tin thử thành công.' : `❌ ${data.error || 'Gửi thất bại.'}`;
+      resultEl.className = 'small mt-2 ' + (data.success ? 'text-success' : 'text-danger');
+    } else {
+      alert(data.success ? '✅ Đã gửi tin thử thành công.' : `❌ ${data.error || 'Gửi thất bại.'}`);
+    }
+  } finally {
+    if (btnEl) { btnEl.disabled = false; }
+  }
+}
+
+document.querySelectorAll('.test-send-btn').forEach(btn => {
+  btn.addEventListener('click', function() {
+    sendTestMessage(this.dataset.chatId, null, this);
+  });
+});
+
+document.getElementById('testSendSubmit')?.addEventListener('click', function() {
+  const chatId = document.getElementById('testSendChatId').value.trim();
+  const resultEl = document.getElementById('testSendResult');
+  sendTestMessage(chatId, resultEl, this);
+});
+</script>
+{% endblock %}
