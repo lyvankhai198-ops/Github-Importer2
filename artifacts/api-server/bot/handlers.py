@@ -275,8 +275,7 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                  language=lang_display,
                  total_orders=total_orders,
                  status=t(lang, status_key))
-        # Admin: append market wallet (ví chợ) balance so the bot balance
-        # is always in sync with what the web admin panel shows.
+        # Admin: hiển thị số dư ví chợ đồng bộ với trang web
         if is_admin:
             from models import AdminUser
             from services.market_wallet_service import get_balance as _mw_get_balance
@@ -290,7 +289,7 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=main_menu_keyboard(lang=lang, is_admin=is_admin),
         )
         # Same as /start: land the user straight on the synced product list,
-        # not a bare menu they have to tap Products again from.
+        # not a extra menu they have to tap Products again from.
         await _send_product_list(update.message, db, context, lang)
     finally:
         db.close()

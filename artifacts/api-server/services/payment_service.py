@@ -855,13 +855,11 @@ async def process_paid_order(order_id: int):
             adapter = api_manager.get_adapter(src_connection)
 
             # ── Pre-purchase market wallet balance check ──────────────────────
-            # For tenant (non-owner) orders on chợ-sourced products: verify
-            # the tenant's ví chợ has enough balance to cover supplier cost +
-            # platform fee BEFORE we ever call the supplier API.
-            # get_virtual_stock() gates availability at listing time, but a
-            # concurrent order could drain the wallet between listing and
-            # fulfillment — this check catches that race explicitly so we
-            # never call the API when we know the debit will fail.
+            # Cho đơn tenant dùng nguồn chợ: kiểm tra ví chợ đủ số dư
+            # (vốn + phí) TRƯỚC khi gọi API nguồn. get_virtual_stock() đã
+            # gate ở thời điểm hiển thị, nhưng race condition giữa 2 đơn
+            # đồng thời vẫn có thể xảy ra — check này bắt chính xác trường
+            # hợp đó thay vì để debit thất bại sau khi đã gọi API.
             from services.market_stock_service import is_gated_by_market_wallet
             if product and is_gated_by_market_wallet(db, product):
                 _mw_admin = (
@@ -1109,7 +1107,7 @@ async def _notify_paid_api_failed(order: Order, db: Session, reason: str = ""):
 
 
 async def _notify_insufficient_market_wallet(order: Order, db: Session, balance: float, required: float):
-    """Payment received but tenant's ví chợ balance is insufficient to call supplier API."""
+    """Đã nhận tiền nhưng ví chợ của tenant không đủ để gọi API nguồn."""
     try:
         from services.bot_service import bot_manager
         if not bot_manager.is_running():
@@ -1121,22 +1119,22 @@ async def _notify_insufficient_market_wallet(order: Order, db: Session, balance:
         lang = get_user_lang(db, order.telegram_user_id)
         chat_id = order.payment_chat_id or order.telegram_user_id
         await cleanup_payment_qr(bot, order, db)
-        # Notify buyer: order received, waiting for stock (same UX as out-of-stock)
+        # Báo buyer: đơn đang chờ (cùng UX với hết hàng)
         await bot.send_message(
             chat_id=int(chat_id),
             text=t(lang, "paid_waiting_stock_user"),
             parse_mode="HTML",
         )
-        # Notify admin: ví chợ không đủ số dư — cần nạp thêm
+        # Báo admin: ví chợ không đủ — cần nạp thêm
         if admin_id:
-            import html
+            import html as _html
             product_name = order.product.name if order.product else str(order.product_id)
             await bot.send_message(
                 chat_id=int(admin_id),
                 text=(
                     f"⚠️ <b>ĐÃ NHẬN TIỀN — VÍ CHỢ KHÔNG ĐỦ SỐ DƯ!</b>\n\n"
                     f"📋 Đơn: <code>{order.order_code}</code>\n"
-                    f"📦 Sản phẩm: {html.escape(product_name)}\n"
+                    f"📦 Sản phẩm: {_html.escape(product_name)}\n"
                     f"👤 User: <code>{order.telegram_user_id}</code>\n"
                     f"💰 Đã nhận: {format_vnd(order.paid_amount or 0)}đ\n\n"
                     f"💼 <b>Số dư ví chợ hiện tại:</b> {format_vnd(balance)}đ\n"
