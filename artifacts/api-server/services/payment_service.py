@@ -1116,46 +1116,62 @@ async def _notify_paid_waiting_stock(order: Order, db: Session):
 
 async def _debit_market_wallet_for_sale(order: Order, product, db: Session):
     """
-    Ví chợ bookkeeping for a successfully completed chợ-sourced sale: debits
-    cost-of-goods + the platform fee (% configurable via
-    services/market_pricing.py, default 3%) from the selling tenant's market
-    wallet, atomically and exactly once per order (guarded by
-    orders.market_wallet_debited). No-op for the owner's own sales and for
-    non-chợ (source_type != api) products — see services/market_stock_service.py
-    for which products are gated in the first place.
+    Ví chợ bookkeeping for a successfully completed shared-catalog sale.
 
-    The pre-purchase gate in services/product_service.get_best_source already
-    stops a new order from reaching this point once the wallet budget is
-    exhausted, so InsufficientBalanceError here should only ever happen from a
-    genuine race between two orders draining the last of the budget
-    concurrently — logged as a critical alert for the owner to reconcile
-    manually rather than silently swallowed or allowed to go negative.
+    Correct model (revised):
+      - The OWNER pre-funds their ví chợ (market wallet balance).
+      - Every shared-catalog purchase uses the owner's API key + the owner's
+        pre-funded supplier account balance.
+      - After a successful fulfillment the OWNER'S ví chợ is debited for the
+        supplier cost — tracking budget consumption across all tenant sales.
+      - The tenant is NOT involved in ví chợ; they collect from their customer
+        and the owner earns the margin (sale price − supplier cost).
+
+    No-op for non-api products and for products NOT sourced from the owner's
+    shared catalog (i.e. owner's own direct products — their supplier cost is
+    tracked externally through their CanBoSo account, not through this wallet).
+    Idempotent: guarded by orders.market_wallet_debited so retries are safe.
     """
     try:
         if not product or product.source_type != SourceType.api:
             return
         if order.market_wallet_debited:
             return
-        admin = db.query(AdminUser).filter(AdminUser.id == order.tenant_id).first()
-        if not admin or admin.is_owner:
+
+        # Only debit for products sourced from the owner's shared catalog.
+        # Owner's own direct products (no shared_from_admin source) are skipped.
+        from services.market_stock_service import _has_shared_source
+        if not _has_shared_source(db, product.id):
             return
 
-        from services.market_pricing import get_platform_fee_percent
+        # Debit the OWNER's wallet, not the tenant's.
+        from tenancy import get_owner_tenant_id
+        owner_id = get_owner_tenant_id()
+        if not owner_id:
+            return
+        owner = db.query(AdminUser).filter(AdminUser.id == owner_id).first()
+        if not owner:
+            return
+
         cost = (order.source_unit_price or product.source_price or 0.0) * (order.quantity or 1)
-        fee = round((order.total_price or 0.0) * (get_platform_fee_percent(db) / 100.0))
-        if cost <= 0 and fee <= 0:
+        if cost <= 0:
             return
 
         from services.market_wallet_service import debit_for_sale
-        debit_for_sale(db, admin.id, order.id, cost, fee)
-        logger.info(f"[market_wallet] debited order={order.order_code} tenant={admin.id} cost={cost} fee={fee}")
+        # fee=0: owner is not charging themselves a platform fee; the margin
+        # (sale_price − source_price) is the owner's natural revenue.
+        debit_for_sale(db, owner.id, order.id, cost, fee_amount=0)
+        logger.info(
+            f"[market_wallet] debited owner={owner.id} order={order.order_code} "
+            f"cost={cost} (tenant={order.tenant_id})"
+        )
     except AlreadyProcessedError:
         pass
     except InsufficientBalanceError as e:
         logger.error(
-            f"[market_wallet] INSUFFICIENT BALANCE debiting order={order.order_code} "
-            f"tenant_id={order.tenant_id} — {e}. Sale already delivered; balance NOT taken negative. "
-            "Owner should reconcile via /market-wallet/admin."
+            f"[market_wallet] INSUFFICIENT OWNER BALANCE debiting order={order.order_code} "
+            f"owner_id={owner_id if 'owner_id' in dir() else '?'} — {e}. "
+            "Sale already delivered; balance NOT taken negative. Top up via /market-wallet/admin."
         )
     except Exception as e:
         logger.exception(f"[market_wallet] unexpected error debiting order={order.order_code}: {e}")

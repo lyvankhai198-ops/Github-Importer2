@@ -46,3 +46,9 @@ if _tenant_token is not None:
 The `bot_manager` proxy also reads the ambient tenant scope, so the correct tenant's bot is used for delivery notifications automatically once `set_current_tenant` is called.
 
 Apply the same pattern to any other background task that looks up tenant-scoped rows by id without an HTTP request (crypto monitors, wallet workers, etc.) if they ever need to process cross-tenant rows.
+
+## Ví chợ ownership redesign (applied together with the above)
+
+**Old (wrong):** tenant pre-funds their own ví chợ; tenant's balance gated stock; tenant's wallet debited after sale.
+
+**New (correct):** OWNER pre-funds their ví chợ (tracks their supplier API budget). `is_gated_by_market_wallet` detects `shared_from_admin=True` ProductSource (not tenant's is_owner flag). `get_virtual_stock` reads OWNER's `market_wallet_balance`. `_debit_market_wallet_for_sale` debits OWNER's wallet for shared-catalog sales (fee=0, cost only). Tenant has no ví chợ in this model — they collect payment from their customer; admin earns margin.
