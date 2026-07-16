@@ -697,16 +697,41 @@ async def process_paid_order(order_id: int):
     from services.product_service import get_best_source, get_product_sources_count
     from integrations.manager import api_manager
     from models import Product, DeliveryMode, OrderSourceAttempt
+    from tenancy import tenant_scope
 
     if order_id in _processing_paid:
         return
     _processing_paid.add(order_id)
 
+    # Initialise before any early-return path so the finally block can always
+    # reference it safely without hitting UnboundLocalError.
+    _tenant_token = None
+
     db = SessionLocal()
     try:
-        order = db.query(Order).filter(Order.id == order_id).first()
+        # Use skip_tenant_filter so this background task can locate orders
+        # belonging to ANY tenant, not just the platform owner.  Background
+        # asyncio tasks have no HTTP request context, so the tenant contextvar
+        # defaults to the owner's id — a tenant's order (tenant_id != owner_id)
+        # would be silently filtered out and `order` would come back None,
+        # causing a no-op return and leaving the customer undelivered.
+        order = (
+            db.query(Order)
+            .execution_options(skip_tenant_filter=True)
+            .filter(Order.id == order_id)
+            .first()
+        )
         if not order:
             return
+
+        # Switch the tenant context to the order's actual owner so every
+        # subsequent db query (Product, ProductSource, TelegramBotConfig, etc.)
+        # is scoped correctly for this tenant for the rest of this call.
+        # bot_manager is a proxy that also reads from the ambient tenant scope,
+        # so the correct tenant's bot is used for delivery notifications.
+        if order.tenant_id:
+            from tenancy import set_current_tenant
+            _tenant_token = set_current_tenant(order.tenant_id)
 
         # Gate: only process orders that are pending_payment or waiting_manual_verification
         if order.status not in (OrderStatus.pending_payment, OrderStatus.waiting_manual_verification):
@@ -918,7 +943,16 @@ async def process_paid_order(order_id: int):
     except Exception as e:
         logger.error(f"[payment] process_paid_order {order_id} error: {e}")
         try:
-            order = db.query(Order).filter(Order.id == order_id).first()
+            # Recovery query also needs skip_tenant_filter for the same reason
+            # as the initial lookup above — this background task has no HTTP
+            # request context, so without the flag the tenant filter would
+            # silently hide a non-owner tenant's order.
+            order = (
+                db.query(Order)
+                .execution_options(skip_tenant_filter=True)
+                .filter(Order.id == order_id)
+                .first()
+            )
             if order and order.status == OrderStatus.processing_api:
                 order.status = OrderStatus.api_failed
                 db.commit()
@@ -927,6 +961,14 @@ async def process_paid_order(order_id: int):
             pass
     finally:
         _processing_paid.discard(order_id)
+        # Reset the tenant contextvar if we set it, so this asyncio task
+        # doesn't leave a stale tenant scope behind for any reuse.
+        try:
+            if _tenant_token is not None:
+                from tenancy import reset_current_tenant
+                reset_current_tenant(_tenant_token)
+        except Exception:
+            pass
         db.close()
 
 

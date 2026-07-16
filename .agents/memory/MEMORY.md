@@ -1,3 +1,4 @@
+- [Background task tenant scope](background-task-tenant-scope.md) — process_paid_order and other background asyncio tasks must use skip_tenant_filter + set_current_tenant(order.tenant_id) or tenant orders are silently invisible
 - [Shared-catalog sync tenant scope](shared-catalog-sync-tenant-scope.md) — supplier sync must bypass tenant filter or a non-owner's "Chợ" view sees stale/false "hết hàng" for the owner's shared products
 - [VND input type=text pattern](vnd-input-type-text.md) — all VND price inputs must be type=text with .vnd-price-input class; type=number silently misparsed "20.000" as 20 (dot as decimal)
 - [Market wallet SePay bank deposit](market-wallet-sepay.md) — bank transfer adds MWDEP-XXXXXXXX ref codes; matched by _try_credit_market_vnd_deposit in payment_service after customer wallet DEP check; credits via market_wallet_service
