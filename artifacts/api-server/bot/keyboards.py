@@ -3,33 +3,24 @@ from bot.i18n import t
 from services.normalize import format_vnd, format_usdt
 
 
-def main_menu_keyboard(lang: str = "vi", is_admin: bool = False) -> ReplyKeyboardMarkup:
+def main_menu_keyboard(lang: str = "en", is_admin: bool = False) -> ReplyKeyboardMarkup:
     buttons = [
         [t(lang, "menu_products"), t(lang, "menu_orders")],
         [t(lang, "menu_btn_wallet"), t(lang, "menu_support")],
-        [t(lang, "menu_btn_api"), t(lang, "menu_language")],
-        [t(lang, "menu_btn_account")],
+        [t(lang, "menu_btn_api"), t(lang, "menu_btn_account")],
     ]
     if is_admin:
         buttons.append([t(lang, "menu_admin")])
     return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
 
 
-def language_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🇻🇳 Tiếng Việt", callback_data="set_lang:vi")],
-        [InlineKeyboardButton("🇬🇧 English", callback_data="set_lang:en")],
-    ])
-
-
-def product_list_keyboard(products: list, lang: str = "vi",
+def product_list_keyboard(products: list, lang: str = "en",
                            page: int = 0, per_page: int = 15) -> InlineKeyboardMarkup:
     """
     Product list keyboard.
     - In-stock: [icon] Name - price  → product:{id}
-    - Out-of-stock/unavailable: ❌ Name - Hết hàng  → oos:{id}
+    - Out-of-stock/unavailable: ❌ Name - Out of stock  → oos:{id}
     - Pagination if > per_page items.
-    - Bottom row: 🔄 Làm mới | 🏠 Trang chủ
     """
     total = len(products)
     total_pages = max(1, (total + per_page - 1) // per_page)
@@ -43,19 +34,13 @@ def product_list_keyboard(products: list, lang: str = "vi",
         status = item.get("status", "in_stock")
         is_unavailable = status in ("out_of_stock", "unavailable")
 
-        if lang == "en":
-            if getattr(p, "name_en", None):
-                display_name = p.name_en
-            else:
-                # Defensive fallback (should be rare — name_en is normally
-                # auto-filled on save/sync): never show raw Vietnamese
-                # warranty/duration shorthand (BHF, KBH, Tháng, Ngày...) to
-                # English shoppers.
-                from services.normalize import translate_shorthand_to_en
-                display_name = translate_shorthand_to_en(p.name)
+        if getattr(p, "name_en", None):
+            display_name = p.name_en
         else:
-            display_name = p.name
-        price_str = f"{format_vnd(p.sale_price)}đ" if lang == "vi" else f"{format_usdt(p.price_usdt)} USDT"
+            from services.normalize import translate_shorthand_to_en
+            display_name = translate_shorthand_to_en(p.name)
+
+        price_str = f"{format_usdt(p.price_usdt)} USDT"
 
         if is_unavailable:
             label = f"❌ {display_name} - {t(lang, 'product_list_out_of_stock')}"
@@ -76,8 +61,7 @@ def product_list_keyboard(products: list, lang: str = "vi",
         nav = []
         if page > 0:
             nav.append(InlineKeyboardButton("⬅️", callback_data=f"products_page:{page - 1}"))
-        page_label = f"Trang {page + 1}/{total_pages}" if lang == "vi" else f"Page {page + 1}/{total_pages}"
-        nav.append(InlineKeyboardButton(page_label, callback_data="noop"))
+        nav.append(InlineKeyboardButton(f"Page {page + 1}/{total_pages}", callback_data="noop"))
         if page < total_pages - 1:
             nav.append(InlineKeyboardButton("➡️", callback_data=f"products_page:{page + 1}"))
         buttons.append(nav)
@@ -91,7 +75,7 @@ def product_list_keyboard(products: list, lang: str = "vi",
     return InlineKeyboardMarkup(buttons)
 
 
-def product_detail_keyboard(product_id: int, lang: str = "vi") -> InlineKeyboardMarkup:
+def product_detail_keyboard(product_id: int, lang: str = "en") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(t(lang, "btn_buy_now"), callback_data=f"buy:{product_id}")],
         [
@@ -101,7 +85,7 @@ def product_detail_keyboard(product_id: int, lang: str = "vi") -> InlineKeyboard
     ])
 
 
-def out_of_stock_keyboard(product_id: int, lang: str = "vi") -> InlineKeyboardMarkup:
+def out_of_stock_keyboard(product_id: int, lang: str = "en") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(t(lang, "btn_check_again"), callback_data=f"product:{product_id}")],
         [InlineKeyboardButton(t(lang, "btn_notify_restock"), callback_data=f"notify_restock:{product_id}")],
@@ -110,8 +94,8 @@ def out_of_stock_keyboard(product_id: int, lang: str = "vi") -> InlineKeyboardMa
     ])
 
 
-def payment_method_keyboard(order_id: int, enabled_methods: list, lang: str = "vi",
-                             show_wallet: bool = False) -> InlineKeyboardMarkup:
+def payment_method_keyboard(order_id: int, enabled_methods: list, lang: str = "en",
+                              show_wallet: bool = False) -> InlineKeyboardMarkup:
     """
     Show only the enabled payment methods.
     enabled_methods: list of method_code strings, e.g. ["bank_transfer", "binance_pay"]
@@ -137,7 +121,7 @@ def payment_method_keyboard(order_id: int, enabled_methods: list, lang: str = "v
 
 # ── Wallet ───────────────────────────────────────────────────────────────────
 
-def wallet_menu_keyboard(lang: str = "vi") -> InlineKeyboardMarkup:
+def wallet_menu_keyboard(lang: str = "en") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(t(lang, "btn_wallet_deposit"), callback_data="wallet_deposit")],
         [InlineKeyboardButton(t(lang, "btn_wallet_history"), callback_data="wallet_history")],
@@ -145,7 +129,7 @@ def wallet_menu_keyboard(lang: str = "vi") -> InlineKeyboardMarkup:
     ])
 
 
-def wallet_deposit_currency_keyboard(lang: str = "vi") -> InlineKeyboardMarkup:
+def wallet_deposit_currency_keyboard(lang: str = "en") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(t(lang, "btn_wallet_deposit_vnd"), callback_data="wallet_dep_cur:VND")],
         [InlineKeyboardButton(t(lang, "btn_wallet_deposit_usdt"), callback_data="wallet_dep_cur:USDT")],
@@ -153,7 +137,7 @@ def wallet_deposit_currency_keyboard(lang: str = "vi") -> InlineKeyboardMarkup:
     ])
 
 
-def wallet_deposit_method_keyboard(currency: str, enabled_methods: list, lang: str = "vi") -> InlineKeyboardMarkup:
+def wallet_deposit_method_keyboard(currency: str, enabled_methods: list, lang: str = "en") -> InlineKeyboardMarkup:
     """Reuse the same method labels as order payment (bank/crypto), filtered by currency."""
     vnd_methods = {"bank_transfer": ("btn_bank_transfer", "bank_transfer")}
     usdt_methods = {
@@ -171,7 +155,7 @@ def wallet_deposit_method_keyboard(currency: str, enabled_methods: list, lang: s
     return InlineKeyboardMarkup(rows)
 
 
-def wallet_deposit_qr_keyboard(deposit_id: int, lang: str = "vi") -> InlineKeyboardMarkup:
+def wallet_deposit_qr_keyboard(deposit_id: int, lang: str = "en") -> InlineKeyboardMarkup:
     """Shown under the VND deposit QR: manual check + cancel."""
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(t(lang, "btn_check_deposit"), callback_data=f"check_deposit:{deposit_id}")],
@@ -179,7 +163,7 @@ def wallet_deposit_qr_keyboard(deposit_id: int, lang: str = "vi") -> InlineKeybo
     ])
 
 
-def wallet_insufficient_balance_keyboard(order_id: int, lang: str = "vi") -> InlineKeyboardMarkup:
+def wallet_insufficient_balance_keyboard(order_id: int, lang: str = "en") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(t(lang, "btn_wallet_deposit"), callback_data="wallet_deposit")],
         [InlineKeyboardButton(t(lang, "btn_cancel_order"), callback_data=f"cancel_pending:{order_id}")],
@@ -188,12 +172,7 @@ def wallet_insufficient_balance_keyboard(order_id: int, lang: str = "vi") -> Inl
 
 # ── Customer API ─────────────────────────────────────────────────────────────
 
-def api_menu_keyboard(lang: str = "vi", has_key: bool = False, swagger_url: str = "") -> InlineKeyboardMarkup:
-    """
-    Simplified, prepaid-only API screen: just the key, a Swagger link, and
-    Regenerate. Wallet top-up, API order history, and key revocation all
-    live under their own menus (👛 Ví / 📦 Đơn hàng), not here.
-    """
+def api_menu_keyboard(lang: str = "en", has_key: bool = False, swagger_url: str = "") -> InlineKeyboardMarkup:
     rows = []
     if swagger_url:
         rows.append([InlineKeyboardButton(t(lang, "btn_api_swagger"), url=swagger_url)])
@@ -202,7 +181,7 @@ def api_menu_keyboard(lang: str = "vi", has_key: bool = False, swagger_url: str 
     return InlineKeyboardMarkup(rows)
 
 
-def account_info_keyboard(lang: str = "vi") -> InlineKeyboardMarkup:
+def account_info_keyboard(lang: str = "en") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(t(lang, "menu_btn_wallet"), callback_data="wallet_home")],
         [InlineKeyboardButton(t(lang, "menu_orders"), callback_data="account_orders")],
@@ -212,20 +191,20 @@ def account_info_keyboard(lang: str = "vi") -> InlineKeyboardMarkup:
     ])
 
 
-def api_back_keyboard(lang: str = "vi") -> InlineKeyboardMarkup:
+def api_back_keyboard(lang: str = "en") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(t(lang, "btn_back"), callback_data="api_home")],
     ])
 
 
-def api_confirm_keyboard(action: str, lang: str = "vi") -> InlineKeyboardMarkup:
+def api_confirm_keyboard(action: str, lang: str = "en") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("✅ OK", callback_data=f"api_confirm:{action}")],
         [InlineKeyboardButton(t(lang, "btn_back"), callback_data="api_home")],
     ])
 
 
-def payment_keyboard(order_id: int, support_username: str = "", lang: str = "vi",
+def payment_keyboard(order_id: int, support_username: str = "", lang: str = "en",
                      show_regen_qr: bool = False) -> InlineKeyboardMarkup:
     """Keyboard shown with SePay QR payment message."""
     rows = [
@@ -244,8 +223,8 @@ def payment_keyboard(order_id: int, support_username: str = "", lang: str = "vi"
     return InlineKeyboardMarkup(rows)
 
 
-def binance_keyboard(order_id: int, support_username: str = "", lang: str = "vi") -> InlineKeyboardMarkup:
-    """Keyboard for Binance Pay, verified via Binance API Management Pay History."""
+def binance_keyboard(order_id: int, support_username: str = "", lang: str = "en") -> InlineKeyboardMarkup:
+    """Keyboard for Binance Pay."""
     rows = [
         [
             InlineKeyboardButton(t(lang, "btn_copy_payid"), callback_data=f"copy_payid:{order_id}"),
@@ -261,7 +240,7 @@ def binance_keyboard(order_id: int, support_username: str = "", lang: str = "vi"
     return InlineKeyboardMarkup(rows)
 
 
-def crypto_payment_keyboard(order_id: int, support_username: str = "", lang: str = "vi") -> InlineKeyboardMarkup:
+def crypto_payment_keyboard(order_id: int, support_username: str = "", lang: str = "en") -> InlineKeyboardMarkup:
     """Keyboard shown with crypto (BEP20/TRC20/ERC20) payment instructions."""
     rows = [
         [
@@ -278,30 +257,24 @@ def crypto_payment_keyboard(order_id: int, support_username: str = "", lang: str
     return InlineKeyboardMarkup(rows)
 
 
-def post_delivery_keyboard(order_id: int, support_username: str = "", lang: str = "vi") -> InlineKeyboardMarkup:
-    """
-    Post-purchase action row: exactly 🛍 Mua tiếp / 📦 Xem đơn / 💬 Hỗ trợ / 🏠 Trang chủ.
-    "Tải lại tài khoản" (re-download) is still reachable via 📦 Xem đơn's own
-    keyboard — no separate button here, per the ĐỢT 2 delivery UI spec.
-    """
+def post_delivery_keyboard(order_id: int, support_username: str = "", lang: str = "en") -> InlineKeyboardMarkup:
     rows = [
-        [InlineKeyboardButton("🛍 Mua tiếp" if lang == "vi" else "🛍 Buy more", callback_data="buy_more")],
-        [InlineKeyboardButton("📦 Xem đơn" if lang == "vi" else "📦 View order", callback_data=f"reload_order:{order_id}")],
+        [InlineKeyboardButton("🛍 Buy more", callback_data="buy_more")],
+        [InlineKeyboardButton("📦 View order", callback_data=f"reload_order:{order_id}")],
     ]
     support_row = []
     if support_username:
         support_row.append(
-            InlineKeyboardButton("💬 Hỗ trợ" if lang == "vi" else "💬 Support",
-                                 url=f"https://t.me/{support_username.lstrip('@')}")
+            InlineKeyboardButton("💬 Support", url=f"https://t.me/{support_username.lstrip('@')}")
         )
-    support_row.append(InlineKeyboardButton("🏠 Trang chủ" if lang == "vi" else "🏠 Home", callback_data="home"))
+    support_row.append(InlineKeyboardButton("🏠 Home", callback_data="home"))
     rows.append(support_row)
     return InlineKeyboardMarkup(rows)
 
 
-def partial_delivery_keyboard(order_id: int, support_username: str = "", lang: str = "vi") -> InlineKeyboardMarkup:
+def partial_delivery_keyboard(order_id: int, support_username: str = "", lang: str = "en") -> InlineKeyboardMarkup:
     rows = [
-        [InlineKeyboardButton("📥 Tải lại tài khoản đã nhận" if lang == "vi" else "📥 Re-download received accounts",
+        [InlineKeyboardButton("📥 Re-download received accounts",
                               callback_data=f"reload_order:{order_id}")],
     ]
     if support_username:
@@ -312,7 +285,7 @@ def partial_delivery_keyboard(order_id: int, support_username: str = "", lang: s
 
 # ── Order search / issue reporting ──────────────────────────────────────────
 
-def order_search_list_keyboard(orders: list, lang: str = "vi") -> InlineKeyboardMarkup:
+def order_search_list_keyboard(orders: list, lang: str = "en") -> InlineKeyboardMarkup:
     """One button per matching order: order code • product • purchase time."""
     rows = []
     for o in orders:
@@ -323,28 +296,28 @@ def order_search_list_keyboard(orders: list, lang: str = "vi") -> InlineKeyboard
     return InlineKeyboardMarkup(rows)
 
 
-def order_detail_keyboard(order_id: int, lang: str = "vi") -> InlineKeyboardMarkup:
+def order_detail_keyboard(order_id: int, lang: str = "en") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(t(lang, "btn_report_issue"), callback_data=f"report_issue:{order_id}")],
         [InlineKeyboardButton(t(lang, "btn_home"), callback_data="home")],
     ])
 
 
-def admin_issue_keyboard(issue_id: int, lang: str = "vi") -> InlineKeyboardMarkup:
+def admin_issue_keyboard(issue_id: int, lang: str = "en") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("👁 Xem đơn", callback_data=f"admin_issue_view:{issue_id}")],
-        [InlineKeyboardButton("💬 Trả lời khách", callback_data=f"admin_issue_reply:{issue_id}")],
-        [InlineKeyboardButton("💰 Hoàn tiền về ví", callback_data=f"admin_issue_refund:{issue_id}")],
-        [InlineKeyboardButton("❌ Từ chối", callback_data=f"admin_issue_reject:{issue_id}")],
-        [InlineKeyboardButton("✅ Đánh dấu đã xử lý", callback_data=f"admin_issue_resolve:{issue_id}")],
+        [InlineKeyboardButton("👁 View order", callback_data=f"admin_issue_view:{issue_id}")],
+        [InlineKeyboardButton("💬 Reply to customer", callback_data=f"admin_issue_reply:{issue_id}")],
+        [InlineKeyboardButton("💰 Refund to wallet", callback_data=f"admin_issue_refund:{issue_id}")],
+        [InlineKeyboardButton("❌ Reject", callback_data=f"admin_issue_reject:{issue_id}")],
+        [InlineKeyboardButton("✅ Mark as resolved", callback_data=f"admin_issue_resolve:{issue_id}")],
     ])
 
 
-# ── Legacy compat (payment_keyboard used without lang in payment_service) ──────
+# ── Legacy compat ──────────────────────────────────────────────────────────────
 def confirm_order_keyboard(product_id: int, quantity: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("✅ Xác nhận mua", callback_data=f"confirm_order:{product_id}:{quantity}"),
-            InlineKeyboardButton("❌ Hủy", callback_data="cancel_order"),
+            InlineKeyboardButton("✅ Confirm", callback_data=f"confirm_order:{product_id}:{quantity}"),
+            InlineKeyboardButton("❌ Cancel", callback_data="cancel_order"),
         ]
     ])

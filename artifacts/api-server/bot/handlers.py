@@ -9,7 +9,7 @@ from telegram.ext import ContextTypes
 from bot.keyboards import (
     main_menu_keyboard, product_list_keyboard, product_detail_keyboard,
     out_of_stock_keyboard, payment_keyboard, post_delivery_keyboard,
-    partial_delivery_keyboard, language_keyboard, payment_method_keyboard,
+    partial_delivery_keyboard, payment_method_keyboard,
     binance_keyboard, crypto_payment_keyboard,
     confirm_order_keyboard,
     wallet_menu_keyboard, wallet_deposit_currency_keyboard, wallet_deposit_method_keyboard,
@@ -88,27 +88,16 @@ def _get_show_out_of_stock(db) -> bool:
     return val if val is not None else True
 
 
-async def _set_bot_commands(bot, lang: str = "vi", chat_id: int = None):
-    """Set Telegram Menu commands for default scope or a specific chat."""
-    commands_vi = [
-        BotCommand("menu",     "Thông tin tài khoản"),
-        BotCommand("product",  "Danh sách sản phẩm"),
-        BotCommand("orders",   "Đơn hàng của tôi"),
-        BotCommand("wallet",   "Ví của tôi"),
-        BotCommand("language", "Đổi ngôn ngữ"),
-        BotCommand("support",  "Hỗ trợ"),
-        BotCommand("myid",     "Lấy Telegram ID"),
+async def _set_bot_commands(bot, lang: str = "en", chat_id: int = None):
+    """Set Telegram Menu commands (English only)."""
+    commands = [
+        BotCommand("menu",    "Account information"),
+        BotCommand("product", "Product list"),
+        BotCommand("orders",  "My orders"),
+        BotCommand("wallet",  "My wallet"),
+        BotCommand("support", "Support"),
+        BotCommand("myid",    "Get Telegram ID"),
     ]
-    commands_en = [
-        BotCommand("menu",     "Account information"),
-        BotCommand("product",  "Product list"),
-        BotCommand("orders",   "My orders"),
-        BotCommand("wallet",   "My wallet"),
-        BotCommand("language", "Change language"),
-        BotCommand("support",  "Support"),
-        BotCommand("myid",     "Get Telegram ID"),
-    ]
-    commands = commands_en if lang == "en" else commands_vi
     try:
         if chat_id:
             await bot.set_my_commands(commands, scope=BotCommandScopeChat(chat_id=chat_id))
@@ -118,21 +107,8 @@ async def _set_bot_commands(bot, lang: str = "vi", chat_id: int = None):
         logger.warning(f"set_my_commands failed: {e}")
 
 
-def _status_label(status_val: str, lang: str = "vi") -> str:
-    labels_vi = {
-        "pending_manual": "⏳ Chờ xử lý",
-        "pending_payment": "💳 Chờ thanh toán",
-        "processing_api": "🔄 Đang xử lý",
-        "completed": "✅ Hoàn thành",
-        "partial_delivery": "⚠️ Giao thiếu",
-        "failed": "❌ Thất bại",
-        "api_failed": "🚨 Lỗi sau thanh toán",
-        "payment_expired": "⏰ Hết hạn TT",
-        "cancelled": "🚫 Đã huỷ",
-        "paid_waiting_stock": "⏳ Chờ hàng",
-        "waiting_manual_verification": "⏳ Chờ xác nhận",
-    }
-    labels_en = {
+def _status_label(status_val: str, lang: str = "en") -> str:
+    labels = {
         "pending_manual": "⏳ Pending",
         "pending_payment": "💳 Awaiting payment",
         "processing_api": "🔄 Processing",
@@ -145,21 +121,10 @@ def _status_label(status_val: str, lang: str = "vi") -> str:
         "paid_waiting_stock": "⏳ Waiting for stock",
         "waiting_manual_verification": "⏳ Awaiting admin approval",
     }
-    labels = labels_en if lang == "en" else labels_vi
     return labels.get(status_val, status_val)
 
-def _payment_status_label(ps: str, lang: str = "vi") -> str:
-    labels_vi = {
-        "pending": "⏳ Chờ thanh toán",
-        "partial": "⚠️ Thanh toán thiếu",
-        "paid": "✅ Đã thanh toán đủ",
-        "overpaid": "💰 Thanh toán thừa",
-        "expired": "⏰ Hết hạn",
-        "failed": "❌ Thất bại",
-        "detected": "🔍 Đã phát hiện giao dịch",
-        "confirming": "⏳ Đang xác nhận",
-    }
-    labels_en = {
+def _payment_status_label(ps: str, lang: str = "en") -> str:
+    labels = {
         "pending": "⏳ Awaiting payment",
         "partial": "⚠️ Partial payment",
         "paid": "✅ Paid",
@@ -169,27 +134,13 @@ def _payment_status_label(ps: str, lang: str = "vi") -> str:
         "detected": "🔍 Transaction detected",
         "confirming": "⏳ Confirming",
     }
-    labels = labels_en if lang == "en" else labels_vi
     return labels.get(ps or "", ps or "—")
 
 
 # ── Command handlers ──────────────────────────────────────────────────────────
 
 async def _require_language_selected(update: Update, db) -> bool:
-    """
-    Gate helper for entry points other than /start (menu buttons, /menu,
-    /orders, /support, ...). A brand-new user could in theory hit one of
-    these before ever sending /start; if so, show the forced language
-    picker and return False so the caller stops processing.
-    """
-    tg_user = update.effective_user
-    user = get_or_create_user(db, str(tg_user.id), tg_user.username, tg_user.first_name, tg_user.last_name)
-    if not user or not getattr(user, "language_selected", False):
-        await update.message.reply_text(
-            t("vi", "choose_lang"),
-            reply_markup=language_keyboard(),
-        )
-        return False
+    """Language selection removed — always returns True."""
     return True
 
 
@@ -215,16 +166,6 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = get_or_create_user(db, str(tg_user.id), tg_user.username, tg_user.first_name, tg_user.last_name)
         lang = get_user_lang(db, str(tg_user.id))
 
-        # Brand-new users: force the language picker before anything else.
-        # (language_code always defaults to "vi" at the DB level, so we gate
-        # on the explicit language_selected flag instead.)
-        if not user or not getattr(user, "language_selected", False):
-            await update.message.reply_text(
-                t("vi", "choose_lang"),
-                reply_markup=language_keyboard(),
-            )
-            return
-
         # /start is also a hard reset: cancel any in-progress input flow or
         # temp navigation state left over from before, same as 🏠 Trang chủ.
         await _cleanup_flow_state(context, update.effective_chat.id)
@@ -240,14 +181,6 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _send_product_list(update.message, db, context, lang)
     finally:
         db.close()
-
-
-async def language_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handler for 🌐 Ngôn ngữ / Language menu button."""
-    await update.message.reply_text(
-        t("vi", "choose_lang"),
-        reply_markup=language_keyboard(),
-    )
 
 
 async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -267,23 +200,12 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         total_orders = getattr(user, "total_orders", 0) or 0
         is_banned = getattr(user, "is_banned", False)
         status_key = "user_status_banned" if is_banned else "user_status_active"
-        lang_display = "Tiếng Việt" if lang == "vi" else "English"
         username_str = f"@{tg_user.username}" if tg_user.username else "—"
         text = t(lang, "menu_account_info",
                  tg_id=tg_user.id,
                  username=username_str,
-                 language=lang_display,
                  total_orders=total_orders,
                  status=t(lang, status_key))
-        # Admin: hiển thị số dư ví chợ đồng bộ với trang web
-        if is_admin:
-            from models import AdminUser
-            from services.market_wallet_service import get_balance as _mw_get_balance
-            from services.normalize import format_vnd as _fmt_vnd
-            _cfg_admin = db.query(AdminUser).execution_options(skip_tenant_filter=True).first()
-            if _cfg_admin:
-                _mw_bal = _mw_get_balance(_cfg_admin)
-                text += "\n" + t(lang, "admin_market_wallet_balance", amount=_fmt_vnd(_mw_bal))
         await update.message.reply_text(
             text, parse_mode="HTML",
             reply_markup=main_menu_keyboard(lang=lang, is_admin=is_admin),
@@ -514,17 +436,14 @@ async def _render_order_detail_text(db, order, lang: str) -> str:
         f"<pre>{html.escape(account_text)}</pre>" if account_text else t(lang, "order_detail_no_account")
     )
 
-    if lang == "vi":
-        price_str = f"{format_vnd(order.total_price)}đ"
-    else:
-        from services.normalize import format_usdt
-        usdt_total = (product.price_usdt * order.quantity) if product else None
-        if usdt_total is None:
-            from services.exchange_rate_service import get_exchange_config
-            from services.normalize import compute_price_usdt
-            rate = float(get_exchange_config(db).get("fixed_rate") or 26500.0)
-            usdt_total = compute_price_usdt(order.total_price, rate)
-        price_str = f"{format_usdt(usdt_total)} USDT"
+    from services.normalize import format_usdt
+    usdt_total = (product.price_usdt * order.quantity) if product else None
+    if usdt_total is None:
+        from services.exchange_rate_service import get_exchange_config
+        from services.normalize import compute_price_usdt
+        rate = float(get_exchange_config(db).get("fixed_rate") or 26500.0)
+        usdt_total = compute_price_usdt(order.total_price, rate)
+    price_str = f"{format_usdt(usdt_total)} USDT"
 
     result = refund_service.compute_refund(order)
     warranty_label = (product.warranty if product and product.warranty else "—")
@@ -615,7 +534,7 @@ async def _send_api_menu(bot_or_query, db, tg_user, lang: str, edit=False, bot=N
             try:
                 await bot.send_message(
                     chat_id=int(admin_id),
-                    text=t("vi", "api_admin_key_created", tg_id=tg_user.id),
+                    text=t("en", "api_admin_key_created", tg_id=tg_user.id),
                     parse_mode="HTML",
                 )
             except Exception as e:
@@ -1616,37 +1535,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             db.close()
         return
 
-    # ── set_lang ──
-    if data.startswith("set_lang:"):
-        lang_code = data.split(":")[1]
-        if lang_code not in ("vi", "en"):
-            return
-        db = SessionLocal()
-        try:
-            tg_user = update.effective_user
-            user = db.query(User).filter(User.telegram_id == str(tg_user.id)).first()
-            if user:
-                user.language_code = lang_code
-                user.language_selected = True
-                db.commit()
-            admin_id = _get_admin_id(db)
-            is_admin = str(tg_user.id) == str(admin_id)
-            await query.message.reply_text(
-                t(lang_code, "lang_changed"),
-                reply_markup=main_menu_keyboard(lang=lang_code, is_admin=is_admin),
-            )
-            try:
-                await query.message.delete()
-            except Exception:
-                pass
-            # Update Telegram Menu commands for this chat in the chosen language
-            await _set_bot_commands(context.bot, lang_code, chat_id=int(tg_user.id))
-            # First-time users go straight from language picker to the product
-            # list — no separate "tap Products" step.
-            await _send_product_list(query.message, db, context, lang_code)
-        finally:
-            db.close()
-        return
 
     # ── close ──
     if data == "close":
@@ -1888,7 +1776,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             order = db.query(Order).filter(Order.id == issue.order_id).first()
 
             if action == "admin_issue_view":
-                text = await _render_order_detail_text(db, order, "vi")
+                text = await _render_order_detail_text(db, order, "en")
                 await context.bot.send_message(chat_id=tg_user.id, text=text, parse_mode="HTML")
                 await query.answer()
                 return
@@ -2019,7 +1907,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 try:
                     await context.bot.send_message(
                         chat_id=int(admin_id),
-                        text=t("vi", "api_admin_key_created", tg_id=tg_user.id),
+                        text=t("en", "api_admin_key_created", tg_id=tg_user.id),
                         parse_mode="HTML",
                     )
                 except Exception as e:
@@ -2540,7 +2428,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 ps = order.payment_status.value if hasattr(order.payment_status, "value") else str(order.payment_status or "pending")
 
             if sv == "completed":
-                await query.answer("✅ Đơn đã hoàn thành." if lang == "vi" else "✅ Order completed.", show_alert=True)
+                await query.answer("✅ Order completed.", show_alert=True)
                 return
 
             if ps == "pending":
@@ -2810,7 +2698,7 @@ async def _create_and_notify_issue(context, db, order, tg_user, issue_text: str 
         try:
             await notify_admin_new_issue(
                 context.bot, order, issue, admin_id,
-                admin_keyboard=admin_issue_keyboard(issue.id, lang="vi"),
+                admin_keyboard=admin_issue_keyboard(issue.id, lang="en"),
             )
         except Exception as e:
             logger.error(f"[_create_and_notify_issue] admin notify failed: {e}")
@@ -2895,12 +2783,6 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lang = _get_lang(db, update.effective_user.id)
     finally:
         db.close()
-
-    # ── Language menu button ──
-    text_in = update.message.text or ""
-    if text_in in ("🌐 Ngôn ngữ", "🌐 Language"):
-        await update.message.reply_text(t("vi", "choose_lang"), reply_markup=language_keyboard())
-        return
 
     if state == "waiting_wallet_deposit_amount":
         currency = context.user_data.get("wallet_dep_currency")
@@ -3161,7 +3043,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
             issue = db.query(OrderIssue).filter(OrderIssue.id == issue_id).first()
             if not issue:
-                await update.message.reply_text(t("vi", "issue_not_found"))
+                await update.message.reply_text(t("en", "issue_not_found"))
                 return
             order = db.query(Order).filter(Order.id == issue.order_id).first()
             if issue.status == IssueStatus.open:
@@ -3175,7 +3057,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                            text=html.escape(reply_text)),
                     parse_mode="HTML",
                 )
-                await update.message.reply_text(t("vi", "issue_reply_sent"))
+                await update.message.reply_text(t("en", "issue_reply_sent"))
             except Exception as e:
                 logger.error(f"[waiting_admin_reply] send failed: {e}")
         finally:
@@ -3194,7 +3076,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
             issue = db.query(OrderIssue).filter(OrderIssue.id == issue_id).first()
             if not issue or issue.status not in (IssueStatus.open, IssueStatus.reviewing):
-                await update.message.reply_text(t("vi", "issue_already_handled"))
+                await update.message.reply_text(t("en", "issue_already_handled"))
                 return
             order = db.query(Order).filter(Order.id == issue.order_id).first()
             issue.status = IssueStatus.rejected
@@ -3202,7 +3084,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             issue.handled_at = datetime.utcnow()
             issue.resolution_note = reason
             db.commit()
-            await update.message.reply_text(t("vi", "issue_rejected_admin", id=issue.id))
+            await update.message.reply_text(t("en", "issue_rejected_admin", id=issue.id))
             try:
                 buyer_lang = _get_lang(db, issue.telegram_user_id)
                 await context.bot.send_message(
