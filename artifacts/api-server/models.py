@@ -153,6 +153,8 @@ class AdminUser(Base):
     # tenant accounts; tenants are regular shop-admin users scoped to their
     # own data everywhere else.
     is_owner = Column(Boolean, default=False, nullable=False)
+    # Rental expiry. NULL = never expires (always true for the owner).
+    expires_at = Column(DateTime, nullable=True)
     display_name = Column(String(255), nullable=True)  # shown in admin panel tenant list
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime, default=now)
