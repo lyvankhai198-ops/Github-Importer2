@@ -490,7 +490,12 @@ class Product(Base, TenantScopedMixin):
     updated_at = Column(DateTime, default=now, onupdate=now)
 
     sources = relationship("ProductSource", back_populates="product", cascade="all, delete-orphan")
-    orders = relationship("Order", back_populates="product")
+    # passive_deletes=True: khi xoá Product, SQLAlchemy KHÔNG cố null hoá
+    # orders.product_id (NOT NULL ở DB). Thay vào đó để DB tự xử lý — vì
+    # SQLite mặc định tắt FK enforcement, order record vẫn tồn tại với
+    # product_id trỏ đến product đã bị xoá (dangling ref), cho phép lịch sử
+    # đơn hàng tiếp tục xem được với "(Đã xoá)" hiển thị thay product name.
+    orders = relationship("Order", back_populates="product", passive_deletes=True)
     inventory_items = relationship("InventoryItem", back_populates="product", cascade="all, delete-orphan")
 
 

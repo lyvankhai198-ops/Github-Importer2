@@ -109,7 +109,7 @@
           <tr>
             <td><a href="/orders/{{ o.id }}" class="fw-semibold">{{ o.order_code }}</a></td>
             <td><small>{{ o.telegram_user_id }}</small></td>
-            <td>{{ o.product.name if o.product else '—' }}</td>
+            <td>{{ o.product.name if o.product else '<em class="text-muted">(Đã xoá)</em>' | safe }}</td>
             <td>{{ o.quantity }}</td>
             <td>{{ "{:,.0f}".format(o.total_price).replace(",", ".") }}đ</td>
             <td>{% include "_order_status_badge.html" %}</td>
@@ -146,7 +146,7 @@
     <div class="order-card-head">
       <div>
         <div class="order-card-code">🧾 {{ o.order_code }}</div>
-        <div class="order-card-product">📦 {{ o.product.name if o.product else '—' }}</div>
+        <div class="order-card-product">📦 {{ o.product.name if o.product else '(Đã xoá)' }}</div>
       </div>
       {% include "_order_status_badge.html" %}
     </div>

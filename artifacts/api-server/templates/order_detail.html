@@ -53,7 +53,7 @@
           </div>
           <div class="info-cell">
             <label>Sản phẩm</label>
-            <div class="fw-semibold">{{ order.product.name if order.product else order.product_id }}</div>
+            <div class="fw-semibold">{{ order.product.name if order.product else '<em class="text-muted">(Sản phẩm đã xoá)</em>' | safe }}</div>
           </div>
           <div class="info-cell">
             <label>Số lượng</label>

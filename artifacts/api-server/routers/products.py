@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models import (
     Product, ApiProduct, ApiConnection, ProductSource, SourceType, DeliveryMode,
-    InventoryItem, InventoryStatus, Order,
+    InventoryItem, InventoryStatus, Order, RestockSubscription, NotificationEvent,
 )
 from services.api_service import sync_api_products
 from services.normalize import compute_price_usdt
@@ -656,18 +656,23 @@ async def delete_product(product_id: int, request: Request, db: Session = Depend
     if not product:
         return RedirectResponse(url="/products", status_code=302)
 
-    has_orders = db.query(Order).filter(Order.product_id == product_id).first() is not None
-    if has_orders:
-        # Never hard-delete a product that has order history — deactivate instead.
-        product.is_active = False
-        db.commit()
-        flash(request, "Sản phẩm đã có đơn hàng nên không thể xóa — đã chuyển sang trạng thái ẩn/ngừng bán!", "error")
-        return RedirectResponse(url="/products", status_code=302)
-
     try:
+        # Xoá restock subscriptions trước (NOT NULL FK, không có cascade từ Product)
+        db.query(RestockSubscription).filter(
+            RestockSubscription.product_id == product_id
+        ).delete(synchronize_session=False)
+        # Xoá notification events liên quan (nullable FK, xoá để không rác)
+        db.query(NotificationEvent).filter(
+            NotificationEvent.product_id == product_id
+        ).delete(synchronize_session=False)
+        # Product.orders có passive_deletes=True nên SQLAlchemy không cố NULL
+        # hoá orders.product_id — SQLite không enforce FK nên order record vẫn
+        # còn trong DB, hiển thị "(Đã xoá)" ở trang đơn hàng.
+        # Product.sources + inventory_items có cascade="all, delete-orphan" →
+        # tự xoá theo.
         db.delete(product)
         db.commit()
-        flash(request, "Sản phẩm đã được xóa!")
+        flash(request, "Sản phẩm đã được xóa! Đơn hàng liên quan vẫn được lưu trong mục Đơn hàng.")
     except Exception:
         db.rollback()
         logger.error(f"delete_product({product_id}) failed:\n" + traceback.format_exc())
@@ -754,8 +759,9 @@ async def create_product_from_source(
             flash(request, f"Giá treo tối thiểu cho sản phẩm này là {floor:,.0f}đ".replace(",", "."), "error")
             return RedirectResponse(url="/products/market", status_code=302)
         try:
-            shared_catalog.attach_shared_product(db, get_current_tenant(), api_product_id, final_price)
+            new_product = shared_catalog.attach_shared_product(db, get_current_tenant(), api_product_id, final_price)
             flash(request, "Sản phẩm đã được treo lên Chợ!")
+            return RedirectResponse(url=f"/products/id/{new_product.id}", status_code=302)
         except ValueError as e:
             flash(request, str(e), "error")
         return RedirectResponse(url="/products/market", status_code=302)
@@ -783,7 +789,7 @@ async def create_product_from_source(
             db.add(source)
         db.commit()
         flash(request, "Sản phẩm đã được treo lại!")
-        return RedirectResponse(url="/products/api-sources", status_code=302)
+        return RedirectResponse(url=f"/products/id/{existing.id}", status_code=302)
 
     # Use sale_price if admin set it; otherwise default to source price + markup
     from services.market_pricing import default_sale_price
@@ -822,7 +828,7 @@ async def create_product_from_source(
     if product.is_active:
         from services.broadcast_service import notify_new_product_broadcast
         await notify_new_product_broadcast(product)
-    return RedirectResponse(url="/products/api-sources", status_code=302)
+    return RedirectResponse(url=f"/products/id/{product.id}", status_code=302)
 
 
 @router.post("/products/api-sources/{api_product_id}/link-product")
@@ -857,7 +863,7 @@ async def link_api_product(
     db.add(source)
     db.commit()
     flash(request, "Liên kết nguồn thành công!")
-    return RedirectResponse(url="/products/api-sources", status_code=302)
+    return RedirectResponse(url=f"/products/id/{product_id}", status_code=302)
 
 
 @router.post("/products/sources/{source_id}/delete")
