@@ -286,11 +286,19 @@ async def sync_api_products(db: Session, api_connection_id: int) -> dict:
             for product, new_cost, is_shared in price_sync_results:
                 try:
                     if is_shared:
-                        if product.source_price != new_cost:
+                        # Always write — even if the value looks equal —
+                        # to overwrite a stale 0 that was stored before the
+                        # price-sync fix (source_price=0 breaks virtual-stock
+                        # math in market_stock_service.get_virtual_stock).
+                        if new_cost and new_cost > 0:
                             product.source_price = new_cost
                             product.last_source_price = new_cost
                             product.last_price_updated_at = now
                             db.commit()
+                            logger.info(
+                                f"PRICE_SYNC_SHARED: product_id={product.id} "
+                                f"source_price={new_cost}"
+                            )
                         continue
                     db.refresh(product)
                     await handle_source_price_change(db, product, new_cost, source_connection_id=api_connection_id, exchange_rate=rate)

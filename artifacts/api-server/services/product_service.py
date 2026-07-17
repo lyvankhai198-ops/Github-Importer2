@@ -92,12 +92,19 @@ def get_product_stock_status(product_id: int, db: Session) -> dict:
     # are never capped.
     from services.market_stock_service import is_gated_by_market_wallet, get_virtual_stock
     pre_wallet_stock = total_stock
-    if is_gated_by_market_wallet(db, product):
+    gated = is_gated_by_market_wallet(db, product)
+    if gated:
         virtual = get_virtual_stock(db, product)
         total_stock = min(total_stock, virtual)
         logger.info(
             f"STOCK_DEBUG product_id={product_id} wallet_gated=True "
-            f"pre_wallet_stock={pre_wallet_stock} virtual_stock={virtual} final={total_stock}"
+            f"source_price={product.source_price} pre_wallet_stock={pre_wallet_stock} "
+            f"virtual_stock={virtual} final={total_stock}"
+        )
+    else:
+        logger.info(
+            f"STOCK_DEBUG product_id={product_id} wallet_gated=False "
+            f"(owner product or non-api) total_stock={total_stock}"
         )
 
     if total_stock <= 0:
