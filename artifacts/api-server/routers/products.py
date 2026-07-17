@@ -375,19 +375,6 @@ async def add_product(
         flash(request, error, "error")
         return RedirectResponse(url="/products", status_code=302)
 
-    # Enforce plan product limit
-    admin_id = request.session.get("admin_id")
-    if admin_id:
-        from models import AdminUser, Plan as _Plan
-        _admin = db.query(AdminUser).filter(AdminUser.id == admin_id).first()
-        if _admin and _admin.plan_id:
-            _plan = db.query(_Plan).filter(_Plan.id == _admin.plan_id).first()
-            if _plan and _plan.max_products is not None:
-                _cur = db.query(Product).count()
-                if _cur >= _plan.max_products:
-                    flash(request, f"Product limit reached ({_plan.max_products}) for your '{_plan.name}' plan. Please upgrade.", "error")
-                    return RedirectResponse(url="/products", status_code=302)
-
     product_code = product_code.strip()
     existing = db.query(Product).filter(Product.product_code == product_code).first()
     if existing:

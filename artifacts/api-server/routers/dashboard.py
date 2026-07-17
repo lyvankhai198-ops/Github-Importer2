@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from pathlib import Path
 from database import get_db
-from models import Product, ApiProduct, ApiConnection, Order, User, TelegramBotConfig, OrderStatus, AdminUser, Plan
+from models import Product, ApiProduct, ApiConnection, Order, User, TelegramBotConfig, OrderStatus
 from services.bot_service import bot_manager
 from config import UPLOADS_DIR
 
@@ -78,28 +78,6 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
 
     api_statuses = db.query(ApiConnection).all()
 
-    # Subscription info for tenant
-    admin_id = request.session.get("admin_id")
-    subscription = None
-    if admin_id:
-        admin = db.query(AdminUser).filter(AdminUser.id == admin_id).first()
-        if admin and not admin.is_owner:
-            plan = db.query(Plan).filter(Plan.id == admin.plan_id).first() if admin.plan_id else None
-            days_left = None
-            if admin.expires_at:
-                delta = admin.expires_at - datetime.utcnow()
-                days_left = max(delta.days, 0)
-            subscription = {
-                "plan_name": plan.name if plan else "No Plan",
-                "expires_at": admin.expires_at,
-                "days_left": days_left,
-                "max_products": plan.max_products if plan else None,
-                "max_orders": plan.max_orders if plan else None,
-                "cur_products": total_products,
-                "cur_orders": orders_total,
-                "expired": days_left is not None and days_left == 0,
-            }
-
     return templates.TemplateResponse(request, "dashboard.html", {
         "bot_status": bot_status_info,
         "total_products": total_products,
@@ -115,7 +93,6 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
         "top_products": top_products,
         "recent_orders": recent_orders,
         "api_statuses": api_statuses,
-        "subscription": subscription,
     })
 
 
