@@ -69,12 +69,18 @@ def get_product_stock_status(product_id: int, db: Session) -> dict:
                 f"last_sync_at={ap.last_sync_at.isoformat()} external_stock={ap.external_stock}"
             )
         any_synced = True
+        # Prefer last_stock (written by sync loop) but fall back to
+        # ap.external_stock directly — this covers products that were
+        # treo'd after the last sync so last_stock hasn't been written yet,
+        # or where the sync loop previously skipped the update due to the
+        # shared-catalog tenant-filter bug (now fixed in api_service.py).
+        stock_val = src.last_stock if src.last_stock is not None else int(ap.external_stock or 0)
         logger.info(
             f"STOCK_DEBUG product_id={product_id} src_id={src.id} api_product_id={ap.id} "
             f"is_active={src.is_active} src_last_stock={src.last_stock} "
-            f"ap_external_stock={ap.external_stock} age_seconds={age.total_seconds():.0f}"
+            f"ap_external_stock={ap.external_stock} stock_used={stock_val} age_seconds={age.total_seconds():.0f}"
         )
-        total_stock += max(0, src.last_stock or 0)
+        total_stock += max(0, stock_val)
 
     if not any_synced:
         logger.warning(f"STOCK_DEBUG product_id={product_id} result=unavailable any_error={any_error} n_sources={len(sources)}")

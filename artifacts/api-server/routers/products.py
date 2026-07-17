@@ -778,7 +778,7 @@ async def create_product_from_source(
         else:
             source = ProductSource(
                 product_id=existing.id, api_product_id=ap.id, priority=1,
-                is_active=True, last_cost=ap.external_price, last_stock=ap.external_stock,
+                is_active=True, last_cost=ap.external_price, last_stock=int(ap.external_stock or 0),
             )
             db.add(source)
         db.commit()
@@ -814,7 +814,7 @@ async def create_product_from_source(
         priority=1,
         is_active=True,
         last_cost=ap.external_price,
-        last_stock=ap.external_stock,
+        last_stock=int(ap.external_stock or 0),
     )
     db.add(source)
     db.commit()
@@ -852,7 +852,7 @@ async def link_api_product(
         priority=priority,
         is_active=True,
         last_cost=ap.external_price,
-        last_stock=ap.external_stock,
+        last_stock=int(ap.external_stock or 0),
     )
     db.add(source)
     db.commit()

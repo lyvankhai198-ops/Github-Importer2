@@ -63,10 +63,17 @@ async def sync_api_products(db: Session, api_connection_id: int) -> dict:
         # Without bypassing the filter here, every other tenant's shared
         # listings would silently stop syncing.
         pre_sync_stock = defaultdict(int)
+        from services.shared_catalog import resolve_api_product as _resolve_ap
         for src in db.query(ProductSource).join(ApiProduct).execution_options(skip_tenant_filter=True).filter(
                 ApiProduct.api_connection_id == api_connection_id).all():
-            if src.api_product:
-                pre_sync_stock[src.product_id] += (src.api_product.external_stock or 0)
+            # Must use resolve_api_product (skip_tenant_filter) instead of the
+            # lazy `src.api_product` relationship — for shared-catalog sources
+            # (shared_from_admin=True) the ApiProduct belongs to the OWNER's
+            # tenant, so the plain relationship silently returns None under any
+            # other tenant's request scope, making the stock read 0.
+            ap_pre = _resolve_ap(db, src)
+            if ap_pre:
+                pre_sync_stock[src.product_id] += int(ap_pre.external_stock or 0)
         for p in products:
             # Guard per-item so one malformed item (bad price, unexpected
             # shape, etc.) can't abort the whole sync — it's just counted
@@ -84,7 +91,7 @@ async def sync_api_products(db: Session, api_connection_id: int) -> dict:
                     existing.external_name = p.get("name", "")
                     existing.external_description = p.get("description", "")
                     existing.external_price = p.get("price", 0)
-                    existing.external_stock = p.get("stock", 0)
+                    existing.external_stock = int(p.get("stock") or 0)
                     existing.external_min_quantity = p.get("min_quantity", 1)
                     existing.external_max_quantity = p.get("max_quantity")
                     existing.external_warranty = p.get("warranty", "")
@@ -120,7 +127,7 @@ async def sync_api_products(db: Session, api_connection_id: int) -> dict:
                         external_name=p.get("name", ""),
                         external_description=p.get("description", ""),
                         external_price=p.get("price", 0),
-                        external_stock=p.get("stock", 0),
+                        external_stock=int(p.get("stock") or 0),
                         external_min_quantity=p.get("min_quantity", 1),
                         external_max_quantity=p.get("max_quantity"),
                         external_warranty=p.get("warranty", ""),
@@ -175,21 +182,22 @@ async def sync_api_products(db: Session, api_connection_id: int) -> dict:
 
         # Products belonging to a shared-catalog attachment (see
         # services/shared_catalog.py) may belong to a DIFFERENT tenant than
-        # this sync tick's owner scope — resolve_product bypasses the tenant
-        # filter by the already-known product_id instead of the plain
-        # `.product` relationship, which would silently return None for them.
+        # this sync tick's owner scope — resolve_product AND resolve_api_product
+        # both bypass the tenant filter by known FK id instead of the lazy
+        # relationship, which would silently return None for shared sources.
         for src in sources:
-            if not src.api_product:
+            ap_src = _resolve_ap(db, src)
+            if not ap_src:
                 continue
-            new_stock = src.api_product.external_stock or 0
+            new_stock = int(ap_src.external_stock or 0)
             src.last_stock = new_stock
-            src.last_cost = src.api_product.external_price
+            src.last_cost = ap_src.external_price
             post_sync_stock[src.product_id] += new_stock
 
             src_product = resolve_product(db, src)
             if src_product and src_product.source_type == SourceType.api and \
                     src_product.delivery_mode == DeliveryMode.api_auto:
-                sync_product_from_api_product(src_product, src.api_product)
+                sync_product_from_api_product(src_product, ap_src)
                 # Keep the non-source language auto-filled/re-translated from
                 # the (possibly just-updated) source text, unless the admin
                 # has locked it with a hand-typed value. Never fails the
@@ -211,9 +219,10 @@ async def sync_api_products(db: Session, api_connection_id: int) -> dict:
         price_sync_results = []
         for product_id, primary_src in primary_source_by_product.items():
             primary_product = resolve_product(db, primary_src)
-            if not primary_product or primary_src.api_product is None:
+            ap_primary = _resolve_ap(db, primary_src)
+            if not primary_product or ap_primary is None:
                 continue
-            new_cost = primary_src.api_product.external_price
+            new_cost = ap_primary.external_price
             if new_cost is None:
                 continue
             price_sync_results.append((primary_product, new_cost, bool(primary_src.shared_from_admin)))

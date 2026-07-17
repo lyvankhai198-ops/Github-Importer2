@@ -253,7 +253,7 @@ def attach_shared_product(
         is_active=True,
         shared_from_admin=True,
         last_cost=ap.external_price,
-        last_stock=ap.external_stock,
+        last_stock=int(ap.external_stock or 0),
         created_at=now,
         updated_at=now,
     )
