@@ -303,7 +303,6 @@ def _find_payment_code(content: str, prefix: str = "AIC") -> str | None:
 
 
 _DEPOSIT_REF_RE = re.compile(r"(DEP[0-9A-Fa-f]{8})", re.IGNORECASE)
-_MARKET_DEP_REF_RE = re.compile(r"(MWDEP[0-9A-Fa-f]{8})", re.IGNORECASE)
 
 
 def _find_deposit_reference(content: str) -> str | None:
@@ -311,13 +310,6 @@ def _find_deposit_reference(content: str) -> str | None:
     content often strips punctuation, so match with or without the dash."""
     match = _DEPOSIT_REF_RE.search((content or "").replace("-", "").replace(" ", ""))
     return f"DEP-{match.group(1)[3:].upper()}" if match else None
-
-
-def _find_market_deposit_reference(content: str) -> str | None:
-    """Market-wallet (ví chợ) bank-transfer deposit codes look like MWDEP-A1B2C3D4.
-    Same punctuation-stripping as the customer wallet variant above."""
-    match = _MARKET_DEP_REF_RE.search((content or "").replace("-", "").replace(" ", ""))
-    return f"MWDEP-{match.group(1)[5:].upper()}" if match else None
 
 
 def _try_credit_vnd_deposit(db: Session, tx_id: str, amount_in: float, content: str, raw: dict, tx_date) -> dict | None:
@@ -410,80 +402,6 @@ def _try_credit_vnd_deposit(db: Session, tx_id: str, amount_in: float, content: 
     db.refresh(deposit)
     asyncio.create_task(_notify_deposit_credited_async(deposit.id))
     return {"success": True, "action": "deposit_credited", "deposit_id": deposit.id}
-
-
-def _try_credit_market_vnd_deposit(
-    db: Session, tx_id: str, amount_in: float, content: str, raw: dict, tx_date
-) -> dict | None:
-    """
-    Attempt to match a SePay bank-transfer to a pending ví chợ (market wallet)
-    VND deposit via its MWDEP-XXXXXXXX reference code in the transfer content.
-    Mirrors _try_credit_vnd_deposit — same idempotency / escalation logic,
-    crediting via market_wallet_service instead of wallet_service.
-    """
-    from models import MarketWalletDeposit, WalletDepositStatus, WalletCurrency, WalletTxType
-    from services import market_wallet_service
-
-    ref = _find_market_deposit_reference(content)
-    if not ref:
-        return None
-    deposit = db.query(MarketWalletDeposit).filter(
-        MarketWalletDeposit.reference_code == ref,
-        MarketWalletDeposit.currency == WalletCurrency.VND,
-    ).first()
-    if not deposit:
-        return None
-
-    if deposit.status == WalletDepositStatus.credited:
-        return {"success": True, "action": "market_deposit_already_done", "deposit_id": deposit.id}
-
-    if deposit.status in (WalletDepositStatus.expired, WalletDepositStatus.cancelled,
-                           WalletDepositStatus.failed, WalletDepositStatus.manual_review):
-        if deposit.status == WalletDepositStatus.manual_review:
-            return {"success": True, "action": "market_deposit_needs_review", "deposit_id": deposit.id}
-        from sqlalchemy import text as _sql_text
-        rows = db.execute(
-            _sql_text(
-                "UPDATE market_wallet_deposits SET status='manual_review', "
-                "external_transaction_id=:txid, raw_transaction_data=:raw, "
-                "failed_reason=:reason WHERE id=:id AND status=:prev_status"
-            ),
-            {
-                "txid": str(tx_id), "raw": json.dumps(raw, ensure_ascii=False)[:5000],
-                "reason": f"Chuyển khoản khớp mã {ref} sau khi yêu cầu đã {deposit.status.value} — cần admin kiểm tra.",
-                "id": deposit.id, "prev_status": deposit.status.value,
-            },
-        )
-        db.commit()
-        if rows.rowcount == 0:
-            return {"success": True, "action": "market_deposit_already_done", "deposit_id": deposit.id}
-        return {"success": True, "action": "market_deposit_needs_review", "deposit_id": deposit.id}
-
-    # Credit the VND amount requested (not the bank-transfer amount, which may
-    # differ by rounding or fees). A 1đ tolerance handles minor bank fee quirks.
-    credit_amount = deposit.vnd_credit_amount or deposit.amount
-    if amount_in < credit_amount - 1:
-        return {"success": True, "action": "market_deposit_insufficient", "deposit_id": deposit.id}
-
-    now_iso = datetime.utcnow().isoformat(sep=" ")
-    try:
-        market_wallet_service.credit_market_wallet(
-            db, deposit.admin_user_id, WalletCurrency.VND, credit_amount,
-            WalletTxType.deposit, deposit_id=deposit.id,
-            note=f"Auto-credited SePay bank transfer — Ví chợ (txid={tx_id})",
-            actor="system",
-            extra_updates=[(
-                "UPDATE market_wallet_deposits SET status='credited', external_transaction_id=?, "
-                "verified_at=?, credited_at=?, raw_transaction_data=? "
-                "WHERE id=? AND status NOT IN ('credited','failed','expired','cancelled')",
-                (tx_id, now_iso, now_iso, json.dumps(raw, ensure_ascii=False)[:5000], deposit.id),
-            )],
-        )
-    except market_wallet_service.AlreadyProcessedError:
-        return {"success": True, "action": "market_deposit_already_done", "deposit_id": deposit.id}
-
-    logger.info(f"[sepay] market wallet deposit credited: deposit_id={deposit.id} amount={credit_amount} tx_id={tx_id}")
-    return {"success": True, "action": "market_deposit_credited", "deposit_id": deposit.id}
 
 
 def _notify_admin_deposit_needs_review(db: Session, deposit) -> None:
@@ -650,16 +568,6 @@ def process_webhook_transaction(db: Session, raw: dict) -> dict:
             db.add(tx)
             db.commit()
             return deposit_result
-        # If no customer wallet deposit matched, try ví chợ (market wallet) bank deposit
-        market_deposit_result = _try_credit_market_vnd_deposit(
-            db, tx_id, amount_in, tx_data["transfer_content"], raw, tx_date,
-        )
-        if market_deposit_result:
-            tx.matched_market_deposit_id = market_deposit_result.get("deposit_id")
-            tx.match_status = market_deposit_result.get("action")
-            db.add(tx)
-            db.commit()
-            return market_deposit_result
         db.add(tx)
         db.commit()
         return {"success": True, "action": "unmatched"}
@@ -854,37 +762,6 @@ async def process_paid_order(order_id: int):
             src_connection = resolve_api_connection(db, src_api_product)
             adapter = api_manager.get_adapter(src_connection)
 
-            # ── Pre-purchase market wallet balance check ──────────────────────
-            # Cho đơn tenant dùng nguồn chợ: kiểm tra ví chợ đủ số dư
-            # (vốn + phí) TRƯỚC khi gọi API nguồn. get_virtual_stock() đã
-            # gate ở thời điểm hiển thị, nhưng race condition giữa 2 đơn
-            # đồng thời vẫn có thể xảy ra — check này bắt chính xác trường
-            # hợp đó thay vì để debit thất bại sau khi đã gọi API.
-            from services.market_stock_service import is_gated_by_market_wallet
-            if product and is_gated_by_market_wallet(db, product):
-                _mw_admin = (
-                    db.query(AdminUser)
-                    .execution_options(skip_tenant_filter=True)
-                    .filter(AdminUser.id == order.tenant_id)
-                    .first()
-                )
-                if _mw_admin:
-                    _mw_cost = (src_api_product.external_price or product.source_price or 0.0) * (order.quantity or 1)
-                    from services.market_pricing import get_platform_fee_percent as _get_fee_pct
-                    _mw_fee = round((order.total_price or 0.0) * (_get_fee_pct(db) / 100.0))
-                    _mw_required = _mw_cost + _mw_fee
-                    _mw_balance = _mw_admin.market_wallet_balance or 0.0
-                    if _mw_balance < _mw_required:
-                        logger.warning(
-                            f"[market_wallet] INSUFFICIENT before API call — "
-                            f"order={order.order_code} tenant={order.tenant_id} "
-                            f"balance={_mw_balance} required={_mw_required}"
-                        )
-                        order.status = OrderStatus.paid_waiting_stock
-                        db.commit()
-                        await _notify_insufficient_market_wallet(order, db, _mw_balance, _mw_required)
-                        return
-
             # AI Center Buyer (and any other email-requiring supplier) needs
             # a buyer email on every purchase; the bot doesn't
             # collect one from shoppers, so a deterministic per-user
@@ -1010,9 +887,6 @@ async def process_paid_order(order_id: int):
             product.sold_count = (product.sold_count or 0) + order.quantity
             db.commit()
 
-        if order.status == OrderStatus.completed:
-            await _debit_market_wallet_for_sale(order, product, db)
-
         if order.status == OrderStatus.pending_seller_fulfillment:
             await _notify_pending_seller_fulfillment(order, db)
             return
@@ -1106,48 +980,6 @@ async def _notify_paid_api_failed(order: Order, db: Session, reason: str = ""):
         logger.error(f"[payment] _notify_paid_api_failed error: {e}")
 
 
-async def _notify_insufficient_market_wallet(order: Order, db: Session, balance: float, required: float):
-    """Đã nhận tiền nhưng ví chợ của tenant không đủ để gọi API nguồn."""
-    try:
-        from services.bot_service import bot_manager
-        if not bot_manager.is_running():
-            return
-        from bot.i18n import t, get_user_lang
-        cfg = db.query(TelegramBotConfig).first()
-        admin_id = cfg.admin_telegram_id if cfg else ""
-        bot = bot_manager._application.bot
-        lang = get_user_lang(db, order.telegram_user_id)
-        chat_id = order.payment_chat_id or order.telegram_user_id
-        await cleanup_payment_qr(bot, order, db)
-        # Báo buyer: đơn đang chờ (cùng UX với hết hàng)
-        await bot.send_message(
-            chat_id=int(chat_id),
-            text=t(lang, "paid_waiting_stock_user"),
-            parse_mode="HTML",
-        )
-        # Báo admin: ví chợ không đủ — cần nạp thêm
-        if admin_id:
-            import html as _html
-            product_name = order.product.name if order.product else str(order.product_id)
-            await bot.send_message(
-                chat_id=int(admin_id),
-                text=(
-                    f"⚠️ <b>ĐÃ NHẬN TIỀN — VÍ CHỢ KHÔNG ĐỦ SỐ DƯ!</b>\n\n"
-                    f"📋 Đơn: <code>{order.order_code}</code>\n"
-                    f"📦 Sản phẩm: {_html.escape(product_name)}\n"
-                    f"👤 User: <code>{order.telegram_user_id}</code>\n"
-                    f"💰 Đã nhận: {format_vnd(order.paid_amount or 0)}đ\n\n"
-                    f"💼 <b>Số dư ví chợ hiện tại:</b> {format_vnd(balance)}đ\n"
-                    f"💸 <b>Cần để mua hàng:</b> {format_vnd(required)}đ\n\n"
-                    "❌ Hệ thống không thể gọi API nguồn vì ví chợ không đủ.\n"
-                    "👉 Vui lòng nạp thêm vào ví chợ rồi xử lý đơn thủ công."
-                ),
-                parse_mode="HTML",
-            )
-    except Exception as e:
-        logger.error(f"[payment] _notify_insufficient_market_wallet error: {e}")
-
-
 async def _notify_paid_waiting_stock(order: Order, db: Session):
     """Payment received but source ran out of stock unexpectedly."""
     try:
@@ -1186,59 +1018,6 @@ async def _notify_paid_waiting_stock(order: Order, db: Session):
             )
     except Exception as e:
         logger.error(f"[payment] _notify_paid_waiting_stock error: {e}")
-
-
-async def _debit_market_wallet_for_sale(order: Order, product, db: Session):
-    """
-    Ví chợ bookkeeping for a successfully completed chợ-sourced sale.
-
-    The TENANT pre-funds their ví chợ on the web admin panel. After a
-    successful fulfillment the TENANT'S ví chợ is debited for (supplier
-    cost + platform fee), atomically and exactly once per order (guarded
-    by orders.market_wallet_debited).
-
-    No-op for the owner's own sales and for non-chợ (source_type != api)
-    products — see services/market_stock_service.py for which products are
-    gated in the first place.
-
-    InsufficientBalanceError here means a race between two concurrent
-    orders drained the last of the budget after the pre-purchase gate
-    passed — logged for the owner to reconcile; never goes negative.
-    """
-    try:
-        if not product or product.source_type != SourceType.api:
-            return
-        if order.market_wallet_debited:
-            return
-        # Tenant's AdminUser row — AdminUser is not TenantScopedMixin so this
-        # query is unaffected by the ambient tenant context set in
-        # process_paid_order.
-        admin = db.query(AdminUser).filter(AdminUser.id == order.tenant_id).first()
-        if not admin or admin.is_owner:
-            return  # owner's own sales need no internal ví chợ debit
-
-        from services.market_pricing import get_platform_fee_percent
-        cost = (order.source_unit_price or product.source_price or 0.0) * (order.quantity or 1)
-        fee = round((order.total_price or 0.0) * (get_platform_fee_percent(db) / 100.0))
-        if cost <= 0 and fee <= 0:
-            return
-
-        from services.market_wallet_service import debit_for_sale
-        debit_for_sale(db, admin.id, order.id, cost, fee)
-        logger.info(
-            f"[market_wallet] debited order={order.order_code} tenant={admin.id} "
-            f"cost={cost} fee={fee}"
-        )
-    except AlreadyProcessedError:
-        pass
-    except InsufficientBalanceError as e:
-        logger.error(
-            f"[market_wallet] INSUFFICIENT BALANCE debiting order={order.order_code} "
-            f"tenant_id={order.tenant_id} — {e}. Sale already delivered; balance NOT taken "
-            "negative. Owner should reconcile via /market-wallet/admin."
-        )
-    except Exception as e:
-        logger.exception(f"[market_wallet] unexpected error debiting order={order.order_code}: {e}")
 
 
 async def _notify_pending_seller_fulfillment(order: Order, db: Session):

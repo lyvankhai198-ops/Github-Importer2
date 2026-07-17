@@ -83,7 +83,6 @@ async def save_market_pricing(
     request: Request,
     db: Session = Depends(get_db),
     default_markup_percent: float = Form(10.0),
-    platform_fee_percent: float = Form(3.0),
 ):
     if not check_auth(request):
         return RedirectResponse(url="/login", status_code=302)
@@ -91,8 +90,8 @@ async def save_market_pricing(
         flash(request, "Chỉ owner mới có thể chỉnh cấu hình Chợ", "error")
         return RedirectResponse(url="/settings?tab=config", status_code=302)
     from services.market_pricing import save_market_pricing_config
-    save_market_pricing_config(db, default_markup_percent, platform_fee_percent)
-    flash(request, "Cài đặt markup & phí Chợ đã được lưu!")
+    save_market_pricing_config(db, default_markup_percent)
+    flash(request, "Cài đặt markup Chợ đã được lưu!")
     return RedirectResponse(url="/settings?tab=config", status_code=302)
 
 

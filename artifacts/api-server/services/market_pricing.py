@@ -1,5 +1,5 @@
 """
-Global "chợ" (shared marketplace) pricing defaults — two independent knobs:
+Global "chợ" (shared marketplace) pricing defaults.
 
 - default_markup_percent: applied ONCE, at the moment a product is first
   pulled/attached from a supplier API with no explicit sale_price typed in
@@ -7,11 +7,6 @@ Global "chợ" (shared marketplace) pricing defaults — two independent knobs:
   that, price_sync_service's existing margin-preserving auto-adjust takes
   over (keeps the resulting VND markup fixed as the source price moves) —
   this module does NOT touch ongoing sync, only the initial default.
-
-- platform_fee_percent ("phí chợ"): charged on top of cost-of-goods when a
-  tenant sells a chợ-sourced product, debited from their market wallet.
-  See services/payment_service.py::_debit_market_wallet_for_order and
-  services/market_wallet_service.debit_for_sale.
 
 Stored as one JSON blob in the generic Setting(key, value) table (same
 pattern as "exchange_rate_config" in routers/settings.py) rather than
@@ -25,31 +20,23 @@ from models import Setting
 _SETTING_KEY = "market_pricing_config"
 
 DEFAULT_MARKUP_PERCENT = 10.0
-DEFAULT_PLATFORM_FEE_PERCENT = 3.0
 
 
 def get_market_pricing_config(db) -> dict:
     s = db.query(Setting).filter(Setting.key == _SETTING_KEY).first()
     if not s or not s.value:
-        return {
-            "default_markup_percent": DEFAULT_MARKUP_PERCENT,
-            "platform_fee_percent": DEFAULT_PLATFORM_FEE_PERCENT,
-        }
+        return {"default_markup_percent": DEFAULT_MARKUP_PERCENT}
     try:
         cfg = json.loads(s.value)
     except Exception:
         cfg = {}
     return {
         "default_markup_percent": float(cfg.get("default_markup_percent", DEFAULT_MARKUP_PERCENT)),
-        "platform_fee_percent": float(cfg.get("platform_fee_percent", DEFAULT_PLATFORM_FEE_PERCENT)),
     }
 
 
-def save_market_pricing_config(db, default_markup_percent: float, platform_fee_percent: float) -> dict:
-    cfg = {
-        "default_markup_percent": max(0.0, float(default_markup_percent)),
-        "platform_fee_percent": max(0.0, float(platform_fee_percent)),
-    }
+def save_market_pricing_config(db, default_markup_percent: float) -> dict:
+    cfg = {"default_markup_percent": max(0.0, float(default_markup_percent))}
     s = db.query(Setting).filter(Setting.key == _SETTING_KEY).first()
     if not s:
         s = Setting(key=_SETTING_KEY)
@@ -64,7 +51,3 @@ def default_sale_price(db, source_price: float) -> float:
     cfg = get_market_pricing_config(db)
     markup = cfg["default_markup_percent"]
     return round((source_price or 0.0) * (1 + markup / 100.0))
-
-
-def get_platform_fee_percent(db) -> float:
-    return get_market_pricing_config(db)["platform_fee_percent"]
