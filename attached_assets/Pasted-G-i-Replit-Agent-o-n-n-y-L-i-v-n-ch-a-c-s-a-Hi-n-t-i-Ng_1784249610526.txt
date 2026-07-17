@@ -1,0 +1,54 @@
+Gửi Replit Agent đoạn này:
+
+Lỗi vẫn chưa được sửa. Hiện tại:
+- Nguồn hàng còn sản phẩm.
+- Ví chợ còn 94.550đ.
+- Sản phẩm nguồn chợ đang gắn: 1.
+- Nhưng sản phẩm “Super Grok 8D–10D BHF” trong mục Đang treo vẫn hiển thị “Hết hàng”.
+- Bot cũng không hiển thị hàng để khách mua.
+Hãy kiểm tra lại toàn bộ logic tính số lượng có thể bán. Có thể hệ thống đang chỉ đọc stock local hoặc tính sai số lượng dựa trên ví chợ.
+Yêu cầu sửa chính xác:
+1. Với sản phẩm lấy từ Chợ/API, không dùng stock local để quyết định còn hay hết hàng.
+2. Số lượng có thể bán phải được tính theo cả:
+   - stock thực tế của nguồn hàng;
+   - số dư ví chợ;
+   - giá vốn của sản phẩm;
+   - phí nền tảng 2%.
+3. Công thức:
+   max_by_wallet = floor(wallet_balance / (source_price × 1.02))
+   available_quantity = min(source_stock, max_by_wallet)
+4. Nếu available_quantity > 0:
+   - hiển thị “Còn hàng”;
+   - bot phải cho phép khách mua;
+   - hiển thị số lượng có thể bán nếu giao diện có hỗ trợ.
+5. Chỉ hiển thị “Hết hàng” khi một trong các trường hợp:
+   - nguồn hàng thực sự hết stock;
+   - ví chợ không đủ mua ít nhất 1 sản phẩm;
+   - sản phẩm mất liên kết với source_product_id;
+   - API nguồn trả lỗi hoặc sản phẩm bị ngừng bán.
+6. Kiểm tra sản phẩm đang treo đã lưu đúng các trường:
+   - source_type = market/API;
+   - source_product_id;
+   - source_price;
+   - source_stock;
+   - market_wallet_balance;
+   - platform_fee;
+   - available_quantity.
+7. Khi đồng bộ, phải cập nhật cả bản ghi sản phẩm đang treo, không chỉ cập nhật danh sách Nguồn hàng.
+8. Khi mở trang Chợ, khi bot khởi động và trước lúc khách mua, phải chạy lại hàm tính available_quantity.
+9. Thêm log debug tạm thời cho sản phẩm này, ghi rõ:
+   - source_product_id;
+   - source_stock;
+   - source_price;
+   - wallet_balance;
+   - platform_fee;
+   - max_by_wallet;
+   - available_quantity;
+   - lý do hệ thống đánh dấu hết hàng.
+10. Không được mặc định stock = 0 khi API trả stock dưới dạng chuỗi, ví dụ "29". Phải ép kiểu số an toàn.
+Trường hợp kiểm thử hiện tại:
+- Ví chợ: 94.550đ.
+- Nguồn hàng vẫn còn hàng.
+- Sản phẩm nguồn đang gắn: 1.
+- Kết quả mong muốn: nếu ví đủ mua ít nhất 1 sản phẩm thì sản phẩm phải hiện “Còn hàng” trên web và xuất hiện trên bot.
+Sau khi sửa, hãy tự kiểm tra trực tiếp từ database, API và bot. Không chỉ sửa phần chữ hiển thị ở giao diện.
