@@ -58,16 +58,16 @@ def get_product_stock_status(product_id: int, db: Session) -> dict:
                 f"api_product_id={ap.id} reason=never_synced"
             )
             continue
-        # If last sync is too old, treat as error
+        # Log staleness but do NOT gate on it — use last known stock even
+        # if the sync is old. Treating a stale sync as "unavailable" causes
+        # false "hết hàng" whenever background sync falls slightly behind.
         age = datetime.utcnow() - ap.last_sync_at
         if age > timedelta(minutes=10):
-            any_error = True
             logger.warning(
                 f"STOCK_DEBUG product_id={product_id} src_id={src.id} "
-                f"api_product_id={ap.id} reason=stale age_seconds={age.total_seconds():.0f} "
+                f"api_product_id={ap.id} reason=stale(warn_only) age_seconds={age.total_seconds():.0f} "
                 f"last_sync_at={ap.last_sync_at.isoformat()} external_stock={ap.external_stock}"
             )
-            continue
         any_synced = True
         logger.info(
             f"STOCK_DEBUG product_id={product_id} src_id={src.id} api_product_id={ap.id} "

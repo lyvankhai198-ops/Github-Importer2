@@ -398,19 +398,16 @@ async def _send_product_list(message_target, db, context, lang: str, edit_target
 
     has_sources = db.query(ApiConnection).filter(ApiConnection.is_active == True).first() is not None
     if has_sources:
-        if _has_stale_sync(db):
-            # Data is old enough that api_auto products would render as a
-            # false "Out of stock" — sync once before showing anything, so
-            # this render is already correct (bounded to ~8s per source,
-            # run in parallel by sync_active_supplier_products).
-            from services.api_service import sync_active_supplier_products
-            try:
-                await sync_active_supplier_products(db)
-            except Exception as e:
-                logger.error(f"[_send_product_list] blocking stale sync failed: {e}")
-            db.expire_all()
-        else:
-            asyncio.create_task(_trigger_background_sync())
+        # Always sync before rendering — user must see live supplier stock
+        # every time they open the product list. The 30s cache inside
+        # sync_active_supplier_products prevents hammering the supplier API
+        # on rapid taps, so this is safe to call unconditionally.
+        from services.api_service import sync_active_supplier_products
+        try:
+            await sync_active_supplier_products(db)
+        except Exception as e:
+            logger.error(f"[_send_product_list] sync failed: {e}")
+        db.expire_all()
 
     show_oos = _get_show_out_of_stock(db)
     per_page = _get_products_per_page(db)
