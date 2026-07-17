@@ -372,6 +372,23 @@ def _run_migrations():
         # purchase thread before showing a fresh product list.
         "ALTER TABLE orders ADD COLUMN delivery_message_id INTEGER",
         "ALTER TABLE orders ADD COLUMN delivery_file_message_id INTEGER",
+
+        # ── SaaS rental model: plans + AdminUser enhancements ────────────────
+        """CREATE TABLE IF NOT EXISTS plans (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name VARCHAR(100) NOT NULL UNIQUE,
+            description TEXT,
+            price_per_month INTEGER DEFAULT 0,
+            trial_days INTEGER DEFAULT 7,
+            max_products INTEGER,
+            max_orders INTEGER,
+            max_bots INTEGER DEFAULT 1,
+            is_active BOOLEAN DEFAULT 1,
+            created_at DATETIME,
+            updated_at DATETIME
+        )""",
+        "ALTER TABLE admin_users ADD COLUMN email VARCHAR(255)",
+        "ALTER TABLE admin_users ADD COLUMN plan_id INTEGER REFERENCES plans(id)",
     ]
     with engine.connect() as conn:
         ran_language_selected_migration = False
@@ -630,6 +647,27 @@ def _seed_payment_methods():
         db.close()
 
 
+def _seed_plans():
+    """Insert default SaaS subscription plans if the table is empty."""
+    from models import Plan
+    db = SessionLocal()
+    try:
+        if db.query(Plan).count() > 0:
+            return
+        defaults = [
+            Plan(name="Free Trial",   description="7-day free trial to get started.",       price_per_month=0,         trial_days=7,  max_products=10,   max_orders=50,   max_bots=1, is_active=True),
+            Plan(name="Starter",      description="For small shops just getting started.",   price_per_month=199_000,   trial_days=7,  max_products=50,   max_orders=500,  max_bots=1, is_active=True),
+            Plan(name="Pro",          description="For growing businesses.",                 price_per_month=499_000,   trial_days=7,  max_products=200,  max_orders=5000, max_bots=3, is_active=True),
+            Plan(name="Enterprise",   description="Unlimited everything for power users.",   price_per_month=999_000,   trial_days=14, max_products=None, max_orders=None, max_bots=10, is_active=True),
+        ]
+        for p in defaults:
+            db.add(p)
+        db.commit()
+        print("[INFO] Default plans seeded.")
+    finally:
+        db.close()
+
+
 def _seed_ranks():
     """Insert default membership rank ("Cấp bậc") rows if the table is empty.
     Purely a first-boot convenience — admins can rename/re-threshold/reorder/
@@ -730,6 +768,7 @@ async def lifespan(app: FastAPI):
 
     _seed_payment_methods()
     _seed_ranks()
+    _seed_plans()
 
     # Start API sync schedulers
     from models import ApiConnection
@@ -927,8 +966,11 @@ from routers import api_clients, customer_api
 from routers import ranks
 from routers import emoji_icons
 from routers import github_webhook
+from routers import admin_panel, register as register_router
 
 app.include_router(auth.router)
+app.include_router(register_router.router)
+app.include_router(admin_panel.router)
 app.include_router(dashboard.router)
 app.include_router(products.router)
 app.include_router(orders.router)

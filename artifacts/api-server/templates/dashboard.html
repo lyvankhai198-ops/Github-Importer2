@@ -2,6 +2,34 @@
 {% block title %}Dashboard - AI Center{% endblock %}
 {% block page_title %}📊 Tổng quan{% endblock %}
 {% block content %}
+
+{% if subscription %}
+<div class="alert {% if subscription.expired %}alert-danger{% elif subscription.days_left is not none and subscription.days_left <= 7 %}alert-warning{% else %}alert-info{% endif %} d-flex align-items-center justify-content-between mb-3 py-2 px-3">
+  <div class="d-flex align-items-center gap-3">
+    <i class="bi {% if subscription.expired %}bi-exclamation-triangle-fill{% elif subscription.days_left is not none and subscription.days_left <= 7 %}bi-clock-fill{% else %}bi-layers-fill{% endif %}"></i>
+    <div>
+      <strong>Gói: {{ subscription.plan_name }}</strong>
+      {% if subscription.days_left is not none %}
+        &nbsp;·&nbsp;
+        {% if subscription.expired %}
+          <span class="text-danger fw-semibold">Đã hết hạn</span>
+        {% else %}
+          Còn <strong>{{ subscription.days_left }}</strong> ngày
+          (hết hạn {{ subscription.expires_at.strftime('%d/%m/%Y') }})
+        {% endif %}
+      {% endif %}
+      {% if subscription.max_products is not none %}
+        &nbsp;·&nbsp; SP: <strong>{{ subscription.cur_products }}/{{ subscription.max_products }}</strong>
+      {% endif %}
+      {% if subscription.max_orders is not none %}
+        &nbsp;·&nbsp; Đơn: <strong>{{ subscription.cur_orders }}/{{ subscription.max_orders }}</strong>
+      {% endif %}
+    </div>
+  </div>
+  <a href="/settings" class="btn btn-sm btn-outline-primary ms-3">Cấu hình</a>
+</div>
+{% endif %}
+
 <div class="row g-3 mb-4">
   <!-- Bot Status -->
   <div class="col-6 col-md-3">

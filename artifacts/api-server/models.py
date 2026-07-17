@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Float, Boolean, Text, DateTime, ForeignKey, Enum as SAEnum, UniqueConstraint
+from sqlalchemy import Column, Integer, String, Float, Boolean, Text, DateTime, ForeignKey, Enum as SAEnum, UniqueConstraint, Numeric
 from sqlalchemy.orm import relationship, declared_attr
 from database import Base
 import enum
@@ -135,6 +135,26 @@ def now():
     return datetime.utcnow()
 
 
+class Plan(Base):
+    """
+    A SaaS subscription plan (e.g. Free Trial, Basic, Pro, Enterprise).
+    Tenants are assigned one plan; limits are enforced in routers.
+    NULL limits = unlimited.
+    """
+    __tablename__ = "plans"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False, unique=True)
+    description = Column(Text, nullable=True)
+    price_per_month = Column(Integer, default=0)   # VND, 0 = free
+    trial_days = Column(Integer, default=7)
+    max_products = Column(Integer, nullable=True)  # NULL = unlimited
+    max_orders = Column(Integer, nullable=True)    # NULL = unlimited
+    max_bots = Column(Integer, default=1)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=now)
+    updated_at = Column(DateTime, default=now, onupdate=now)
+
+
 class AdminUser(Base):
     """
     An admin login. Also doubles as the "tenant" identity for multi-tenant
@@ -148,17 +168,21 @@ class AdminUser(Base):
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String(100), unique=True, nullable=False)
     password_hash = Column(String(255), nullable=False)
+    email = Column(String(255), nullable=True)
     is_active = Column(Boolean, default=True)
     # True only for the platform owner (first admin account). Owners manage
     # tenant accounts; tenants are regular shop-admin users scoped to their
     # own data everywhere else.
     is_owner = Column(Boolean, default=False, nullable=False)
+    # Subscription plan FK — NULL means no plan assigned (uses platform defaults).
+    plan_id = Column(Integer, ForeignKey("plans.id"), nullable=True)
+    plan = relationship("Plan", foreign_keys=[plan_id])
     # Rental expiry. NULL = never expires (always true for the owner).
     # Enforced in the tenant-context middleware (main.py): once past this
     # date the account is auto-locked (is_active flips to False) on its next
     # request, rather than a background job — no admin-config schedule needed.
     expires_at = Column(DateTime, nullable=True)
-    display_name = Column(String(255), nullable=True)  # shown to the owner in the tenant list
+    display_name = Column(String(255), nullable=True)  # shown in admin panel tenant list
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime, default=now)
     updated_at = Column(DateTime, default=now, onupdate=now)

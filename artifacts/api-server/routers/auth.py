@@ -22,8 +22,7 @@ async def login_post(request: Request, username: str = Form(...), password: str 
     admin = authenticate_admin(db, username, password)
     if not admin:
         return templates.TemplateResponse(request, "login.html", {
-            
-            "error": "Tên đăng nhập hoặc mật khẩu không đúng."
+            "error": "Tên đăng nhập hoặc mật khẩu không đúng.",
         })
     create_session(request, admin.id)
     return RedirectResponse(url="/", status_code=302)

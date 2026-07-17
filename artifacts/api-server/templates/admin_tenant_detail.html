@@ -1,0 +1,178 @@
+{% extends "admin_base.html" %}
+{% block title %}{{ tenant.username }} — Chi tiết{% endblock %}
+{% block page_title %}👤 {{ tenant.display_name or tenant.username }}{% endblock %}
+{% block content %}
+
+<div class="mb-3">
+  <a href="/admin/tenants" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> Danh sách</a>
+</div>
+
+<div class="row g-3">
+  <!-- Info & status card -->
+  <div class="col-md-4">
+    <div class="card h-100">
+      <div class="card-header"><h6 class="mb-0"><i class="bi bi-person-fill"></i> Tài khoản</h6></div>
+      <div class="card-body">
+        <table class="table table-sm table-borderless mb-0">
+          <tr><td class="text-muted">Username</td><td class="fw-semibold">{{ tenant.username }}</td></tr>
+          <tr><td class="text-muted">Tên cửa hàng</td><td>{{ tenant.display_name or '—' }}</td></tr>
+          <tr><td class="text-muted">Email</td><td>{{ tenant.email or '—' }}</td></tr>
+          <tr><td class="text-muted">Gói</td><td>{% if tenant.plan %}<span class="badge bg-primary">{{ tenant.plan.name }}</span>{% else %}—{% endif %}</td></tr>
+          <tr>
+            <td class="text-muted">Hết hạn</td>
+            <td>
+              {% if tenant.expires_at %}
+                {% if tenant.expires_at < now %}<span class="text-danger">{{ tenant.expires_at.strftime('%d/%m/%Y') }} ⚠</span>
+                {% else %}<span class="text-success">{{ tenant.expires_at.strftime('%d/%m/%Y') }}</span>{% endif %}
+              {% else %}<span class="text-muted">Không hết hạn</span>{% endif %}
+            </td>
+          </tr>
+          <tr><td class="text-muted">Trạng thái</td>
+            <td>
+              {% if not tenant.is_active %}<span class="badge bg-danger">Bị khóa</span>
+              {% elif tenant.expires_at and tenant.expires_at < now %}<span class="badge bg-warning text-dark">Hết hạn</span>
+              {% else %}<span class="badge bg-success">Hoạt động</span>{% endif %}
+            </td>
+          </tr>
+          <tr><td class="text-muted">Đăng ký</td><td class="small">{{ tenant.created_at.strftime('%d/%m/%Y %H:%M') }}</td></tr>
+        </table>
+      </div>
+      <div class="card-footer">
+        <form action="/admin/tenants/{{ tenant.id }}/lock" method="post" class="d-inline">
+          <button class="btn btn-sm {% if tenant.is_active %}btn-danger{% else %}btn-success{% endif %}" onclick="return confirm('Xác nhận?')">
+            {% if tenant.is_active %}<i class="bi bi-lock"></i> Khóa tài khoản{% else %}<i class="bi bi-unlock"></i> Mở tài khoản{% endif %}
+          </button>
+        </form>
+        <form action="/admin/tenants/{{ tenant.id }}/delete" method="post" class="d-inline ms-1">
+          <button class="btn btn-sm btn-outline-danger" onclick="return confirm('Vô hiệu hoá vĩnh viễn?')">
+            <i class="bi bi-trash"></i>
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div class="col-md-8">
+    <div class="row g-3 mb-3">
+      <div class="col-4">
+        <div class="stat-card-admin blue text-center">
+          <div class="fs-2 fw-bold text-primary">{{ stats.products }}</div>
+          <div class="text-muted small">Sản phẩm</div>
+        </div>
+      </div>
+      <div class="col-4">
+        <div class="stat-card-admin purple text-center">
+          <div class="fs-2 fw-bold" style="color:#8b5cf6">{{ stats.orders }}</div>
+          <div class="text-muted small">Đơn hàng</div>
+        </div>
+      </div>
+      <div class="col-4">
+        <div class="stat-card-admin green text-center">
+          <div class="fs-2 fw-bold text-success">{{ stats.users }}</div>
+          <div class="text-muted small">Người dùng</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bot info -->
+    <div class="card mb-3">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <h6 class="mb-0"><i class="bi bi-robot"></i> Bot Telegram</h6>
+        <span class="bot-{{ stats.bot_status }} fw-semibold small">● {{ stats.bot_status }}</span>
+      </div>
+      <div class="card-body">
+        {% if stats.shop_name %}<div class="mb-1"><strong>Cửa hàng:</strong> {{ stats.shop_name }}</div>{% endif %}
+        {% if stats.bot_username %}<div class="mb-2"><strong>Bot:</strong> @{{ stats.bot_username }}</div>{% endif %}
+        <div class="d-flex gap-2 flex-wrap">
+          <form action="/admin/tenants/{{ tenant.id }}/bot-action" method="post" class="d-inline">
+            <input type="hidden" name="action" value="start">
+            <button class="btn btn-sm btn-success"><i class="bi bi-play-fill"></i> Start</button>
+          </form>
+          <form action="/admin/tenants/{{ tenant.id }}/bot-action" method="post" class="d-inline">
+            <input type="hidden" name="action" value="stop">
+            <button class="btn btn-sm btn-secondary"><i class="bi bi-stop-fill"></i> Stop</button>
+          </form>
+          <form action="/admin/tenants/{{ tenant.id }}/bot-action" method="post" class="d-inline">
+            <input type="hidden" name="action" value="restart">
+            <button class="btn btn-sm btn-warning"><i class="bi bi-arrow-clockwise"></i> Restart</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Actions row -->
+<div class="row g-3 mt-0">
+  <!-- Extend plan -->
+  <div class="col-md-4">
+    <div class="card">
+      <div class="card-header"><h6 class="mb-0"><i class="bi bi-calendar-plus"></i> Gia hạn</h6></div>
+      <div class="card-body">
+        <form action="/admin/tenants/{{ tenant.id }}/extend" method="post" class="d-flex gap-2">
+          <input type="number" name="days" class="form-control" value="30" min="1" max="3650" placeholder="Số ngày">
+          <button class="btn btn-warning">Gia hạn</button>
+        </form>
+        <div class="text-muted small mt-1">Cộng thêm ngày từ hôm nay (hoặc từ ngày hết hạn nếu chưa hết)</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Set expiry -->
+  <div class="col-md-4">
+    <div class="card">
+      <div class="card-header"><h6 class="mb-0"><i class="bi bi-calendar-event"></i> Đặt ngày hết hạn</h6></div>
+      <div class="card-body">
+        <form action="/admin/tenants/{{ tenant.id }}/set-expiry" method="post" class="d-flex gap-2">
+          <input type="date" name="expires_at" class="form-control"
+            value="{{ tenant.expires_at.strftime('%Y-%m-%d') if tenant.expires_at else '' }}">
+          <button class="btn btn-outline-primary">Lưu</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Assign plan -->
+  <div class="col-md-4">
+    <div class="card">
+      <div class="card-header"><h6 class="mb-0"><i class="bi bi-layers"></i> Gán gói thuê</h6></div>
+      <div class="card-body">
+        <form action="/admin/tenants/{{ tenant.id }}/set-plan" method="post" class="d-flex gap-2">
+          <select name="plan_id" class="form-select">
+            <option value="">— Không gán —</option>
+            {% for p in plans %}
+            <option value="{{ p.id }}" {% if tenant.plan_id == p.id %}selected{% endif %}>{{ p.name }}</option>
+            {% endfor %}
+          </select>
+          <button class="btn btn-outline-primary">Lưu</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Recent orders -->
+{% if recent_orders %}
+<div class="card mt-3">
+  <div class="card-header"><h6 class="mb-0"><i class="bi bi-receipt"></i> Đơn hàng gần đây</h6></div>
+  <div class="card-body p-0">
+    <table class="table table-sm table-hover mb-0">
+      <thead><tr><th>Mã đơn</th><th>Sản phẩm</th><th>Tổng tiền</th><th>Trạng thái</th><th>Thời gian</th></tr></thead>
+      <tbody>
+        {% for o in recent_orders %}
+        <tr>
+          <td class="small fw-mono">{{ o.order_code }}</td>
+          <td class="small">{{ o.product.name if o.product else '—' }}</td>
+          <td class="small">{{ "{:,.0f}".format(o.total_price).replace(",",".") }}đ</td>
+          <td><span class="badge bg-secondary">{{ o.status.value }}</span></td>
+          <td class="small text-muted">{{ o.created_at.strftime('%d/%m %H:%M') }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}

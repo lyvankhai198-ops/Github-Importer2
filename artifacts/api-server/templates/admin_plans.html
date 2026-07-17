@@ -1,0 +1,115 @@
+{% extends "admin_base.html" %}
+{% block title %}Gói thuê{% endblock %}
+{% block page_title %}📦 Gói thuê{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-end mb-3">
+  <button class="btn btn-warning btn-sm" data-bs-toggle="modal" data-bs-target="#createPlanModal">
+    <i class="bi bi-plus-lg"></i> Tạo gói mới
+  </button>
+</div>
+
+<div class="row g-3 mb-4">
+  {% for p in plans %}
+  <div class="col-md-6 col-lg-4">
+    <div class="card h-100 {% if not p.is_active %}opacity-60{% endif %}">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <h6 class="mb-0">{{ p.name }}</h6>
+        <div class="d-flex gap-1">
+          {% if not p.is_active %}<span class="badge bg-secondary">Tắt</span>{% endif %}
+          <span class="badge bg-warning text-dark">{{ p._tenant_count }} KH</span>
+        </div>
+      </div>
+      <div class="card-body">
+        {% if p.description %}<p class="text-muted small mb-2">{{ p.description }}</p>{% endif %}
+        <div class="mb-2">
+          <span class="fs-5 fw-bold">{{ "{:,.0f}".format(p.price_per_month).replace(",",".") }}đ</span>
+          <span class="text-muted small">/tháng</span>
+        </div>
+        <ul class="list-unstyled small mb-3">
+          <li><i class="bi bi-check-circle text-success"></i> <strong>{{ p.trial_days }}</strong> ngày dùng thử</li>
+          <li><i class="bi bi-check-circle text-success"></i> Tối đa <strong>{{ p.max_products if p.max_products is not none else '∞' }}</strong> sản phẩm</li>
+          <li><i class="bi bi-check-circle text-success"></i> Tối đa <strong>{{ p.max_orders if p.max_orders is not none else '∞' }}</strong> đơn hàng</li>
+          <li><i class="bi bi-check-circle text-success"></i> Tối đa <strong>{{ p.max_bots }}</strong> bot</li>
+        </ul>
+        <div class="d-flex gap-1">
+          <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editPlanModal{{ p.id }}">
+            <i class="bi bi-pencil"></i> Sửa
+          </button>
+          {% if p._tenant_count == 0 %}
+          <form action="/admin/plans/{{ p.id }}/delete" method="post" class="d-inline">
+            <button class="btn btn-sm btn-outline-danger" onclick="return confirm('Xoá gói {{ p.name }}?')">
+              <i class="bi bi-trash"></i>
+            </button>
+          </form>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit modal for this plan -->
+  <div class="modal fade" id="editPlanModal{{ p.id }}" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header"><h5 class="modal-title">Sửa gói: {{ p.name }}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+        <form action="/admin/plans/{{ p.id }}/edit" method="post">
+          <div class="modal-body">
+            <div class="mb-3"><label class="form-label">Tên gói *</label><input type="text" name="name" class="form-control" value="{{ p.name }}" required></div>
+            <div class="mb-3"><label class="form-label">Mô tả</label><textarea name="description" class="form-control" rows="2">{{ p.description or '' }}</textarea></div>
+            <div class="row g-2 mb-3">
+              <div class="col-6"><label class="form-label">Giá/tháng (VND)</label><input type="number" name="price_per_month" class="form-control" value="{{ p.price_per_month }}" min="0"></div>
+              <div class="col-6"><label class="form-label">Ngày thử</label><input type="number" name="trial_days" class="form-control" value="{{ p.trial_days }}" min="0"></div>
+            </div>
+            <div class="row g-2 mb-3">
+              <div class="col-4"><label class="form-label">Max sản phẩm</label><input type="number" name="max_products" class="form-control" value="{{ p.max_products or '' }}" placeholder="∞"></div>
+              <div class="col-4"><label class="form-label">Max đơn hàng</label><input type="number" name="max_orders" class="form-control" value="{{ p.max_orders or '' }}" placeholder="∞"></div>
+              <div class="col-4"><label class="form-label">Max bot</label><input type="number" name="max_bots" class="form-control" value="{{ p.max_bots }}" min="1"></div>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="is_active" value="1" id="active{{ p.id }}" {% if p.is_active %}checked{% endif %}>
+              <label class="form-check-label" for="active{{ p.id }}">Gói đang hoạt động</label>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
+            <button type="submit" class="btn btn-primary">Lưu thay đổi</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <div class="col-12"><div class="text-center text-muted py-5">Chưa có gói thuê nào. Hãy tạo gói đầu tiên!</div></div>
+  {% endfor %}
+</div>
+
+<!-- Create plan modal -->
+<div class="modal fade" id="createPlanModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title">Tạo gói thuê mới</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <form action="/admin/plans/create" method="post">
+        <div class="modal-body">
+          <div class="mb-3"><label class="form-label">Tên gói *</label><input type="text" name="name" class="form-control" required placeholder="VD: Starter, Pro, Enterprise..."></div>
+          <div class="mb-3"><label class="form-label">Mô tả</label><textarea name="description" class="form-control" rows="2" placeholder="Mô tả ngắn về gói..."></textarea></div>
+          <div class="row g-2 mb-3">
+            <div class="col-6"><label class="form-label">Giá/tháng (VND)</label><input type="number" name="price_per_month" class="form-control" value="0" min="0"></div>
+            <div class="col-6"><label class="form-label">Ngày dùng thử</label><input type="number" name="trial_days" class="form-control" value="7" min="0"></div>
+          </div>
+          <div class="row g-2 mb-3">
+            <div class="col-4"><label class="form-label">Max sản phẩm</label><input type="number" name="max_products" class="form-control" placeholder="∞ (để trống)"></div>
+            <div class="col-4"><label class="form-label">Max đơn hàng</label><input type="number" name="max_orders" class="form-control" placeholder="∞ (để trống)"></div>
+            <div class="col-4"><label class="form-label">Max bot</label><input type="number" name="max_bots" class="form-control" value="1" min="1"></div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
+          <button type="submit" class="btn btn-warning">Tạo gói</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
