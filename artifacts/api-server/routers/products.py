@@ -378,7 +378,7 @@ async def add_product(
     product_code = product_code.strip()
     existing = db.query(Product).filter(Product.product_code == product_code).first()
     if existing:
-        flash(request, "Mã sản phẩm đã tồn tại!", "error")
+        flash(request, "Product code already exists!", "error")
         return RedirectResponse(url="/products", status_code=302)
 
     try:
@@ -431,14 +431,14 @@ async def add_product(
         db.commit()
         if product.translation_status == "failed":
             await notify_admin_translation_failed(db, product)
-        flash(request, "Sản phẩm đã được thêm thành công!")
+        flash(request, "Product added successfully!")
         if product.is_active:
             from services.broadcast_service import notify_new_product_broadcast
             await notify_new_product_broadcast(product)
     except Exception:
         db.rollback()
         logger.error("add_product failed:\n" + traceback.format_exc())
-        flash(request, "Có lỗi xảy ra khi thêm sản phẩm. Vui lòng thử lại!", "error")
+        flash(request, "Error adding product. Please try again!", "error")
     return RedirectResponse(url="/products", status_code=302)
 
 
@@ -473,7 +473,7 @@ async def edit_product(
 
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
-        flash(request, "Sản phẩm không tồn tại!", "error")
+        flash(request, "Product not found!", "error")
         return RedirectResponse(url="/products", status_code=302)
 
     error = _validate_product_fields(request, name, product_code, sale_price, min_quantity, delivery_mode)
@@ -484,7 +484,7 @@ async def edit_product(
     product_code = product_code.strip()
     dup = db.query(Product).filter(Product.product_code == product_code, Product.id != product_id).first()
     if dup:
-        flash(request, "Mã sản phẩm đã tồn tại ở sản phẩm khác!", "error")
+        flash(request, "Product code already used by another product!", "error")
         return RedirectResponse(url="/products", status_code=302)
 
     # Chợ-sourced products: the tenant must never move the real supplier
@@ -499,7 +499,7 @@ async def edit_product(
         source_price = product.source_price or 0.0  # ignore submitted value entirely
         floor = default_sale_price(db, source_price)
         if sale_price < floor:
-            flash(request, f"Giá bán tối thiểu cho sản phẩm này là {floor:,.0f}đ".replace(",", "."), "error")
+            flash(request, f"Minimum sale price for this product is {floor:,.0f}đ".replace(",", "."), "error")
             return RedirectResponse(url="/products", status_code=302)
 
     try:
@@ -576,11 +576,11 @@ async def edit_product(
         db.refresh(product)
         if product.translation_status == "failed":
             await notify_admin_translation_failed(db, product)
-        flash(request, "Sản phẩm đã được cập nhật!")
+        flash(request, "Product updated!")
     except Exception:
         db.rollback()
         logger.error(f"edit_product({product_id}) failed:\n" + traceback.format_exc())
-        flash(request, "Có lỗi xảy ra khi cập nhật sản phẩm. Vui lòng thử lại!", "error")
+        flash(request, "Error updating product. Please try again!", "error")
     return RedirectResponse(url="/products", status_code=302)
 
 
@@ -672,11 +672,11 @@ async def delete_product(product_id: int, request: Request, db: Session = Depend
         # tự xoá theo.
         db.delete(product)
         db.commit()
-        flash(request, "Sản phẩm đã được xóa! Đơn hàng liên quan vẫn được lưu trong mục Đơn hàng.")
+        flash(request, "Product deleted! Related orders are still saved under Orders.")
     except Exception:
         db.rollback()
         logger.error(f"delete_product({product_id}) failed:\n" + traceback.format_exc())
-        flash(request, "Có lỗi xảy ra khi xóa sản phẩm!", "error")
+        flash(request, "Error deleting product!", "error")
     return RedirectResponse(url="/products", status_code=302)
 
 
@@ -747,7 +747,7 @@ async def create_product_from_source(
         from tenancy import get_current_tenant
         shared_ap = shared_catalog.get_shared_api_product(db, api_product_id)
         if not shared_ap:
-            flash(request, "Không tìm thấy sản phẩm nguồn!", "error")
+            flash(request, "Source product not found!", "error")
             return RedirectResponse(url="/products/market", status_code=302)
         from services.market_pricing import default_sale_price
         floor = default_sale_price(db, shared_ap.external_price or 0.0)
@@ -756,11 +756,11 @@ async def create_product_from_source(
         # real supplier cost must stay hidden, so the message quotes only
         # the (already-visible) minimum listing price, never the source price.
         if not request.state.is_owner and final_price < floor:
-            flash(request, f"Giá treo tối thiểu cho sản phẩm này là {floor:,.0f}đ".replace(",", "."), "error")
+            flash(request, f"Minimum listing price for this product is {floor:,.0f}đ".replace(",", "."), "error")
             return RedirectResponse(url="/products/market", status_code=302)
         try:
             new_product = shared_catalog.attach_shared_product(db, get_current_tenant(), api_product_id, final_price)
-            flash(request, "Sản phẩm đã được treo lên Chợ!")
+            flash(request, "Product listed on the Market!")
             return RedirectResponse(url=f"/products/id/{new_product.id}", status_code=302)
         except ValueError as e:
             flash(request, str(e), "error")
@@ -769,7 +769,7 @@ async def create_product_from_source(
     existing = db.query(Product).filter(Product.product_code == code).first()
     if existing:
         if existing.is_active:
-            flash(request, "Sản phẩm đã tồn tại!", "error")
+            flash(request, "Product already exists!", "error")
             return RedirectResponse(url="/products/api-sources", status_code=302)
         # Previously treo'd then gỡ (unlisted) — re-treo by reactivating the
         # same product instead of blocking, so a source item can be listed/
@@ -788,7 +788,7 @@ async def create_product_from_source(
             )
             db.add(source)
         db.commit()
-        flash(request, "Sản phẩm đã được treo lại!")
+        flash(request, "Product re-listed!")
         return RedirectResponse(url=f"/products/id/{existing.id}", status_code=302)
 
     # Use sale_price if admin set it; otherwise default to source price + markup
@@ -824,7 +824,7 @@ async def create_product_from_source(
     )
     db.add(source)
     db.commit()
-    flash(request, "Sản phẩm đã được tạo từ nguồn API!")
+    flash(request, "Product created from API source!")
     if product.is_active:
         from services.broadcast_service import notify_new_product_broadcast
         await notify_new_product_broadcast(product)
@@ -843,14 +843,14 @@ async def link_api_product(
         return RedirectResponse(url="/login", status_code=302)
     ap = db.query(ApiProduct).filter(ApiProduct.id == api_product_id).first()
     if not ap:
-        flash(request, "Không tìm thấy sản phẩm nguồn!", "error")
+        flash(request, "Source product not found!", "error")
         return RedirectResponse(url="/products/api-sources", status_code=302)
     existing = db.query(ProductSource).filter(
         ProductSource.product_id == product_id,
         ProductSource.api_product_id == api_product_id
     ).first()
     if existing:
-        flash(request, "Nguồn đã được liên kết!", "error")
+        flash(request, "Source already linked!", "error")
         return RedirectResponse(url="/products/api-sources", status_code=302)
     source = ProductSource(
         product_id=product_id,
@@ -862,7 +862,7 @@ async def link_api_product(
     )
     db.add(source)
     db.commit()
-    flash(request, "Liên kết nguồn thành công!")
+    flash(request, "Source linked successfully!")
     return RedirectResponse(url=f"/products/id/{product_id}", status_code=302)
 
 
@@ -874,7 +874,7 @@ async def delete_product_source(source_id: int, request: Request, db: Session = 
     if source:
         db.delete(source)
         db.commit()
-        flash(request, "Nguồn đã được xóa!")
+        flash(request, "Source removed!")
     return RedirectResponse(url="/products", status_code=302)
 
 
@@ -885,7 +885,7 @@ async def sync_all_products(request: Request, db: Session = Depends(get_db)):
     connections = db.query(ApiConnection).filter(ApiConnection.is_active == True).all()
     for conn in connections:
         await sync_api_products(db, conn.id)
-    flash(request, f"Đã đồng bộ {len(connections)} kết nối API!")
+    flash(request, f"Synced {len(connections)} API connection(s)!")
     return RedirectResponse(url="/products/api-sources", status_code=302)
 
 
@@ -898,7 +898,7 @@ async def product_detail(product_id: int, request: Request, db: Session = Depend
         return RedirectResponse(url="/login", status_code=302)
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
-        flash(request, "Sản phẩm không tồn tại!", "error")
+        flash(request, "Product not found!", "error")
         return RedirectResponse(url="/products", status_code=302)
 
     from services.inventory_service import get_inventory_counts
@@ -952,14 +952,14 @@ async def approve_price(product_id: int, request: Request, db: Session = Depends
         return RedirectResponse(url="/login", status_code=302)
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
-        flash(request, "Sản phẩm không tồn tại!", "error")
+        flash(request, "Product not found!", "error")
         return RedirectResponse(url="/products", status_code=302)
     from services.price_sync_service import approve_pending_price
     result = await approve_pending_price(db, product, exchange_rate=_current_retail_rate(db), changed_by=request.session.get("admin_id"))
     if result.get("action") == "applied":
-        flash(request, "Đã áp dụng giá nguồn mới!")
+        flash(request, "New source price applied!")
     else:
-        flash(request, "Không có thay đổi giá đang chờ duyệt.", "error")
+        flash(request, "No pending price change to approve.", "error")
     return RedirectResponse(url=f"/products/id/{product_id}", status_code=302)
 
 
@@ -969,11 +969,11 @@ async def reject_price(product_id: int, request: Request, db: Session = Depends(
         return RedirectResponse(url="/login", status_code=302)
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
-        flash(request, "Sản phẩm không tồn tại!", "error")
+        flash(request, "Product not found!", "error")
         return RedirectResponse(url="/products", status_code=302)
     from services.price_sync_service import reject_pending_price
     reject_pending_price(db, product)
-    flash(request, "Đã từ chối thay đổi giá nguồn.")
+    flash(request, "Source price change rejected.")
     return RedirectResponse(url=f"/products/id/{product_id}", status_code=302)
 
 
@@ -1007,10 +1007,10 @@ async def inventory_import(
         return RedirectResponse(url="/login", status_code=302)
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
-        flash(request, "Sản phẩm không tồn tại!", "error")
+        flash(request, "Product not found!", "error")
         return RedirectResponse(url="/products", status_code=302)
     if product.delivery_mode != DeliveryMode.manual_stock:
-        flash(request, "Sản phẩm này không dùng chế độ kho tài khoản!", "error")
+        flash(request, "This product does not use local inventory mode!", "error")
         return RedirectResponse(url=f"/products/id/{product_id}", status_code=302)
 
     from services.inventory_service import parse_bulk_accounts, add_inventory_items, notify_restock_if_enabled, process_waiting_orders_for_product
@@ -1058,7 +1058,7 @@ async def inventory_import(
     except Exception:
         db.rollback()
         logger.error(f"inventory_import({product_id}) failed:\n" + traceback.format_exc())
-        flash(request, "Có lỗi xảy ra khi nhập kho. Vui lòng thử lại!", "error")
+        flash(request, "Error importing stock. Please try again!", "error")
 
     return RedirectResponse(url=f"/products/id/{product_id}", status_code=302)
 
@@ -1092,9 +1092,9 @@ async def inventory_delete_item(product_id: int, item_id: int, request: Request,
     if item and item.status == InventoryStatus.available:
         item.status = InventoryStatus.deleted
         db.commit()
-        flash(request, "Đã xóa tài khoản khỏi kho!")
+        flash(request, "Account removed from inventory!")
     elif item:
-        flash(request, "Chỉ có thể xóa tài khoản đang ở trạng thái 'available'!", "error")
+        flash(request, "Only accounts with 'available' status can be deleted!", "error")
     return RedirectResponse(url=f"/products/id/{product_id}", status_code=302)
 
 
@@ -1128,7 +1128,7 @@ async def delete_product_source(source_id: int, request: Request, db: Session = 
     if source:
         db.delete(source)
         db.commit()
-        flash(request, "Nguồn đã được xóa!")
+        flash(request, "Source removed!")
     return RedirectResponse(url="/products", status_code=302)
 
 
@@ -1139,5 +1139,5 @@ async def sync_all_products(request: Request, db: Session = Depends(get_db)):
     connections = db.query(ApiConnection).filter(ApiConnection.is_active == True).all()
     for conn in connections:
         await sync_api_products(db, conn.id)
-    flash(request, f"Đã đồng bộ {len(connections)} kết nối API!")
+    flash(request, f"Synced {len(connections)} API connection(s)!")
     return RedirectResponse(url="/products/api-sources", status_code=302)

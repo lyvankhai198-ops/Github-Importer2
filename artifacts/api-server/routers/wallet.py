@@ -61,10 +61,10 @@ async def confirm_deposit(deposit_id: int, request: Request, db: Session = Depen
     from datetime import datetime
     deposit = db.query(WalletDeposit).filter(WalletDeposit.id == deposit_id).first()
     if not deposit:
-        flash(request, "Yêu cầu nạp tiền không tồn tại!", "error")
+        flash(request, "Deposit request not found!", "error")
         return RedirectResponse(url="/wallet", status_code=302)
     if deposit.status != WalletDepositStatus.manual_review:
-        flash(request, "Yêu cầu này không (còn) ở trạng thái cần admin xử lý!", "error")
+        flash(request, "This request is not (or no longer) pending admin review!", "error")
         return RedirectResponse(url="/wallet", status_code=302)
 
     admin_id = request.session.get("admin_id", "admin")
@@ -88,7 +88,7 @@ async def confirm_deposit(deposit_id: int, request: Request, db: Session = Depen
             )],
         )
         db.refresh(deposit)
-        flash(request, f"Đã xác nhận nạp tiền {deposit.reference_code}!")
+        flash(request, f"Deposit confirmed: {deposit.reference_code}!")
 
         if bot_manager.is_running():
             from bot.notifier import notify_user_wallet_deposit_confirmed
@@ -98,9 +98,9 @@ async def confirm_deposit(deposit_id: int, request: Request, db: Session = Depen
                 bot_manager._application.bot, deposit.telegram_user_id, deposit, lang=lang,
             )
     except wallet_service.AlreadyProcessedError:
-        flash(request, "Yêu cầu này đã được xử lý (có thể do double-click)!", "error")
+        flash(request, "This request has already been processed (possible double-click)!", "error")
     except Exception as e:
-        flash(request, f"Lỗi xác nhận: {e}", "error")
+        flash(request, f"Confirmation error: {e}", "error")
     return RedirectResponse(url="/wallet", status_code=302)
 
 
@@ -113,7 +113,7 @@ async def reject_deposit(deposit_id: int, request: Request, db: Session = Depend
     from datetime import datetime
     deposit = db.query(WalletDeposit).filter(WalletDeposit.id == deposit_id).first()
     if not deposit:
-        flash(request, "Yêu cầu nạp tiền không tồn tại!", "error")
+        flash(request, "Deposit request not found!", "error")
         return RedirectResponse(url="/wallet", status_code=302)
 
     admin_id = request.session.get("admin_id", "admin")
@@ -131,11 +131,11 @@ async def reject_deposit(deposit_id: int, request: Request, db: Session = Depend
     )
     if rows.rowcount == 0:
         db.rollback()
-        flash(request, "Yêu cầu này không (còn) ở trạng thái cần admin xử lý!", "error")
+        flash(request, "This request is not (or no longer) pending admin review!", "error")
         return RedirectResponse(url="/wallet", status_code=302)
     db.commit()
     db.refresh(deposit)
-    flash(request, f"Đã từ chối yêu cầu nạp tiền {deposit.reference_code}.")
+    flash(request, f"Deposit request rejected: {deposit.reference_code}.")
 
     if bot_manager.is_running():
         from bot.notifier import notify_user_wallet_deposit_rejected

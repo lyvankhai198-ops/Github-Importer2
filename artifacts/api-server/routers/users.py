@@ -62,28 +62,28 @@ async def import_users_endpoint(
 
     from services.user_import import parse_import_file, import_users, VALID_MODES
     if mode not in VALID_MODES:
-        flash(request, "Chế độ import không hợp lệ!", "error")
+        flash(request, "Invalid import mode!", "error")
         return RedirectResponse(url="/users", status_code=302)
     if not file or not file.filename:
-        flash(request, "Vui lòng chọn file CSV/Excel để import!", "error")
+        flash(request, "Please select a CSV/Excel file to import!", "error")
         return RedirectResponse(url="/users", status_code=302)
 
     try:
         content = await file.read()
         rows = parse_import_file(file.filename, content)
         if not rows:
-            flash(request, "File không có dữ liệu người dùng nào!", "error")
+            flash(request, "File contains no user data!", "error")
             return RedirectResponse(url="/users", status_code=302)
         result = import_users(db, rows, mode)
     except ValueError as e:
-        flash(request, f"Lỗi đọc file: {e}", "error")
+        flash(request, f"File read error: {e}", "error")
         return RedirectResponse(url="/users", status_code=302)
     except Exception as e:
-        flash(request, f"Import thất bại: {e}", "error")
+        flash(request, f"Import failed: {e}", "error")
         return RedirectResponse(url="/users", status_code=302)
 
     request.session["import_result"] = result
-    flash(request, f"Import xong: {result['success']}/{result['total']} thành công, {result['duplicates']} trùng, {result['errors']} lỗi.")
+    flash(request, f"Import complete: {result['success']}/{result['total']} succeeded, {result['duplicates']} duplicates, {result['errors']} lỗi.")
     return RedirectResponse(url="/users", status_code=302)
 
 
@@ -98,8 +98,8 @@ async def test_send_message(request: Request, chat_id: str = Form(...)):
     if not chat_id:
         return JSONResponse({"success": False, "error": "Thiếu Chat ID"}, status_code=400)
     if not bot_manager.is_running():
-        return JSONResponse({"success": False, "error": "Bot chưa khởi động!"})
-    ok = await bot_manager.send_message(chat_id, "✅ Đây là tin nhắn thử từ bot. Nếu bạn nhận được tin này, bot đã kết nối thành công tới Chat ID của bạn.")
+        return JSONResponse({"success": False, "error": "Bot is not running!"})
+    ok = await bot_manager.send_message(chat_id, "✅ This is a test message from the bot. If you received this, the bot is successfully connected to your Chat ID.")
     return JSONResponse({"success": ok, "error": None if ok else "Không gửi được — kiểm tra Chat ID hoặc user đã chặn bot."})
 
 
@@ -109,7 +109,7 @@ async def user_detail(telegram_id: str, request: Request, db: Session = Depends(
         return RedirectResponse(url="/login", status_code=302)
     user = db.query(User).filter(User.telegram_id == telegram_id).first()
     if not user:
-        flash(request, "Người dùng không tồn tại!", "error")
+        flash(request, "User not found!", "error")
         return RedirectResponse(url="/users", status_code=302)
     orders = db.query(Order).filter(Order.telegram_user_id == telegram_id).order_by(Order.created_at.desc()).all()
     wallet_txs = wallet_service.list_wallet_transactions(db, telegram_id, limit=50)
@@ -141,15 +141,15 @@ async def adjust_wallet(
         return RedirectResponse(url="/login", status_code=302)
     user = db.query(User).filter(User.telegram_id == telegram_id).first()
     if not user:
-        flash(request, "Người dùng không tồn tại!", "error")
+        flash(request, "User not found!", "error")
         return RedirectResponse(url="/users", status_code=302)
 
     note = (note or "").strip()
     if not note:
-        flash(request, "Vui lòng nhập lý do điều chỉnh!", "error")
+        flash(request, "Please enter an adjustment reason!", "error")
         return RedirectResponse(url=f"/users/{telegram_id}", status_code=302)
     if currency not in ("VND", "USDT") or direction not in ("credit", "debit") or amount <= 0:
-        flash(request, "Dữ liệu điều chỉnh không hợp lệ!", "error")
+        flash(request, "Invalid adjustment data!", "error")
         return RedirectResponse(url=f"/users/{telegram_id}", status_code=302)
 
     admin_id = request.session.get("admin_id", "admin")
@@ -164,7 +164,7 @@ async def adjust_wallet(
                 db, telegram_id, currency, amount, WalletTxType.admin_debit,
                 note=note, actor=str(admin_id),
             )
-        flash(request, "Đã điều chỉnh số dư ví!")
+        flash(request, "Wallet balance adjusted!")
 
         if bot_manager.is_running():
             from bot.notifier import notify_user_wallet_admin_adjustment
@@ -175,9 +175,9 @@ async def adjust_wallet(
                 is_credit=(direction == "credit"), lang=lang,
             )
     except wallet_service.InsufficientBalanceError as e:
-        flash(request, f"Số dư không đủ để trừ: hiện có {e.balance}, cần {e.amount}.", "error")
+        flash(request, f"Insufficient balance to debit: have {e.balance}, need {e.amount}.", "error")
     except Exception as e:
-        flash(request, f"Lỗi điều chỉnh ví: {e}", "error")
+        flash(request, f"Wallet adjustment error: {e}", "error")
     return RedirectResponse(url=f"/users/{telegram_id}", status_code=302)
 
 
@@ -189,7 +189,7 @@ async def ban_user(telegram_id: str, request: Request, db: Session = Depends(get
     if user:
         user.is_banned = True
         db.commit()
-        flash(request, f"Người dùng {telegram_id} đã bị cấm!")
+        flash(request, f"Người dùng {telegram_id} has been banned!")
     return RedirectResponse(url=f"/users/{telegram_id}", status_code=302)
 
 
@@ -201,7 +201,7 @@ async def unban_user(telegram_id: str, request: Request, db: Session = Depends(g
     if user:
         user.is_banned = False
         db.commit()
-        flash(request, f"Người dùng {telegram_id} đã được bỏ cấm!")
+        flash(request, f"Người dùng {telegram_id} has been unbanned!")
     return RedirectResponse(url=f"/users/{telegram_id}", status_code=302)
 
 
@@ -214,7 +214,7 @@ async def send_message(telegram_id: str, request: Request, db: Session = Depends
         if success:
             flash(request, "Tin nhắn đã được gửi!")
         else:
-            flash(request, "Không thể gửi tin nhắn!", "error")
+            flash(request, "Could not send message!", "error")
     else:
-        flash(request, "Bot chưa khởi động!", "error")
+        flash(request, "Bot is not running!", "error")
     return RedirectResponse(url=f"/users/{telegram_id}", status_code=302)

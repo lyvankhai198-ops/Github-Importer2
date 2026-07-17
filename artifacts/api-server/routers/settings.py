@@ -150,7 +150,7 @@ async def save_bot_settings(
         cfg.default_language = default_language
     cfg.updated_at = datetime.utcnow()
     db.commit()
-    flash(request, "Cài đặt bot đã được lưu!")
+    flash(request, "Bot settings saved!")
     return RedirectResponse(url="/settings?tab=config", status_code=302)
 
 
@@ -267,7 +267,7 @@ async def save_store_settings(
     if support_username:
         cfg.support_username = support_username.strip().lstrip("@")
         db.commit()
-    flash(request, "Cài đặt cửa hàng đã được lưu!")
+    flash(request, "Store settings saved!")
     return RedirectResponse(url="/settings", status_code=302)
 
 
@@ -275,7 +275,7 @@ async def save_store_settings(
 async def save_order_settings(request: Request, db: Session = Depends(get_db)):
     if not check_auth(request):
         return RedirectResponse(url="/login", status_code=302)
-    flash(request, "Cài đặt đơn hàng đã được lưu!")
+    flash(request, "Order settings saved!")
     return RedirectResponse(url="/settings", status_code=302)
 
 
@@ -283,7 +283,7 @@ async def save_order_settings(request: Request, db: Session = Depends(get_db)):
 async def save_api_settings(request: Request, db: Session = Depends(get_db)):
     if not check_auth(request):
         return RedirectResponse(url="/login", status_code=302)
-    flash(request, "Cài đặt API đã được lưu!")
+    flash(request, "API settings saved!")
     return RedirectResponse(url="/settings", status_code=302)
 
 
@@ -351,7 +351,7 @@ async def save_sepay_settings(
     sepay.test_mode = (test_mode == "on")
     sepay.updated_at = datetime.utcnow()
     db.commit()
-    flash(request, "Cài đặt SePay đã được lưu!")
+    flash(request, "SePay settings saved!")
     return RedirectResponse(url="/settings?tab=config", status_code=302)
 
 
@@ -393,7 +393,7 @@ async def test_sepay_webhook(
     if amount <= 0:
         return JSONResponse({"success": False, "message": "Nhập số tiền > 0"})
     if not payment_code.strip():
-        return JSONResponse({"success": False, "message": "Nhập mã thanh toán"})
+        return JSONResponse({"success": False, "message": "Enter payment code"})
 
     import uuid
     fake_tx = {
@@ -519,7 +519,7 @@ async def save_binance_settings(
     pm.config_encrypted = encrypt(json.dumps(new_cfg, ensure_ascii=False))
     pm.updated_at = datetime.utcnow()
     db.commit()
-    flash(request, "Cài đặt Binance Pay đã được lưu!")
+    flash(request, "Binance Pay settings saved!")
     return RedirectResponse(url="/settings?tab=config", status_code=302)
 
 
@@ -594,7 +594,7 @@ async def save_bep20_settings(
     pm.config_encrypted = encrypt(json.dumps(new_cfg, ensure_ascii=False))
     pm.updated_at = datetime.utcnow()
     db.commit()
-    flash(request, "Cài đặt USDT BEP20 đã được lưu!")
+    flash(request, "USDT BEP20 settings saved!")
     return RedirectResponse(url="/settings?tab=config", status_code=302)
 
 
@@ -638,7 +638,7 @@ async def save_trc20_settings(
     pm.config_encrypted = encrypt(json.dumps(new_cfg, ensure_ascii=False))
     pm.updated_at = datetime.utcnow()
     db.commit()
-    flash(request, "Cài đặt USDT TRC20 đã được lưu!")
+    flash(request, "USDT TRC20 settings saved!")
     return RedirectResponse(url="/settings?tab=config", status_code=302)
 
 
@@ -682,7 +682,7 @@ async def save_erc20_settings(
     pm.config_encrypted = encrypt(json.dumps(new_cfg, ensure_ascii=False))
     pm.updated_at = datetime.utcnow()
     db.commit()
-    flash(request, "Cài đặt USDT ERC20 đã được lưu!")
+    flash(request, "USDT ERC20 settings saved!")
     return RedirectResponse(url="/settings?tab=config", status_code=302)
 
 
@@ -722,7 +722,7 @@ async def save_exchange_rate(
         updated += 1
 
     db.commit()
-    flash(request, f"Cài đặt tỉ giá đã được lưu! Đã cập nhật giá USDT cho {updated} sản phẩm.")
+    flash(request, f"Exchange rate settings saved! Updated USDT price for {updated} product(s).")
     return RedirectResponse(url="/settings?tab=config", status_code=302)
 
 

@@ -280,22 +280,22 @@ async def notify_admin_source_price_changed(db: Session, product: Product, old_s
         return
     if product.auto_adjust_price:
         text = (
-            "✅ ĐÃ TỰ ĐỘNG CẬP NHẬT GIÁ\n\n"
-            f"📦 Sản phẩm: {product.name}\n"
-            f"🏦 Giá nguồn cũ: {_fmt(old_source_price)}\n"
-            f"🏦 Giá nguồn mới: {_fmt(new_source_price)}\n"
-            f"📊 Chênh lệch giữ nguyên: {_fmt(product.price_margin)}\n"
-            f"💰 Giá bán cũ: {_fmt(old_sale_price)}\n"
-            f"💰 Giá bán mới: {_fmt(new_sale_price)}"
+            "✅ PRICE AUTO-UPDATED\n\n"
+            f"📦 Product: {product.name}\n"
+            f"🏦 Old source price: {_fmt(old_source_price)}\n"
+            f"🏦 New source price: {_fmt(new_source_price)}\n"
+            f"📊 Margin preserved: {_fmt(product.price_margin)}\n"
+            f"💰 Old sale price: {_fmt(old_sale_price)}\n"
+            f"💰 New sale price: {_fmt(new_sale_price)}"
         )
     else:
         text = (
-            "⚠️ GIÁ NGUỒN ĐÃ THAY ĐỔI\n\n"
-            f"📦 Sản phẩm: {product.name}\n"
-            f"🏦 Giá nguồn cũ: {_fmt(old_source_price)}\n"
-            f"🏦 Giá nguồn mới: {_fmt(new_source_price)}\n"
-            f"💰 Giá bán hiện tại vẫn giữ nguyên: {_fmt(old_sale_price)}\n"
-            "⛔ Tự động điều chỉnh giá đang tắt."
+            "⚠️ SOURCE PRICE CHANGED\n\n"
+            f"📦 Product: {product.name}\n"
+            f"🏦 Old source price: {_fmt(old_source_price)}\n"
+            f"🏦 New source price: {_fmt(new_source_price)}\n"
+            f"💰 Sale price unchanged: {_fmt(old_sale_price)}\n"
+            "⛔ Auto price adjustment is disabled."
         )
     # No inline keyboard/buttons on admin price-change alerts (no "Mua ngay").
     try:
@@ -316,12 +316,12 @@ async def notify_admin_price_surge_pending(db: Session, product: Product, old_so
     if not admin_id or not bot_manager.is_running():
         return
     text = (
-        "🚨 GIÁ NGUỒN TĂNG BẤT THƯỜNG — CẦN DUYỆT\n\n"
-        f"📦 Sản phẩm: {product.name}\n"
-        f"🏦 Giá nguồn cũ: {_fmt(old_source_price)}\n"
-        f"🏦 Giá nguồn mới: {_fmt(new_source_price)} (+{percent_change:.0f}%)\n"
-        "⛔ Vượt ngưỡng cho phép — chưa tự áp dụng.\n"
-        "Vào trang sản phẩm trên web admin để duyệt hoặc từ chối."
+        "🚨 ABNORMAL PRICE SURGE — APPROVAL REQUIRED\n\n"
+        f"📦 Product: {product.name}\n"
+        f"🏦 Old source price: {_fmt(old_source_price)}\n"
+        f"🏦 New source price: {_fmt(new_source_price)} (+{percent_change:.0f}%)\n"
+        "⛔ Exceeds allowed threshold — not applied automatically.\n"
+        "Go to the product page in the admin panel to approve or reject."
     )
     try:
         await bot_manager.send_message(admin_id, text)

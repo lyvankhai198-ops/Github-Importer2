@@ -528,46 +528,30 @@ def normalize_delivery_items(response_json: dict) -> list:
     return items
 
 
-def format_delivery_message(order, items: list, product_name: str, lang: str = "vi") -> tuple:
+def format_delivery_message(order, items: list, product_name: str, lang: str = "en") -> tuple:
     """
-    Tạo tin nhắn giao hàng đẹp cho bot (HTML parse_mode).
-    Trả về (text, file_bytes_or_None).
-    - ≤10 tài khoản: gửi text với <code> blocks.
-    - >10 tài khoản: tạo nội dung file TXT.
+    Build the delivery notification message for the bot (HTML parse_mode).
+    Returns (text, file_bytes_or_None).
+    - ≤10 accounts: send text with <code> blocks.
+    - >10 accounts: create a TXT file attachment.
     """
-    if lang == "en":
-        product = getattr(order, "product", None)
-        if product is not None:
-            total_str = f"{format_usdt(product.price_usdt * order.quantity)} USDT"
-        else:
-            total_str = f"{format_vnd(order.total_price)} VND"
-        header = (
-            f"✅ <b>PURCHASE SUCCESSFUL</b>\n\n"
-            f"🧾 Order: <code>{order.order_code}</code>\n"
-            f"📦 Product: {html.escape(product_name)}\n"
-            f"🔢 Quantity: {order.quantity}\n"
-            f"💰 Total: {total_str}\n\n"
-            f"🎁 <b>ACCOUNT(S)</b>\n"
-        )
-        thanks = "Thank you for your purchase! 🙏"
-        account_label = "Account"
-        more_suffix = "more account(s) (see attached file)"
-        file_order_label = "Order"
-        file_product_label = "Product"
+    product = getattr(order, "product", None)
+    if product is not None:
+        total_str = f"{format_usdt(product.price_usdt * order.quantity)} USDT"
     else:
-        header = (
-            f"✅ <b>MUA HÀNG THÀNH CÔNG</b>\n\n"
-            f"🧾 Mã đơn: <code>{order.order_code}</code>\n"
-            f"📦 Sản phẩm: {html.escape(product_name)}\n"
-            f"🔢 Số lượng: {order.quantity}\n"
-            f"💰 Tổng tiền: {format_vnd(order.total_price)}đ\n\n"
-            f"🎁 <b>TÀI KHOẢN</b>\n"
-        )
-        thanks = "Cảm ơn bạn đã mua hàng! 🙏"
-        account_label = "Tài khoản"
-        more_suffix = "tài khoản nữa (xem file đính kèm)"
-        file_order_label = "Đơn hàng"
-        file_product_label = "Sản phẩm"
+        total_str = f"{format_vnd(order.total_price)} VND"
+    header = (
+        f"✅ <b>PURCHASE SUCCESSFUL</b>\n\n"
+        f"🧾 Order: <code>{order.order_code}</code>\n"
+        f"📦 Product: {html.escape(product_name)}\n"
+        f"🔢 Quantity: {order.quantity}\n"
+        f"💰 Total: {total_str}\n\n"
+        f"🎁 <b>ACCOUNT(S)</b>\n"
+    )
+    thanks = "Thank you for your purchase! 🙏"
+    account_label = "Account"
+    file_order_label = "Order"
+    file_product_label = "Product"
 
     lines = []
     for item in items:
@@ -596,36 +580,23 @@ def format_delivery_message(order, items: list, product_name: str, lang: str = "
         file_content = f"{file_order_label}: {order.order_code}\n{file_product_label}: {product_name}\n"
         file_content += "=" * 40 + "\n"
         file_content += "\n".join(lines)
-        all_in_file_note = (
-            f"<i>See attached file ({len(lines)} accounts)</i>" if lang == "en"
-            else f"<i>Xem file đính kèm ({len(lines)} tài khoản)</i>"
-        )
+        all_in_file_note = f"<i>See attached file ({len(lines)} accounts)</i>"
         text = header + "\n" + all_in_file_note + "\n\n" + thanks
         return text, file_content.encode("utf-8")
 
 
-def format_partial_delivery_message(order, items: list, product_name: str, lang: str = "vi") -> str:
+def format_partial_delivery_message(order, items: list, product_name: str, lang: str = "en") -> str:
     delivered = len(items)
     missing = order.quantity - delivered
     external_code = order.external_order_code or order.external_order_id or "—"
-    if lang == "en":
-        header = (
-            f"⚠️ <b>INCOMPLETE DELIVERY</b>\n\n"
-            f"Order: <code>{order.order_code}</code>\n"
-            f"Source order: <code>{external_code}</code>\n"
-            f"Ordered: {order.quantity} | Received: {delivered} | Missing: {missing}\n\n"
-            f"📦 <b>ACCOUNTS RECEIVED:</b>\n"
-        )
-        footer = "⏳ The source is processing the remainder. Admin will contact you soon."
-    else:
-        header = (
-            f"⚠️ <b>GIAO HÀNG KHÔNG ĐỦ SỐ LƯỢNG</b>\n\n"
-            f"Mã đơn: <code>{order.order_code}</code>\n"
-            f"Mã đơn nguồn: <code>{external_code}</code>\n"
-            f"Đặt: {order.quantity} | Nhận được: {delivered} | Thiếu: {missing}\n\n"
-            f"📦 <b>TÀI KHOẢN ĐÃ NHẬN:</b>\n"
-        )
-        footer = "⏳ Nguồn đang xử lý phần còn lại. Admin sẽ liên hệ bạn sớm."
+    header = (
+        f"⚠️ <b>INCOMPLETE DELIVERY</b>\n\n"
+        f"Order: <code>{order.order_code}</code>\n"
+        f"Source order: <code>{external_code}</code>\n"
+        f"Ordered: {order.quantity} | Received: {delivered} | Missing: {missing}\n\n"
+        f"📦 <b>ACCOUNTS RECEIVED:</b>\n"
+    )
+    footer = "⏳ The source is processing the remainder. Admin will contact you soon."
     lines = [_item_display_value(item) for item in items]
     account_block = "\n".join(f"<code>{html.escape(l)}</code>" for l in lines)
     return header + "\n" + account_block + "\n\n" + footer

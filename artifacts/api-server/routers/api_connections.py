@@ -123,7 +123,7 @@ async def add_connection(
         # Start syncing immediately — don't make the admin wait for a full
         # app restart before the newly added connection begins auto-syncing.
         start_sync_scheduler(conn.id, conn.sync_interval_minutes)
-    flash(request, "Kết nối API đã được thêm!")
+    flash(request, "API connection added!")
     return RedirectResponse(url="/api-connections", status_code=302)
 
 
@@ -147,7 +147,7 @@ async def edit_connection(
         return RedirectResponse(url="/products/market", status_code=302)
     conn = db.query(ApiConnection).filter(ApiConnection.id == conn_id).first()
     if not conn:
-        flash(request, "Không tìm thấy kết nối!", "error")
+        flash(request, "Connection not found!", "error")
         return RedirectResponse(url="/api-connections", status_code=302)
     base_url = _resolve_base_url(base_url, api_type)
     err = _non_ascii_error(api_key, "API Key") or _non_ascii_error(base_url, "URL")
@@ -170,7 +170,7 @@ async def edit_connection(
     stop_sync_scheduler(conn_id)
     if conn.is_active:
         start_sync_scheduler(conn_id, conn.sync_interval_minutes)
-    flash(request, "Kết nối API đã được cập nhật!")
+    flash(request, "API connection updated!")
     return RedirectResponse(url="/api-connections", status_code=302)
 
 
@@ -233,7 +233,7 @@ async def delete_connection(conn_id: int, request: Request, db: Session = Depend
         db.delete(conn)
         db.commit()
         api_manager.invalidate(conn_id)
-        flash(request, "Kết nối đã được xóa!")
+        flash(request, "Connection deleted!")
     return RedirectResponse(url="/api-connections", status_code=302)
 
 
@@ -285,5 +285,5 @@ async def view_orders(conn_id: int, request: Request, db: Session = Depends(get_
         "per_page": 50,
         "flash": flash_msg,
         "order_statuses": [],
-        "title": f"Đơn hàng từ {conn.name if conn else conn_id}",
+        "title": f"Orders from {conn.name if conn else conn_id}",
     })

@@ -82,7 +82,7 @@ async def order_detail(order_id: int, request: Request, db: Session = Depends(ge
         return RedirectResponse(url="/login", status_code=302)
     order = db.query(Order).filter(Order.id == order_id).first()
     if not order:
-        flash(request, "Đơn hàng không tồn tại!", "error")
+        flash(request, "Order not found!", "error")
         return RedirectResponse(url="/orders", status_code=302)
     flash_msg = request.session.pop("flash", None)
     # Parse normalized delivery items for template
@@ -137,7 +137,7 @@ async def complete_order(
             )
         except Exception:
             pass
-    flash(request, "Đơn hàng đã hoàn thành và thông báo đã được gửi!")
+    flash(request, "Order completed and notification sent!")
     return RedirectResponse(url=f"/orders/{order_id}", status_code=302)
 
 
@@ -150,7 +150,7 @@ async def cancel_order(order_id: int, request: Request, db: Session = Depends(ge
         order.status = OrderStatus.cancelled
         order.updated_at = datetime.utcnow()
         db.commit()
-        flash(request, "Đơn hàng đã bị hủy!")
+        flash(request, "Order cancelled!")
     return RedirectResponse(url=f"/orders/{order_id}", status_code=302)
 
 
@@ -169,9 +169,9 @@ async def change_order_status(
             order.status = OrderStatus(new_status)
             order.updated_at = datetime.utcnow()
             db.commit()
-            flash(request, f"Trạng thái đã được cập nhật thành: {new_status}")
+            flash(request, f"Status updated to: {new_status}")
         except Exception:
-            flash(request, "Trạng thái không hợp lệ!", "error")
+            flash(request, "Invalid status!", "error")
     return RedirectResponse(url=f"/orders/{order_id}", status_code=302)
 
 
@@ -188,9 +188,9 @@ async def notify_user(
     if order and bot_manager.is_running():
         success = await bot_manager.send_message(order.telegram_user_id, message)
         if success:
-            flash(request, "Tin nhắn đã được gửi!")
+            flash(request, "Message sent!")
         else:
-            flash(request, "Không thể gửi tin nhắn!", "error")
+            flash(request, "Could not send message!", "error")
     else:
-        flash(request, "Bot chưa khởi động hoặc đơn hàng không tồn tại!", "error")
+        flash(request, "Bot is not running or order not found!", "error")
     return RedirectResponse(url=f"/orders/{order_id}", status_code=302)

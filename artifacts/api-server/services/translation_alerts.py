@@ -29,10 +29,10 @@ async def notify_admin_translation_failed(db, product) -> None:
             return
         direction = "vi→en" if (product.source_language or "vi") == "vi" else "en→vi"
         text = (
-            "⚠️ DỊCH SẢN PHẨM THẤT BẠI\n\n"
-            f"📦 Sản phẩm: {product.name}\n"
-            f"🔁 Chiều dịch: {direction}\n"
-            f"❗ Lỗi: {(product.translation_error or '')[:300]}"
+            "⚠️ PRODUCT TRANSLATION FAILED\n\n"
+            f"📦 Product: {product.name}\n"
+            f"🔁 Direction: {direction}\n"
+            f"❗ Error: {(product.translation_error or '')[:300]}"
         )
         await bot_manager.send_message(admin_id, text)
     except Exception as e:

@@ -614,7 +614,7 @@ def process_webhook_transaction(db: Session, raw: dict) -> dict:
             order.payment_status = PaymentStatus.paid
             order.paid_at = datetime.utcnow()
             surplus = new_paid - expected
-            order.notes = (order.notes or "") + f"\nThừa {format_vnd(surplus)}đ — chờ hoàn tiền."
+            order.notes = (order.notes or "") + f"\nOverpaid by {format_vnd(surplus)} VND — pending refund."
             tx.match_status = "matched"
             action = "paid"
 
@@ -963,7 +963,7 @@ async def _deliver_to_user(order: Order, db: Session):
 async def _notify_paid_api_failed(order: Order, db: Session, reason: str = ""):
     try:
         from services.wallet_service import refund_order_to_wallet
-        await refund_order_to_wallet(db, order, reason="API nguồn lỗi sau khi thanh toán")
+        await refund_order_to_wallet(db, order, reason="Source API error after payment")
 
         from services.bot_service import bot_manager
         if not bot_manager.is_running():
@@ -984,7 +984,7 @@ async def _notify_paid_waiting_stock(order: Order, db: Session):
     """Payment received but source ran out of stock unexpectedly."""
     try:
         from services.wallet_service import refund_order_to_wallet
-        await refund_order_to_wallet(db, order, reason="Nguồn hết hàng sau khi thanh toán")
+        await refund_order_to_wallet(db, order, reason="Source out of stock after payment")
 
         from services.bot_service import bot_manager
         if not bot_manager.is_running():
@@ -1007,12 +1007,12 @@ async def _notify_paid_waiting_stock(order: Order, db: Session):
             await bot.send_message(
                 chat_id=int(admin_id),
                 text=(
-                    f"⚠️ <b>ĐÃ NHẬN TIỀN — NGUỒN HẾT HÀNG!</b>\n\n"
-                    f"📋 Đơn: <code>{order.order_code}</code>\n"
-                    f"📦 Sản phẩm: {html.escape(product_name)}\n"
+                    f"⚠️ <b>PAYMENT RECEIVED — SOURCE OUT OF STOCK!</b>\n\n"
+                    f"📋 Order: <code>{order.order_code}</code>\n"
+                    f"📦 Product: {html.escape(product_name)}\n"
                     f"👤 User: <code>{order.telegram_user_id}</code>\n"
-                    f"💰 Đã nhận: {format_vnd((order.paid_amount or 0))}đ\n\n"
-                    "Cần giao thủ công, đổi nguồn hoặc hoàn tiền."
+                    f"💰 Received: {format_vnd((order.paid_amount or 0))} VND\n\n"
+                    "Manual delivery, source swap, or refund required."
                 ),
                 parse_mode="HTML",
             )
@@ -1045,11 +1045,11 @@ async def _notify_pending_seller_fulfillment(order: Order, db: Session):
             await bot.send_message(
                 chat_id=int(admin_id),
                 text=(
-                    f"⏳ <b>ĐƠN SLOT CHỜ SELLER XỬ LÝ</b>\n\n"
-                    f"📋 Đơn: <code>{order.order_code}</code>\n"
-                    f"📦 Sản phẩm: {html.escape(product_name)}\n"
+                    f"⏳ <b>SLOT ORDER — AWAITING SELLER FULFILLMENT</b>\n\n"
+                    f"📋 Order: <code>{order.order_code}</code>\n"
+                    f"📦 Product: {html.escape(product_name)}\n"
                     f"👤 User: <code>{order.telegram_user_id}</code>\n"
-                    f"🔗 Mã đơn nguồn: <code>{order.external_order_code or order.external_order_id or '—'}</code>"
+                    f"🔗 Source order: <code>{order.external_order_code or order.external_order_id or '—'}</code>"
                 ),
                 parse_mode="HTML",
             )

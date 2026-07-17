@@ -640,18 +640,18 @@ def _seed_ranks():
         if db.query(Rank).count() > 0:
             return
         defaults = [
-            ("🥉", "Thành viên mới",       0),
-            ("🥈", "Đồng",                  500_000),
-            ("🥇", "Bạc",                   2_000_000),
-            ("💎", "Vàng",                  5_000_000),
-            ("👑", "Bạch Kim",              10_000_000),
-            ("⚜️", "Kim Cương",             20_000_000),
-            ("🏆", "Đại lý",                50_000_000),
-            ("🚀", "Đại lý VIP",            100_000_000),
-            ("🔥", "Tổng đại lý",           200_000_000),
-            ("💠", "Nhà phân phối",         500_000_000),
-            ("🌟", "Nhà phân phối cấp cao", 1_000_000_000),
-            ("👑", "Đối tác chiến lược",    2_000_000_000),
+            ("🥉", "New Member",          0),
+            ("🥈", "Bronze",              500_000),
+            ("🥇", "Silver",              2_000_000),
+            ("💎", "Gold",                5_000_000),
+            ("👑", "Platinum",            10_000_000),
+            ("⚜️", "Diamond",             20_000_000),
+            ("🏆", "Reseller",            50_000_000),
+            ("🚀", "VIP Reseller",        100_000_000),
+            ("🔥", "Master Reseller",     200_000_000),
+            ("💠", "Distributor",         500_000_000),
+            ("🌟", "Senior Distributor",  1_000_000_000),
+            ("👑", "Strategic Partner",   2_000_000_000),
         ]
         for i, (emoji, name, min_spend) in enumerate(defaults):
             db.add(Rank(name=name, emoji=emoji, min_spend=min_spend, sort_order=i, is_active=True))

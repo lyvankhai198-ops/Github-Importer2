@@ -59,7 +59,7 @@ def _get_admin_id(db) -> str:
 
 def _get_welcome_message(db) -> str:
     cfg = _get_config(db)
-    return cfg.welcome_message if cfg and cfg.welcome_message else "Chào mừng bạn đến với cửa hàng!"
+    return cfg.welcome_message if cfg and cfg.welcome_message else "Welcome to the store! 🛍"
 
 def _get_support_username(db) -> str:
     cfg = _get_config(db)
@@ -176,6 +176,11 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             welcome,
             reply_markup=main_menu_keyboard(lang=lang, is_admin=is_admin),
         )
+        # Force-update this user's Telegram Menu commands to English every /start.
+        try:
+            await _set_bot_commands(context.bot, "en", chat_id=int(tg_user.id))
+        except Exception:
+            pass
         # Returning users see the latest (synced) products immediately — no
         # extra tap required.
         await _send_product_list(update.message, db, context, lang)
@@ -448,7 +453,7 @@ async def _render_order_detail_text(db, order, lang: str) -> str:
     result = refund_service.compute_refund(order)
     warranty_label = (product.warranty if product and product.warranty else "—")
     refund_amount_str = (
-        f"{format_vnd(result['amount'])}đ" if result["currency"] == WalletCurrency.VND
+        f"{format_vnd(result['amount'])} VND" if result["currency"] == WalletCurrency.VND
         else f"{result['amount']:.4f} USDT"
     )
     if result["already_refunded"]:
@@ -657,7 +662,7 @@ async def support_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def admin_panel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🌐 Truy cập trang quản trị tại địa chỉ máy chủ của bạn.")
+    await update.message.reply_text("🌐 Access the admin panel at your server address.")
 
 
 async def unknown_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -796,7 +801,7 @@ async def _setup_sepay_payment(context, db, tg_user, order, lang: str, processin
             pass
 
     if not sent_msg:
-        text_only = caption + f'\n\n🔗 <a href="{qr_url}">Mở QR VietQR</a>'
+        text_only = caption + f'\n\n🔗 <a href="{qr_url}">Open VietQR</a>'
         try:
             sent_msg = await context.bot.send_message(
                 chat_id=tg_user.id, text=text_only, parse_mode="HTML",
@@ -1627,7 +1632,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 for tx in txs:
                     sign = SIGN.get(tx.tx_type, "")
                     cur = tx.currency.value if hasattr(tx.currency, "value") else str(tx.currency)
-                    amt_str = f"{format_vnd(tx.amount)}đ" if cur == "VND" else f"{tx.amount:.4f} USDT"
+                    amt_str = f"{format_vnd(tx.amount)} VND" if cur == "VND" else f"{tx.amount:.4f} USDT"
                     tt = tx.tx_type.value if hasattr(tx.tx_type, "value") else str(tx.tx_type)
                     lines.append(f"• {sign}{amt_str} — {tt} ({tx.created_at.strftime('%d/%m %H:%M')})")
             try:
@@ -1847,11 +1852,11 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     return
 
                 amount_str = (
-                    f"{format_vnd(result['amount'])}đ" if result["currency"] == WalletCurrency.VND
+                    f"{format_vnd(result['amount'])} VND" if result["currency"] == WalletCurrency.VND
                     else f"{result['amount']:.4f} USDT"
                 )
                 new_balance_str = (
-                    f"{format_vnd(result['balance_after'])}đ" if result["currency"] == WalletCurrency.VND
+                    f"{format_vnd(result['balance_after'])} VND" if result["currency"] == WalletCurrency.VND
                     else f"{result['balance_after']:.4f} USDT"
                 )
                 await query.answer(t(lang, "refund_success_admin", amount=amount_str, code=order.order_code),
@@ -2321,7 +2326,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             sv = order.status.value if hasattr(order.status, "value") else str(order.status)
             if sv != "pending_payment":
-                await query.answer("Đơn không còn ở trạng thái chờ thanh toán.", show_alert=True)
+                await query.answer("This order is no longer awaiting payment.", show_alert=True)
                 return
 
             from models import SepayConfig
@@ -2330,7 +2335,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             shop_name = getattr(cfg_bot, "shop_name", "") or "" if cfg_bot else ""
             sepay = db.query(SepayConfig).first()
             if not sepay or not sepay.account_number or not sepay.bank_bin:
-                await query.answer("Cấu hình ngân hàng chưa đầy đủ.", show_alert=True)
+                await query.answer("Bank transfer is not fully configured.", show_alert=True)
                 return
 
             chat_id = order.payment_chat_id or order.telegram_user_id
@@ -2539,7 +2544,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await query.answer(t(lang, "copy_address_alert", value=value), show_alert=True)
             elif kind == "copy_amt":
                 amount = order.expected_crypto_amount
-                value = f"{amount:.4f} USDT" if amount else f"{format_vnd(order.total_price)}đ"
+                value = f"{amount:.4f} USDT" if amount else f"{format_vnd(order.total_price)} VND"
                 await query.answer(t(lang, "copy_amount_alert", value=value), show_alert=True)
             else:  # copy_payid
                 from services.binance_service import get_binance_config
@@ -2588,14 +2593,14 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             product_name = _product_display_name(order.product, lang) if order.product else "—"
             ext_code = order.external_order_code or order.external_order_id or "—"
             text = (
-                f"📦 <b>Chi tiết đơn hàng</b>\n\n"
-                f"Mã đơn: <code>{order.order_code}</code>\n"
-                f"Mã nguồn: <code>{ext_code}</code>\n"
-                f"Sản phẩm: {html.escape(product_name)}\n"
-                f"Số lượng: {order.quantity}\n"
-                f"Tổng tiền: {format_vnd(order.total_price)}đ\n"
-                f"Trạng thái: {_status_label(sv, lang)}\n"
-                f"Thời gian: {order.created_at.strftime('%d/%m/%Y %H:%M')}"
+                f"📦 <b>Order Detail</b>\n\n"
+                f"Order: <code>{order.order_code}</code>\n"
+                f"Source order: <code>{ext_code}</code>\n"
+                f"Product: {html.escape(product_name)}\n"
+                f"Qty: {order.quantity}\n"
+                f"Total: {format_vnd(order.total_price)} VND\n"
+                f"Status: {_status_label(sv, lang)}\n"
+                f"Time: {order.created_at.strftime('%d/%m/%Y %H:%M')}"
             )
             support = _get_support_username(db)
             await query.message.reply_text(

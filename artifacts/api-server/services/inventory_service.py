@@ -410,7 +410,7 @@ def _get_bot_config(db: Session):
 async def _notify_inventory_waiting_stock(order: Order, db: Session):
     try:
         from services.wallet_service import refund_order_to_wallet
-        await refund_order_to_wallet(db, order, reason="Kho nội bộ hết hàng sau khi thanh toán")
+        await refund_order_to_wallet(db, order, reason="Local inventory out of stock after payment")
 
         from services.bot_service import bot_manager
         if not bot_manager.is_running():
@@ -450,7 +450,7 @@ async def _notify_inventory_delivery_failed(order: Order, db: Session):
     """Telegram send failed after reserving stock — stock was rolled back, payment intact."""
     try:
         from services.wallet_service import refund_order_to_wallet
-        await refund_order_to_wallet(db, order, reason="Không thể gửi hàng qua Telegram")
+        await refund_order_to_wallet(db, order, reason="Could not deliver via Telegram")
 
         from services.bot_service import bot_manager
         if not bot_manager.is_running():
@@ -466,12 +466,12 @@ async def _notify_inventory_delivery_failed(order: Order, db: Session):
             await bot.send_message(
                 chat_id=int(admin_id),
                 text=(
-                    f"🚨 <b>GIAO HÀNG THẤT BẠI — ĐÃ HOÀN TRẢ KHO!</b>\n\n"
-                    f"📋 Đơn: <code>{order.order_code}</code>\n"
-                    f"📦 Sản phẩm: {html.escape(product_name)}\n"
+                    f"🚨 <b>DELIVERY FAILED — STOCK RETURNED!</b>\n\n"
+                    f"📋 Order: <code>{order.order_code}</code>\n"
+                    f"📦 Product: {html.escape(product_name)}\n"
                     f"👤 User: <code>{order.telegram_user_id}</code>\n\n"
-                    "Không thể gửi tin nhắn Telegram cho khách (có thể đã chặn bot).\n"
-                    "Tài khoản đã được trả lại kho — vui lòng liên hệ khách thủ công."
+                    "Could not send Telegram message to buyer (may have blocked the bot).\n"
+                    "Accounts have been returned to stock — please contact the buyer manually."
                 ),
                 parse_mode="HTML",
             )
@@ -541,9 +541,9 @@ async def _notify_admin_auto_delivered(db: Session, product: Product, order_code
         await bot.send_message(
             chat_id=int(admin_id),
             text=(
-                f"✅ <b>Tự động giao hàng sau khi nhập kho!</b>\n\n"
-                f"📦 Sản phẩm: {html.escape(product.name)}\n"
-                f"🔢 Đã giao tự động: {len(order_codes)} đơn\n\n{codes_str}"
+                f"✅ <b>Auto-delivered after restock!</b>\n\n"
+                f"📦 Product: {html.escape(product.name)}\n"
+                f"🔢 Auto-delivered: {len(order_codes)} order(s)\n\n{codes_str}"
             ),
             parse_mode="HTML",
         )
