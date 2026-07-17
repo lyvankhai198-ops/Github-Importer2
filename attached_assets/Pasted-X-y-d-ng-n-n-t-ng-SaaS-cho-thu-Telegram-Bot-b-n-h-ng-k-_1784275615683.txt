@@ -1,0 +1,30 @@
+Xây dựng nền tảng SaaS cho thuê Telegram Bot bán hàng kết hợp website quản trị.
+
+Mỗi khách thuê có một tài khoản website riêng. Sau khi đăng nhập, khách chỉ cần nhập Telegram Bot Token và Telegram Admin ID, sau đó bấm “Kích hoạt bot”. Hệ thống phải tự động kiểm tra token, lấy thông tin bot và khởi chạy bot mà khách không cần cài đặt code, VPS, Replit hoặc GitHub.
+
+Hệ thống phải sử dụng kiến trúc multi-tenant. Mỗi khách có tenant_id riêng và toàn bộ sản phẩm, kho hàng, đơn hàng, người dùng, cấu hình bot, API nguồn hàng và dữ liệu thanh toán phải được tách biệt hoàn toàn.
+
+Trang khách thuê gồm các phần:
+
+1. Tổng quan.
+2. Sản phẩm ( khi lấy sản phẩm trên chợ treo về )
+3. Chợ ( lấy từ nguồn api của admin đã bật chia sẻ )
+4. Đơn hàng ( lưu đơn hàng tài đây )
+5. Người truy cập ( user truy cập bot )
+6. Thông báo bot ( thông báo đến tất cả người dùng )
+7. Cấu hình ( nhập token…tạo thanh toán… hướng dẫn)
+ Giống như dasbord của admin
+
+Trang kết nối bot cần có các trường Bot Token, Telegram Admin ID, tên cửa hàng, username hỗ trợ và kênh bán hàng. Có các chức năng kiểm tra token, kích hoạt, tạm dừng, khởi động lại và xóa kết nối bot. Sau khi lưu, không được hiển thị toàn bộ token. Bot token và API key phải được mã hóa trong cơ sở dữ liệu.
+
+Tạo trang quản trị hệ thống riêng tại đường dẫn /admin. Chỉ tài khoản Super Admin được truy cập. Admin có thể quản lý toàn bộ khách thuê, trạng thái bot, gói thuê, ngày hết hạn, thanh toán, số lượng đơn hàng, số người dùng, số lượng sản phẩm, dung lượng kho, API nguồn hàng, nhật ký lỗi và lịch sử đăng nhập.
+
+Admin phải có thể khóa hoặc mở tài khoản khách, dừng hoặc khởi động lại bot, gia hạn gói, cộng thêm ngày dùng thử, đặt giới hạn sản phẩm, đơn hàng, bot và nhân viên theo từng gói thuê.
+
+Tạo Bot Manager chạy tập trung để quản lý nhiều bot. Mỗi bot phải hoạt động độc lập. Một bot bị lỗi không được làm dừng các bot khác. Bot Manager phải tự động khởi động lại bot khi lỗi hoặc khi máy chủ restart, đồng thời ghi log riêng theo tenant_id.
+
+Kho tài khoản hỗ trợ các định dạng email|password, email|password|2fa, username|password, key và link. Hệ thống phải tự động đếm tồn kho, không giao trùng, ghi lại sản phẩm đã giao cho từng đơn, hỗ trợ nhập TXT hoặc CSV, cảnh báo sắp hết hàng và cho phép thay thế tài khoản lỗi.
+
+Luồng mua hàng trên Telegram Bot gồm: /start, chọn danh mục, chọn sản phẩm, xem mô tả, chọn số lượng, thanh toán và tự động giao hàng. Nếu sản phẩm lấy từ API nguồn hàng, hệ thống phải gọi API sau khi xác nhận thanh toán, nhận tài khoản, lưu kết quả vào đơn hàng rồi gửi cho người mua.
+
+Nếu API nguồn hàng lỗi, đơn phải chuyển sang trạng thái chờ xử lý, không được trừ tiền hai lần, không giao trùng và phải thông báo cho chủ bot. Chủ bot có thể thử giao lại hoặc hoàn tiền vào ví khách hàng.
